@@ -247,6 +247,11 @@ function classifyField(el) {
 //     -- that would cut false positives but risks false negatives on
 //     legitimately-formatted-but-checksum-edge-case values, which this
 //     module is instructed to avoid.
+//   - FIXED (retry 1): this battery now also runs over input/textarea
+//     value+placeholder and select's selected-option text, not just DOM
+//     text nodes -- see VALUE/PLACEHOLDER SCANNING at the top of the file.
+//     An autofilled PII-shaped value with no type=password/autocomplete
+//     signal was previously an unflagged false negative; it no longer is.
 // ---------------------------------------------------------------------------
 
 const EMAIL_RE =

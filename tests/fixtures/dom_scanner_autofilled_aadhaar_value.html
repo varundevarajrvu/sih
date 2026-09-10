@@ -1,0 +1,9 @@
+<!--
+  Orchestrator-flagged gap fixture: a browser-autofilled Aadhaar-shaped
+  value in a plain type=text input with NO type=password and NO PII-
+  relevant autocomplete attribute at all. Previously an unflagged false
+  negative (value is a property, not a text node) -- now caught by the
+  value/placeholder regex pass. See dom-scanner.js's VALUE/PLACEHOLDER
+  SCANNING note.
+-->
+<input id="idnum" type="text" name="id_number" value="1234 5678 9012" />

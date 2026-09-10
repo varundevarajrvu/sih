@@ -252,6 +252,76 @@ describe("composite page: ordering, dedup, and mixed detection sources", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Orchestrator-flagged gap (retry 1): value/placeholder/selected-option
+// scanning. See dom-scanner.js's VALUE/PLACEHOLDER SCANNING note.
+// ---------------------------------------------------------------------------
+describe("autofilled value with no type/autocomplete PII signal", () => {
+  test("an Aadhaar-shaped value on a plain type=text input is flagged", () => {
+    const doc = loadFixtureDocument("dom_scanner_autofilled_aadhaar_value.html");
+    const { sensitiveNodes } = scanForPii(doc);
+    assert.equal(sensitiveNodes.length, 1);
+    assert.equal(sensitiveNodes[0].selector, "#idnum");
+    assert.equal(sensitiveNodes[0].piiType, PII_TYPES.AADHAAR);
+  });
+});
+
+describe("PII in a <textarea> value", () => {
+  test("an email address in textarea content is flagged", () => {
+    const doc = loadFixtureDocument("dom_scanner_email_in_textarea_value.html");
+    const { sensitiveNodes } = scanForPii(doc);
+    assert.equal(sensitiveNodes.length, 1);
+    assert.equal(sensitiveNodes[0].selector, "#notes");
+    assert.equal(sensitiveNodes[0].piiType, PII_TYPES.EMAIL);
+  });
+});
+
+describe("PII in a placeholder attribute (no value set)", () => {
+  test("a PAN-shaped placeholder is flagged even though it's only a hint", () => {
+    const doc = loadFixtureDocument("dom_scanner_pan_in_placeholder.html");
+    const { sensitiveNodes } = scanForPii(doc);
+    assert.equal(sensitiveNodes.length, 1);
+    assert.equal(sensitiveNodes[0].selector, "#pan-field");
+    assert.equal(sensitiveNodes[0].piiType, PII_TYPES.PAN);
+  });
+
+  test("a benign 'e.g. ...' example placeholder is STILL flagged -- documented over-flag, not a bug", () => {
+    const doc = loadFixtureDocument("dom_scanner_benign_example_placeholder.html");
+    const { sensitiveNodes } = scanForPii(doc);
+    // Per the orchestrator's explicit ruling: recall-first policy means a
+    // placeholder that's obviously just a formatting example still gets
+    // flagged (and therefore redacted). A developer leaking a real value
+    // into a placeholder by mistake is exactly the case this protects
+    // against; the cost is over-flagging harmless hint text like this one.
+    assert.equal(sensitiveNodes.length, 1);
+    assert.equal(sensitiveNodes[0].selector, "#phone-field");
+    assert.equal(sensitiveNodes[0].piiType, PII_TYPES.TEL);
+  });
+});
+
+describe("PII in a <select>'s selected-option text", () => {
+  test("an Aadhaar-shaped selected-option label is flagged twice, independently, by design", () => {
+    const doc = loadFixtureDocument("dom_scanner_pii_in_select_option.html");
+    const { sensitiveNodes } = scanForPii(doc);
+    // Two DIFFERENT elements legitimately both catch this, not a dedup bug:
+    //   1. The <select> itself, via getFieldValueSources()'s selected-option
+    //      text extraction (pass 1b).
+    //   2. The <option> element, via the ordinary visible-text-node walk
+    //      (pass 2) -- an <option>'s own text content is an ordinary DOM
+    //      text node like any other, and nothing hides it from that walk.
+    // Both entries carry the same piiType and are harmless to redact/strip
+    // twice under two different selectors -- consistent with this module's
+    // recall-first policy (belt-and-suspenders beats a missed detection).
+    assert.equal(sensitiveNodes.length, 2);
+    const bySelector = new Map(sensitiveNodes.map((n) => [n.selector, n]));
+    assert.equal(bySelector.get("#idtype").piiType, PII_TYPES.AADHAAR);
+    assert.equal(
+      bySelector.get("#idtype > option:nth-of-type(2)").piiType,
+      PII_TYPES.AADHAAR
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // bbox injectability -- real getBoundingClientRect() is unverified outside
 // a browser (jsdom always returns zeros); confirm the injection seam works
 // so a future browser/integration test can supply real geometry.

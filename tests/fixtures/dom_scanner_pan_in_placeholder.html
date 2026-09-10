@@ -1,0 +1,7 @@
+<!--
+  PAN-shaped text living only in the placeholder attribute (no value set).
+  Must still be flagged -- a placeholder is usually just a UI hint, but a
+  developer can and does leak a real value there by mistake, and this
+  module's policy is recall-first.
+-->
+<input id="pan-field" type="text" placeholder="PAN: ABCDE1234F" />
