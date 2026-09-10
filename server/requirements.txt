@@ -3,3 +3,4 @@ uvicorn[standard]
 httpx
 pytest
 anthropic
+google-genai

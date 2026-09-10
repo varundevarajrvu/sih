@@ -1,7 +1,7 @@
 """
 Swappable VLM client behind one interface.
 
-Three implementations:
+Four implementations:
   - MockVLMClient:   deterministic, no network, no model. DEFAULT backend —
                       used by all tests and every current runtime path
                       unless VLM_BACKEND is set otherwise.
@@ -20,17 +20,34 @@ Three implementations:
                       a live API — no ANTHROPIC_API_KEY is configured on
                       this machine; validated entirely with a stubbed/
                       injected fake client (tests/unit/test_claude_vlm_client.py).
+  - GeminiVLMClient:  real integration targeting a cloud Gemini model via
+                      the OFFICIAL `google-genai` SDK (imported as
+                      `from google import genai` — NOT the deprecated
+                      `google-generativeai` package, and NOT raw HTTP).
+                      Chief's second decision: add a FREE backend, since
+                      the Anthropic API is pay-as-you-go and a hackathon
+                      demo shouldn't need a paid key. Written but NOT
+                      executed against a live API — no GEMINI_API_KEY /
+                      GOOGLE_API_KEY is configured on this machine;
+                      validated entirely with a stubbed/injected fake
+                      client (tests/unit/test_gemini_vlm_client.py). Its
+                      request/response shapes and exception hierarchy are
+                      genuinely different from Claude's SDK, verified
+                      independently against the installed package source
+                      rather than assumed to mirror it — see the class
+                      docstring below for the specific differences found.
 
 Selection is via the VLM_BACKEND env var (defaults to "mock") through
-get_vlm_client(). The interface (VLMClient.analyze) never mentions Ollama
-or Claude (or any other backend) in its signature or docstring contract —
-Section 4 requires this be swappable between backends without touching
-main.py, and that swap already happened once (mock -> real cloud model)
-without any main.py change, which is exactly the design proving out.
+get_vlm_client(). The interface (VLMClient.analyze) never mentions Ollama,
+Claude, Gemini, or any other backend in its signature or docstring
+contract — Section 4 requires this be swappable between backends without
+touching main.py, and two swaps have now happened (mock -> Claude,
+mock -> Gemini) with zero main.py changes either time.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 from abc import ABC, abstractmethod
@@ -492,6 +509,287 @@ class ClaudeVLMClient(VLMClient):
 
 
 # ---------------------------------------------------------------------------
+# Gemini implementation — written, NOT executed against a live API. No
+# GEMINI_API_KEY / GOOGLE_API_KEY is configured on this machine; validated
+# entirely against a stubbed/injected fake client (see
+# tests/unit/test_gemini_vlm_client.py).
+#
+# Everything below was verified against the installed `google-genai`
+# v2.22.0 package's own source (client.py, _api_client.py, types.py,
+# errors.py, _transformers.py) — not recalled from training data. Where it
+# genuinely differs from ClaudeVLMClient's design, that's because the two
+# SDKs are actually built differently, confirmed by reading both, not an
+# inconsistency between the two implementations:
+#   - google-genai's Client() raises ValueError SYNCHRONOUSLY AT
+#     CONSTRUCTION when no API key resolves (anthropic.Anthropic() defers
+#     that failure to the first request).
+#   - google-genai's error hierarchy is FLAT: only APIError -> ClientError
+#     (any 4xx) / ServerError (any 5xx), no dedicated NotFoundError /
+#     RateLimitError classes to catch by type. Distinguishing "rate
+#     limited" from "model not found" requires inspecting the caught
+#     ClientError's `.code` (int HTTP status) and `.status` (Google's own
+#     string error code, e.g. "RESOURCE_EXHAUSTED", "NOT_FOUND") — there
+#     is no other way to do this with this SDK's actual exception design.
+#   - google-genai does not wrap network-level failures at all; a DNS/
+#     timeout/connection failure propagates as a raw httpx.HTTPError
+#     subclass straight from the underlying transport.
+#   - Structured output uses `response_mime_type` + `response_json_schema`
+#     on GenerateContentConfig (confirmed: response_json_schema accepts a
+#     raw JSON Schema dict directly — the exact ACTION_RESPONSE_JSON_SCHEMA
+#     already built for Claude is reused here unmodified).
+#   - Image parts take RAW BYTES (`Part.from_bytes(data=<bytes>, ...)`),
+#     not a base64 string — unlike Claude's wire format, which takes the
+#     base64 string directly. context.image_b64 must be decoded first.
+# ---------------------------------------------------------------------------
+
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+"""NOT verified against a live API call — no credentials are configured on
+this machine, and guessing a model id from training-data recall was
+explicitly ruled out (Gemini's model lineup and id strings are exactly
+the kind of thing that goes stale). This value was instead read directly
+out of the INSTALLED google-genai v2.22.0 SDK's own bundled source code:
+it is the consistent illustrative example across client.py, models.py,
+chats.py, batches.py, live.py, and types.py (40+ occurrences), including
+literally being cited in a parameter docstring as: "The Gemini model ID,
+for example: 'gemini-2.0-flash'". That is meaningfully stronger evidence
+than recalled training data — it is what the SDK's own authors chose as
+their canonical safe example as of this SDK release — but it is still
+NOT a live confirmation that this id is currently servable, especially
+on the free tier specifically. Override with GEMINI_MODEL if it's wrong;
+list_gemini_models() / the GeminiModelNotFound error message below both
+point at how to discover a currently-valid id instead of guessing again.
+"""
+
+
+class GeminiCredentialsMissing(Exception):
+    """Raised by GeminiVLMClient.analyze() when no API key can be resolved.
+
+    Structurally different from ClaudeCredentialsMissing by necessity, not
+    by choice: anthropic.Anthropic() constructs successfully even with no
+    key (the failure is deferred to request time, so there's a live client
+    object whose `.api_key` attribute can be inspected first). google-genai's
+    Client() does NOT get that far — confirmed in _api_client.py's
+    BaseApiClient.__init__: on the plain Gemini Developer API path (no
+    vertexai/enterprise/project/location args, which is all this class ever
+    passes), it raises `ValueError('No API key was provided...')`
+    SYNCHRONOUSLY, inside the constructor itself. There is no
+    post-construction object to inspect. So this class catches that
+    specific ValueError at construction time (see _get_client()) and
+    re-raises with a clear, actionable message — still never reading
+    GEMINI_API_KEY/GOOGLE_API_KEY itself; it only reacts to the SDK's own
+    resolution failing, exactly like the Claude client does, just at a
+    different point in the call sequence because the two SDKs fail
+    differently.
+    """
+
+
+class GeminiModelNotFound(RuntimeError):
+    """The configured GEMINI_MODEL was rejected (HTTP 404 / Google status
+    "NOT_FOUND"). Not retryable with the same model id — see
+    list_gemini_models() to discover a valid one."""
+
+
+class GeminiRateLimited(RuntimeError):
+    """HTTP 429 / Google status "RESOURCE_EXHAUSTED". The Gemini free tier
+    is aggressively rate-limited — this is an expected, routine failure
+    mode for this backend, not a rare edge case, which is why it gets its
+    own distinguishable type rather than folding into a generic API-error
+    branch."""
+
+
+class GeminiAPIError(RuntimeError):
+    """Any other Gemini APIError (ClientError or ServerError) not covered
+    by the more specific branches above."""
+
+
+class GeminiConnectionError(RuntimeError):
+    """No HTTP response at all — DNS/timeout/network failure. google-genai
+    does not wrap these itself (confirmed: no try/except around the
+    underlying httpx send call in _api_client.py); they propagate as raw
+    httpx.HTTPError subclasses, caught and re-wrapped here so all three
+    real backends (Ollama, Claude, Gemini) expose a consistent
+    "connection failed" exception shape."""
+
+
+def list_gemini_models(client: Any = None) -> list[str]:
+    """Discover currently-valid Gemini model ids. This is the safety net
+    DEFAULT_GEMINI_MODEL's docstring promises: since that default could
+    not be verified live, this function (and the equivalent inline
+    one-liner below) is how a caller finds out what actually works.
+
+    Equivalent one-liner, if you'd rather run it directly in a shell:
+
+        python -c "from google import genai; [print(m.name) for m in genai.Client().models.list()]"
+
+    Requires GEMINI_API_KEY or GOOGLE_API_KEY to be set — this makes a
+    real (lightweight) API call, which is exactly why this function is
+    NOT exercised by this module's test suite (no credentials on this
+    machine). `client` accepts an injected fake for testing that it wires
+    through correctly, without requiring a live call.
+    """
+    if client is None:
+        from google import genai  # local import: keep this dependency optional for mock-only runs
+
+        client = genai.Client()
+    return [m.name for m in client.models.list() if getattr(m, "name", None)]
+
+
+class GeminiVLMClient(VLMClient):
+    """Real integration targeting a cloud Gemini model via the OFFICIAL
+    `google-genai` SDK (`from google import genai`) — not the deprecated
+    `google-generativeai` package, and not raw HTTP (an official SDK
+    exists, so, same reasoning as ClaudeVLMClient, using it is correct).
+
+    Chief's second cloud-backend decision: the Gemini API has a free tier
+    (unlike Anthropic's pay-as-you-go pricing), which matters for a
+    hackathon demo that shouldn't need a paid key to run. Section 5 note
+    carries over unchanged from ClaudeVLMClient: sending already-redacted
+    data to ANY cloud model, free or paid, is the scenario this project
+    exists to make safe, not an exception to the invariant.
+
+    NOT executed live: no GEMINI_API_KEY/GOOGLE_API_KEY is configured on
+    this machine. Every code path here is exercised via a fake object
+    injected through the `client=` constructor parameter, standing in for
+    `google.genai.Client` — request shape, response parsing, and each
+    error branch are all unit-tested without credentials or network
+    access.
+    """
+
+    def __init__(
+        self,
+        model: str | None = None,
+        max_output_tokens: int = 2048,
+        client: Any = None,
+    ) -> None:
+        self.model = model or os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+        self.max_output_tokens = max_output_tokens
+        # Dependency-injection point for tests — see ClaudeVLMClient's
+        # identical pattern. Constructing this class never touches the
+        # network or resolves credentials; only _get_client() does, lazily.
+        self._injected_client = client
+
+    def _get_client(self) -> Any:
+        if self._injected_client is not None:
+            return self._injected_client
+        from google import genai  # local import: keep this dependency optional for mock-only runs
+
+        try:
+            # Bare constructor — the SDK resolves GOOGLE_API_KEY (priority)
+            # or GEMINI_API_KEY (fallback) itself; this class does not read
+            # either env var directly. On the plain Gemini Developer API
+            # path (no vertexai/project/location passed here), a missing
+            # key raises ValueError synchronously — see
+            # GeminiCredentialsMissing's docstring for why this differs
+            # from the Claude client's post-construction check.
+            return genai.Client()
+        except ValueError as exc:
+            raise GeminiCredentialsMissing(
+                "Gemini backend selected (VLM_BACKEND=gemini) but no API key is "
+                "configured. Set the GEMINI_API_KEY environment variable "
+                "(GOOGLE_API_KEY is also accepted, and takes priority if both are "
+                "set) before starting the server. Get a free key at "
+                "https://aistudio.google.com/apikey."
+            ) from exc
+
+    def analyze(self, context: VLMRequestContext) -> dict[str, Any]:
+        from google.genai import errors, types
+        import httpx  # transport-level exceptions surface raw from this SDK
+
+        client = self._get_client()
+
+        image_bytes = base64.b64decode(context.image_b64)
+
+        contents = [
+            # Image part BEFORE the text part — per Chief's explicit
+            # instruction, same ordering rationale as the Claude client.
+            # Part.from_bytes() requires raw bytes, not a base64 string
+            # (confirmed: types.Blob.data is typed `bytes`) — hence the
+            # decode above.
+            types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+            # build_prompt() REUSED VERBATIM (already built into
+            # context.prompt upstream) — the already unit-tested privacy
+            # contract, not rewritten or paraphrased here.
+            types.Part.from_text(text=context.prompt),
+        ]
+
+        config = types.GenerateContentConfig(
+            max_output_tokens=self.max_output_tokens,
+            # Structured output is load-bearing here exactly as for
+            # Claude: response_json_schema accepts a raw JSON Schema dict
+            # (confirmed against types.py's GenerateContentConfig
+            # docstring) and reuses ACTION_RESPONSE_JSON_SCHEMA verbatim —
+            # one source of truth for the action enum, not a hand-copied
+            # duplicate.
+            response_mime_type="application/json",
+            response_json_schema=ACTION_RESPONSE_JSON_SCHEMA,
+            # No thinking_config is set. Some Gemini model families default
+            # to enabled "thinking" with a model-dependent budget/latency
+            # cost (ThinkingConfig.thinking_budget: "-1 is AUTOMATIC...
+            # default values and allowed ranges are model dependent," per
+            # the SDK's own docstring) — but forcing thinking_budget=0
+            # unconditionally risks a 400 on a model that doesn't support
+            # thinking at all, on top of an already-unverified model id.
+            # Left as a documented, deliberate omission rather than a
+            # second unverified guess stacked on the first.
+        )
+
+        try:
+            response = client.models.generate_content(
+                model=self.model,
+                contents=contents,
+                config=config,
+            )
+        except errors.ClientError as exc:
+            # google-genai's error hierarchy has no dedicated RateLimitError/
+            # NotFoundError types (confirmed in errors.py) — every 4xx is a
+            # ClientError, distinguished only by `.code` / `.status`.
+            if exc.code == 429 or exc.status == "RESOURCE_EXHAUSTED":
+                raise GeminiRateLimited(
+                    "Gemini API rate limit exceeded — the free tier is "
+                    f"aggressively rate-limited ({exc.status or exc.code})."
+                ) from exc
+            if exc.code == 404 or exc.status == "NOT_FOUND":
+                raise GeminiModelNotFound(
+                    f"Gemini model {self.model!r} not found or unavailable. Run "
+                    "list_gemini_models() (or `python -c \"from google import genai; "
+                    "[print(m.name) for m in genai.Client().models.list()]\"`) to "
+                    "discover currently-valid ids, then set GEMINI_MODEL."
+                ) from exc
+            raise GeminiAPIError(
+                f"Gemini API returned a client error (HTTP {exc.code}, status={exc.status})."
+            ) from exc
+        except errors.ServerError as exc:
+            raise GeminiAPIError(
+                f"Gemini API returned a server error (HTTP {exc.code})."
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise GeminiConnectionError("Could not connect to the Gemini API.") from exc
+
+        return self._extract_action_dict(response)
+
+    @staticmethod
+    def _extract_action_dict(response: Any) -> dict[str, Any]:
+        """Pull the structured JSON out of response.text.
+
+        Deliberately does NOT validate against ActionResponse here — same
+        single-validation-boundary rule as every VLMClient implementation
+        (see the base class's analyze() docstring): main.py is the one
+        place a malformed/improvised action gets rejected, regardless of
+        which backend produced it.
+
+        `response.text` is the SDK's own convenience property (confirmed
+        in types.py's GenerateContentResponse: "Returns the concatenation
+        of all text parts... from only the first [candidate]") — used
+        instead of manually walking response.candidates[0].content.parts,
+        which is equivalent but more brittle across SDK versions.
+        """
+        text = getattr(response, "text", None)
+        if not text:
+            raise ValueError("Gemini response contained no text to parse as JSON.")
+        return json.loads(text)
+
+
+# ---------------------------------------------------------------------------
 # Factory — env-var selection, defaulting to mock.
 # ---------------------------------------------------------------------------
 
@@ -502,11 +800,15 @@ def get_vlm_client() -> VLMClient:
     Defaults to "mock" — nothing currently working breaks by adding a new
     backend option. "ollama" targets a local qwen2.5vl:7b (untested, no
     model installed here). "claude" targets a cloud Claude model via the
-    official SDK (Chief's finale decision) — untested live, no
+    official SDK (Chief's cloud decision) — untested live, no
     ANTHROPIC_API_KEY on this machine, but fully unit-tested against a
-    stubbed client. Constructing any of these three does NOT itself touch
-    a network or resolve credentials — that only happens inside
-    .analyze(), on first real use.
+    stubbed client. "gemini" targets a cloud Gemini model via the official
+    google-genai SDK (Chief's FREE-tier decision, additive to Claude, not
+    a replacement) — same story: untested live (no GEMINI_API_KEY/
+    GOOGLE_API_KEY here), fully unit-tested against a stubbed client.
+    Constructing any of these four does NOT itself touch a network or
+    resolve credentials — that only happens inside .analyze(), on first
+    real use.
     """
     backend = os.environ.get("VLM_BACKEND", "mock").strip().lower()
     if backend == "mock":
@@ -515,4 +817,8 @@ def get_vlm_client() -> VLMClient:
         return OllamaVLMClient()
     if backend == "claude":
         return ClaudeVLMClient()
-    raise ValueError(f"Unknown VLM_BACKEND: {backend!r} (expected 'mock', 'ollama', or 'claude')")
+    if backend == "gemini":
+        return GeminiVLMClient()
+    raise ValueError(
+        f"Unknown VLM_BACKEND: {backend!r} (expected 'mock', 'ollama', 'claude', or 'gemini')"
+    )

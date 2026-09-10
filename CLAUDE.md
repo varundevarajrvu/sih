@@ -378,9 +378,21 @@ Section 4's `qwen2.5vl:7b` was always "for dev — swap to a cloud VLM for the f
 
 ```
 VLM_BACKEND=mock    (default — deterministic, no credentials, keeps CI green)
+VLM_BACKEND=gemini  GEMINI_API_KEY=...  [GEMINI_MODEL=gemini-2.0-flash]   ← FREE tier
 VLM_BACKEND=claude  ANTHROPIC_API_KEY=sk-ant-...  [ANTHROPIC_MODEL=claude-opus-4-8]
 VLM_BACKEND=ollama  (written, never exercised — no model installed)
 ```
+
+**Gemini (free tier) — `google-genai` v2.22.0, verified against installed SDK source.** Differences from the Anthropic client that are NOT guessable by analogy:
+- Image parts take **RAW BYTES** — `Part.from_bytes(data=<bytes>)`, so `image_b64` must be `b64decode()`d first. Anthropic takes the base64 string.
+- `genai.Client()` raises **synchronously at construction** when no key resolves; `anthropic.Anthropic()` defers to request time. Different credential-check design.
+- Exception hierarchy is **flat** — `APIError → ClientError`(any 4xx)/`ServerError`(any 5xx), with NO dedicated rate-limit class. Distinguishing a free-tier 429 requires inspecting `.code`/`.status`. Raw `httpx.HTTPError` propagates unwrapped for network failures.
+- Credentials: SDK checks `GOOGLE_API_KEY` FIRST, `GEMINI_API_KEY` as fallback. Both work.
+- Structured output: `response_mime_type` + `response_json_schema` on `GenerateContentConfig`; accepts standard JSON Schema, so `ACTION_RESPONSE_JSON_SCHEMA` is shared byte-for-byte with the Claude client.
+
+**⚠️ `DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"` is UNVERIFIED against a live API** — no key existed at build time. It was taken from the installed SDK's own examples (40+ occurrences), which beats recall but is not confirmation. If it 404s, run `list_gemini_models()` to discover valid IDs and set `GEMINI_MODEL`.
+
+**Privacy disclosure (documented in `server/README.md`, deliberately not softened):** Google may use free-tier submissions for training. Acceptable here precisely because redaction happens client-side before transmission — `Section 5 check PASSED` proves no PII is in the payload. A provider that trains on this data still never sees a password, an email, or a face. That is the thesis working, not a compromise of it.
 
 Implementation notes, verified against the installed SDK, not recalled:
 - Official `anthropic` SDK, model id `claude-opus-4-8` exactly — never append a date suffix.

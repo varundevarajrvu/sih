@@ -41,19 +41,21 @@ environment variable. No code change is needed to switch backends.
 |---|---|---|
 | *(unset)* / `mock` | `MockVLMClient` | **Default.** Deterministic, no network, no model. What every test in this repo runs against. |
 | `ollama` | `OllamaVLMClient` | Local `qwen2.5vl:7b` via Ollama's HTTP API (`OLLAMA_BASE_URL`, default `http://localhost:11434`). Written but never executed in this build — no vision model is pulled on the dev machine (only text-only models are installed, and RAM is too tight for a 7B VLM anyway). |
-| `claude` | `ClaudeVLMClient` | Cloud Claude model via the official `anthropic` SDK. **Chosen for the finale** over local Ollama specifically because this machine's ~3.7GB free RAM can't run a 7B local VLM without thrashing. See below. |
+| `claude` | `ClaudeVLMClient` | Cloud Claude model via the official `anthropic` SDK. Chosen first because it returns real structured/grounding-oriented output. Pay-as-you-go — no free tier. See below. |
+| `gemini` | `GeminiVLMClient` | Cloud Gemini model via the official `google-genai` SDK. Chosen second, additively, specifically because Google offers a **free tier** and a hackathon demo shouldn't need a paid key to run. See below. |
 
 ```bash
-# example
-VLM_BACKEND=claude ANTHROPIC_API_KEY=sk-ant-... .venv/Scripts/python.exe -m uvicorn main:app
+# examples
+VLM_BACKEND=claude ANTHROPIC_API_KEY=sk-ant-...        .venv/Scripts/python.exe -m uvicorn main:app
+VLM_BACKEND=gemini GEMINI_API_KEY=AIzaSy...             .venv/Scripts/python.exe -m uvicorn main:app
 ```
 
 Selecting a backend (constructing the client) never touches the network
 or resolves credentials by itself — that only happens on the first real
-`/analyze` call. So the server boots fine with `VLM_BACKEND=claude` set
-and no key configured; the failure (a clean `502` with
-`errorCode: "VLM_BACKEND_CALL_FAILED"`) only happens when a request
-actually arrives.
+`/analyze` call. So the server boots fine with `VLM_BACKEND=claude` or
+`VLM_BACKEND=gemini` set and no key configured; the failure (a clean
+`502` with `errorCode: "VLM_BACKEND_CALL_FAILED"`) only happens when a
+request actually arrives.
 
 ## Claude backend — credentials and model
 
@@ -90,6 +92,70 @@ a local `ollama` backend.
   other API errors, connection errors, missing credentials) are all
   covered without network access.
 
+## Gemini backend — credentials, model, and data usage
+
+**This backend sends the already-redacted screenshot and the sanitized
+DOM-derived prompt to Google's Gemini API over the network** — same
+scope of data as the Claude backend, same reasoning (see "Privacy"
+below), just a different destination.
+
+- **API key**: get a free key at **https://aistudio.google.com/apikey**.
+  Set the `GEMINI_API_KEY` environment variable. `GOOGLE_API_KEY` is also
+  accepted by the underlying SDK (and takes priority if both are set) —
+  verified directly in the installed `google-genai` source, not assumed.
+  The server never reads or hardcodes either variable itself; a bare
+  `genai.Client()` is constructed and the SDK resolves credentials on its
+  own. If no key resolves, `/analyze` returns a clean `502` naming
+  `GeminiCredentialsMissing` rather than a raw SDK stack trace.
+- **Model**: defaults to `GEMINI_MODEL`'s value if set, otherwise
+  `gemini-2.0-flash`. **This default is NOT verified against a live API
+  call** — no credentials are available on this dev machine, and guessing
+  a current model id from memory was explicitly out of bounds (Gemini's
+  model lineup is exactly the kind of detail that goes stale). The value
+  was instead read out of the installed SDK's own bundled source code,
+  where it is used consistently as the canonical example across half a
+  dozen files. If it turns out to be wrong or is retired, the model-not-
+  found error tells you exactly how to list real, currently-valid ids:
+  ```bash
+  python -c "from google import genai; [print(m.name) for m in genai.Client().models.list()]"
+  ```
+  (requires `GEMINI_API_KEY`/`GOOGLE_API_KEY` to be set — this makes a
+  real, lightweight API call). `vlm_client.list_gemini_models()` is the
+  same helper, importable from Python.
+- **Structured output**: every request sets `response_mime_type` to
+  `application/json` and `response_json_schema` to the *same* JSON schema
+  object used for the Claude backend (`ACTION_RESPONSE_JSON_SCHEMA`,
+  itself derived from `schemas.ActionType` — one source of truth, not a
+  second hand-copied enum), so the model is constrained at generation
+  time to return `{action, targetId, value}` and nothing else.
+- **Rate limits**: the Gemini free tier is aggressively rate-limited. A
+  429 surfaces as `GeminiRateLimited`, its own distinguishable error type
+  — worth watching for specifically during a live demo, since it's a
+  routine failure mode on this backend, not a rare edge case.
+- Not yet run against a live API in this repo — no key is configured on
+  the dev machine. Fully unit-tested against a stubbed/injected fake
+  client instead (`tests/unit/test_gemini_vlm_client.py`): request shape,
+  response parsing, and every error branch (model-not-found, rate limit,
+  other API errors, connection errors, missing credentials) are all
+  covered without network access. (Missing-credentials is the one case
+  tested against the *real* `google.genai.Client()` constructor rather
+  than a fake — verified that constructing it with no resolvable key
+  raises synchronously, client-side, before any network I/O.)
+
+**Data usage — stated plainly, not softened:** Google's Gemini API free
+tier may use data submitted through it to improve Google's products,
+including model training, unless you're on a paid tier with different
+terms. Check https://ai.google.dev/gemini-api/terms for the current
+policy before relying on this for anything beyond a demo. **This is
+acceptable for this project specifically because everything transmitted
+through this backend is already redacted** — the password, the email,
+the face, the ID card are never in the payload in the first place (see
+"Privacy" below and the Section 5 egress tests in
+`test_gemini_vlm_client.py`). A privacy project has to be explicit about
+where its data goes, including when the answer is "a free tier that may
+train on it" — the redaction guarantee is what makes that an acceptable
+answer, not a reason to avoid stating it.
+
 ## Privacy (Section 5)
 
 The one invariant that isn't negotiable: **nothing leaves this server's
@@ -101,6 +167,7 @@ redaction appears to have failed — defense in depth, not just trust in
 the caller.
 
 Swapping the VLM backend from local (mock/Ollama) to a cloud model
-(Claude) does not weaken this. Sending redacted data to a cloud model
-under a verified no-raw-PII guarantee is exactly the scenario this
-project exists to make safe, not an exception to the rule.
+(Claude or Gemini) does not weaken this. Sending redacted data to a
+cloud model — paid or free tier — under a verified no-raw-PII guarantee
+is exactly the scenario this project exists to make safe, not an
+exception to the rule.
