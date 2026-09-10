@@ -277,10 +277,16 @@ def test_request_max_output_tokens_override_is_respected():
     assert config.max_output_tokens == 4096
 
 
-def test_model_defaults_to_gemini_2_0_flash(monkeypatch):
+def test_model_defaults_to_the_verified_default(monkeypatch):
+    """The default must come from DEFAULT_GEMINI_MODEL, not a literal.
+
+    The original default ("gemini-2.0-flash") was taken from the SDK's own
+    examples and turned out NOT to be callable on a live key. Pinning a
+    literal here just re-encodes whatever guess is current; asserting the
+    constant keeps this test honest as models retire.
+    """
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     client = GeminiVLMClient()
-    assert client.model == "gemini-2.0-flash"
     assert client.model == DEFAULT_GEMINI_MODEL
 
 

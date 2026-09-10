@@ -10,6 +10,7 @@ import pytest
 
 from schemas import PAGE_TARGET_ID, BBox, DomNode, RedactedRegion
 from vlm_client import (
+    DEFAULT_GEMINI_MODEL,
     ClaudeVLMClient,
     GeminiVLMClient,
     MockVLMClient,
@@ -150,7 +151,9 @@ def test_factory_selects_gemini_without_calling_it(monkeypatch):
     monkeypatch.setenv("VLM_BACKEND", "gemini")
     client = get_vlm_client()
     assert isinstance(client, GeminiVLMClient)
-    assert client.model == "gemini-2.0-flash"
+    # Assert against the constant, not a literal — the default is a live-
+    # verified model id that will need updating again as models retire.
+    assert client.model == DEFAULT_GEMINI_MODEL
 
 
 def test_factory_rejects_unknown_backend(monkeypatch):

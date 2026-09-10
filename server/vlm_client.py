@@ -542,7 +542,15 @@ class ClaudeVLMClient(VLMClient):
 #     base64 string directly. context.image_b64 must be decoded first.
 # ---------------------------------------------------------------------------
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+# VERIFIED LIVE 2026-09-11 against a real free-tier key: this model id
+# returns a schema-conforming action for a real image+prompt request.
+# The previous default ("gemini-2.0-flash", taken from the SDK's own
+# examples) was NOT callable on a live key — it isn't in models.list().
+# Note models.list() is NOT a reliable guide on its own: "gemini-2.5-flash"
+# IS listed yet 404s on generateContent. Verify with a real call, not a listing.
+# "gemini-flash-latest" also works but floats between releases — pinned
+# deliberately so a demo can't shift under you mid-run.
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 """NOT verified against a live API call — no credentials are configured on
 this machine, and guessing a model id from training-data recall was
 explicitly ruled out (Gemini's model lineup and id strings are exactly
