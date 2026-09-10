@@ -78,6 +78,25 @@ def test_analyze_pii_leak_rejected_with_400_and_error_code(load_fixture):
     assert "agent-1" in " ".join(body["violations"])
 
 
+def test_vision_region_overlapping_benign_button_is_not_flagged_as_pii_leak(load_fixture):
+    """Retry 2 regression test (orchestrator ruling #6, 2026-09-10): the
+    exact false positive found in a live Phase 4 browser run. A
+    vision-detected object box (type='other', no agentId, no `source`
+    field — today's real-world payload shape) overlapping a "Continue"
+    button's bbox by >50% must NOT be rejected as a PII leak. Before the
+    fix this returned 400 PII_LEAK_DETECTED and halted the agent loop;
+    it must now return 200 with a normal action."""
+    data = load_fixture("valid_request_vision_region_near_benign_button.json")
+    assert data["redactedRegions"][0].get("agentId") is None
+    assert "source" not in data["redactedRegions"][0]
+
+    resp = client.post("/analyze", json=data)
+
+    assert resp.status_code == 200, f"false positive not fixed: {resp.content!r}"
+    body = resp.json()
+    assert body["action"] in {"click", "type", "scroll", "done"}
+
+
 def test_analyze_response_is_json_not_prose(load_fixture):
     """Section 6 checkpoint, encoded as an assertion: the response must be
     parseable JSON matching the action schema exactly, never freeform

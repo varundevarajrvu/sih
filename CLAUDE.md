@@ -343,6 +343,27 @@ Full loop closed on `demo/test-page.html`: `outcome: "done"`, 3 steps, `type`(ag
 **⚠️ OPEN: the vision path contributed ZERO on this run.** `detections: 0` across all 3 steps; all 4 redaction regions were DOM-sourced. An earlier run on the same page reported `detections: 1` (the ID-card face firing `person`) with detect at 21,971 ms. Both figures moved together, which implicates the captured image rather than the model — `captureVisibleTab` captures the visible VIEWPORT ONLY, so an ID card below the fold yields both a faster inference and nothing to find. **Re-run with the entire page visible unscrolled before trusting any vision-side rubric claim.** Visual-context accuracy (25%) + redaction precision (20%) is the largest scoring block in the rubric.
 
 **⚠️ ALSO UNVERIFIED:** the `Section 5 check PASSED` log lines (per-step assertion on the real outgoing payload) have not yet been captured. That assertion is the project's central privacy claim and remains unproven in a browser.
+
+**✅ RESOLVED — vision path confirmed working.** With the ID card visible in the viewport: `detections: 3`, `visionBoxesKeptAfterFilter: 3`, `regions: 7` (4 DOM + 3 vision). Both redaction sources merge correctly in one coordinate space. `captureVisibleTab` covers the VIEWPORT ONLY — content below the fold is invisible to the vision path, which is a demo-setup requirement, not a bug.
+
+**📊 LATENCY — the Phase 0 re-scope was pessimistic.** With 3 real detections on a real page, `detect` measured **784ms / 817ms**, not the 8,432ms the spike harness measured on a fixed test image. That MEETS the original ~1s gate. Full 3-step loop: **3,182ms**, peak heap 30.5MB. Take more samples before publishing, but the measurement is sound — real image, real detections.
+
+#### 🔴 CONTRACT ADDITION — `RedactedRegion.source`. Found by the live browser run.
+
+The bbox-overlap fallback in `find_pii_leaks()` fired a FALSE POSITIVE that halted the loop: a vision region overlapping a button reading "Continue" was reported as a PII leak.
+
+**Root cause — the check had degenerated into firing only where it cannot be valid.** Phase 2b sets `agentId` on DOM-sourced regions and omits it on vision-only ones, so "no `agentId`" became exactly equivalent to "vision-sourced." Strategy 1 (agentId) already caught every DOM region, leaving strategy 2 (bbox overlap) to evaluate *only* vision regions — precisely where spatial overlap carries zero PII signal. A detected `person`/`laptop` box means an object occupies those pixels; it says nothing about whether a DOM node's text is sensitive. On real pages, vision boxes overlap text constantly.
+
+**Fix:**
+```
+RedactedRegion.source: Optional[Literal["dom","vision"]]
+```
+- Strategy 2 (bbox overlap) applies ONLY to `source == "dom"`. Strategies 1 and 3 unchanged — this discriminates on provenance, it does NOT weaken the check.
+- `buildRedactedRegions()` now sets `source` explicitly at the point each loop already knows its own provenance.
+- The server still infers when `source` is absent (`agentId` present → `dom`, else `vision`) for back-compat, but that is a fallback, NOT a substitute: it is correct only because it mirrors 2b's current behaviour, and would go silently stale if that behaviour changed.
+- `source` is a STRICT closed literal (invalid values hard-reject) — deliberately unlike `PiiType`'s `other` escape hatch, because provenance is a fact the producer knows, not an ambiguous classification.
+
+**Test totals: 170** — 80 server, 32 redaction, 30 action-executor, 28 dom-scanner.
 Wires capture → detect → scan → redact → send → act → repeat into the actual extension. Builds the demo page (password field, email field, embedded "ID card" image) and the timing/resource instrumentation from Section 8.
 
 ---

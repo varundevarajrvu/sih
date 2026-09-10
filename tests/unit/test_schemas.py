@@ -150,3 +150,77 @@ class TestPiiTypeClosedEnum:
         req = AnalyzeRequest.model_validate(data)  # must not raise
         assert req.redactedRegions[0].type == PiiType.OTHER
         assert req.redactedRegions[0].rawType == "some-brand-new-pii-category"
+
+
+class TestRedactedRegionSource:
+    """Retry 2 fix (orchestrator ruling #6, 2026-09-10): RedactedRegion
+    gains `source: Optional[Literal["dom", "vision"]]`, optional for
+    back-compat since no client sends it yet, with a deliberate inferred
+    default when absent (see schemas.RedactedRegion docstring for the
+    full rationale)."""
+
+    def test_explicit_dom_source_is_respected(self):
+        region = RedactedRegion.model_validate(
+            {"type": "password", "bbox": {"x": 0, "y": 0, "w": 10, "h": 10}, "source": "dom"}
+        )
+        assert region.source == "dom"
+
+    def test_explicit_vision_source_is_respected(self):
+        region = RedactedRegion.model_validate(
+            {"type": "other", "bbox": {"x": 0, "y": 0, "w": 10, "h": 10}, "source": "vision"}
+        )
+        assert region.source == "vision"
+
+    def test_explicit_source_wins_even_when_agent_id_present(self):
+        """The inference is a FALLBACK, not an override. A region that
+        happens to carry an agentId but is explicitly marked
+        source='vision' (e.g. a future client attaching agentId for some
+        other bookkeeping reason) must not be silently reclassified as
+        'dom'."""
+        region = RedactedRegion.model_validate(
+            {
+                "type": "other",
+                "bbox": {"x": 0, "y": 0, "w": 10, "h": 10},
+                "agentId": "agent-1",
+                "source": "vision",
+            }
+        )
+        assert region.source == "vision"
+
+    def test_absent_source_with_agent_id_infers_dom(self):
+        """Back-compat default #1: Phase 2b currently sets agentId on
+        every DOM-sourced region and omits it only for vision-only ones,
+        so presence of agentId is today a reliable proxy for 'dom'."""
+        region = RedactedRegion.model_validate(
+            {"type": "password", "bbox": {"x": 0, "y": 0, "w": 10, "h": 10}, "agentId": "agent-1"}
+        )
+        assert region.source == "dom"
+
+    def test_absent_source_without_agent_id_infers_vision(self):
+        """Back-compat default #2: no agentId, no explicit source -> the
+        region is treated as vision-sourced, which is what excludes it
+        from the bbox-overlap PII-leak strategy (see test_pii_leak.py's
+        regression suite for why that matters)."""
+        region = RedactedRegion.model_validate(
+            {"type": "other", "bbox": {"x": 0, "y": 0, "w": 10, "h": 10}}
+        )
+        assert region.source == "vision"
+
+    def test_invalid_source_value_rejected(self):
+        """Unlike PiiType's OTHER escape hatch, `source` is a strict
+        closed Literal — there's no legitimate "unknown provenance"
+        category the system should silently accept; an invalid value
+        here is a client bug."""
+        with pytest.raises(ValidationError):
+            RedactedRegion.model_validate(
+                {"type": "password", "bbox": {"x": 0, "y": 0, "w": 10, "h": 10}, "source": "camera"}
+            )
+
+    def test_existing_fixtures_without_source_field_still_parse(self, load_fixture):
+        """The core back-compat requirement: a payload with no `source`
+        field anywhere must not become a 422 for a client that doesn't
+        send it yet."""
+        data = load_fixture("valid_request_with_redaction.json")
+        assert "source" not in data["redactedRegions"][0]  # fixture predates this field
+        req = AnalyzeRequest.model_validate(data)  # must not raise
+        assert req.redactedRegions[0].source == "dom"  # agentId="agent-1" present -> inferred dom

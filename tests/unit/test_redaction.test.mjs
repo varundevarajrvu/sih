@@ -107,6 +107,7 @@ describe("buildRedactedRegions (pure, no canvas)", () => {
     assert.equal(region.rawType, "cell phone");
     assert.deepEqual(region.bbox, REGION_B);
     assert.equal("agentId" in region, false, "vision-only region must not invent an agentId");
+    assert.equal(region.source, "vision");
   });
 
   test("vision box is NEVER scaled by scaleFactor, regardless of its value", () => {
@@ -122,6 +123,7 @@ describe("buildRedactedRegions (pure, no canvas)", () => {
     assert.equal("rawType" in region, false);
     assert.equal(region.agentId, "agent-1");
     assert.deepEqual(region.bbox, REGION_A_CORRECT);
+    assert.equal(region.source, "dom");
   });
 
   test("DEVICEPIXELRATIO REGRESSION: DOM bbox with scaleFactor=1 does NOT match the correct HiDPI-scaled location", () => {
@@ -161,6 +163,50 @@ describe("buildRedactedRegions (pure, no canvas)", () => {
     const regions = buildRedactedRegions([VISION_BOX_BOOK], [DOM_NODE_EMAIL], { scaleFactor: SCALE_FACTOR });
     assert.equal(regions.length, 2);
   });
+
+  describe("source provenance (explicit, not inferred from agentId)", () => {
+    test("every vision-derived region carries source:'vision', vision-only input", () => {
+      const regions = buildRedactedRegions(allVisionBoxes(), [], { scaleFactor: SCALE_FACTOR });
+      assert.ok(regions.length > 0);
+      for (const region of regions) assert.equal(region.source, "vision");
+    });
+
+    test("every DOM-derived region carries source:'dom', DOM-only input", () => {
+      const regions = buildRedactedRegions([], allDomNodes(), { scaleFactor: SCALE_FACTOR });
+      assert.ok(regions.length > 0);
+      for (const region of regions) assert.equal(region.source, "dom");
+    });
+
+    test("mixed call: source is correct per-region, not just per-call -- and independent of agentId presence", () => {
+      const regions = buildRedactedRegions(allVisionBoxes(), allDomNodes(), { scaleFactor: SCALE_FACTOR });
+      assert.equal(regions.length, 5); // 2 vision + 3 usable dom (matches the checkpoint test's count)
+
+      const visionRegions = regions.filter((r) => r.source === "vision");
+      const domRegions = regions.filter((r) => r.source === "dom");
+      assert.equal(visionRegions.length, 2);
+      assert.equal(domRegions.length, 3);
+
+      // Every vision region lacks agentId; every dom region here happens to
+      // have one -- but the assertion is on `source` directly, not derived
+      // from agentId presence, since that's precisely the coupling this
+      // field exists to break.
+      for (const r of visionRegions) assert.equal("agentId" in r, false);
+      for (const r of domRegions) assert.equal(typeof r.agentId, "string");
+
+      // Every region, no exceptions, has a valid source value.
+      for (const region of regions) {
+        assert.ok(region.source === "dom" || region.source === "vision", `invalid/missing source: ${region.source}`);
+      }
+    });
+
+    test("source is never used to smuggle payload data -- always exactly 'dom' or 'vision', regardless of label/piiType content", () => {
+      const weirdVision = { label: "some very unusual detector label with spaces & symbols !@#", xmin: 0, ymin: 0, xmax: 10, ymax: 10 };
+      const weirdDom = { piiType: "not-a-real-pii-type-at-all", agentId: "agent-x", bbox: { x: 0, y: 0, w: 10, h: 10 } };
+      const regions = buildRedactedRegions([weirdVision], [weirdDom], { scaleFactor: 1 });
+      assert.equal(regions[0].source, "vision");
+      assert.equal(regions[1].source, "dom");
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -189,19 +235,31 @@ describe("redact() checkpoint: fixture image + fixture boxes -> correct PNG + co
     assert.equal(result.redactedRegions.length, 5);
     assert.ok(!result.redactedRegions.some((r) => r.agentId === "agent-4"));
 
+    // Every region must carry an explicit, correct source -- this is what
+    // the server now relies on instead of inferring from agentId presence
+    // (see the "no matching agentId" false-positive this addendum fixes).
+    for (const region of result.redactedRegions) {
+      assert.ok(region.source === "dom" || region.source === "vision");
+    }
+    assert.equal(result.redactedRegions.filter((r) => r.source === "vision").length, 2);
+    assert.equal(result.redactedRegions.filter((r) => r.source === "dom").length, 3);
+
     const passwordRegion = result.redactedRegions.find((r) => r.agentId === "agent-1");
     assert.deepEqual(passwordRegion.bbox, REGION_A_CORRECT);
     assert.equal(passwordRegion.type, "password");
+    assert.equal(passwordRegion.source, "dom");
 
     const phoneRegion = result.redactedRegions.find((r) => r.rawType === "cell phone");
     assert.equal(phoneRegion.type, "other");
     assert.deepEqual(phoneRegion.bbox, REGION_B);
     assert.equal("agentId" in phoneRegion, false);
+    assert.equal(phoneRegion.source, "vision");
 
     const unknownRegion = result.redactedRegions.find((r) => r.agentId === "agent-5");
     assert.equal(unknownRegion.type, "other");
     assert.equal(unknownRegion.rawType, "weird-unlisted-type");
     assert.deepEqual(unknownRegion.bbox, REGION_UNKNOWN_OFFCANVAS, "off-canvas region metadata must be reported unclamped");
+    assert.equal(unknownRegion.source, "dom");
 
     // --- Pixel verification: sample INSIDE each redacted rect ---
     const sampler = await decodePngForSampling(result.redactedImage);

@@ -1,0 +1,21 @@
+{
+  "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "domSnapshot": [
+    {
+      "agentId": "agent-5",
+      "tag": "button",
+      "role": "button",
+      "type": "submit",
+      "text": "Continue",
+      "bbox": {"x": 100, "y": 200, "w": 80, "h": 30},
+      "sensitive": false
+    }
+  ],
+  "redactedRegions": [
+    {
+      "type": "other",
+      "bbox": {"x": 90, "y": 190, "w": 200, "h": 200}
+    }
+  ],
+  "taskGoal": "Click Continue"
+}

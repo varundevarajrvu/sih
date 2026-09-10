@@ -55,6 +55,25 @@
  * image. See the CONTRACT GAP note near `normalizePiiType` for a
  * caveat this creates against `domSnapshot`'s own (unconfirmed) bbox
  * units.
+ *
+ * ---------------------------------------------------------------------
+ * `source` — EXPLICIT provenance, not inferred (2026-09-10 addendum)
+ * ---------------------------------------------------------------------
+ * Every region carries `source: "dom" | "vision"` set directly by
+ * `buildRedactedRegions` at construction time, in the same loop that
+ * already knows which array it's iterating. This was added after a
+ * live browser run: server-side `find_pii_leaks()`'s bbox-overlap
+ * fallback correlation is only a valid PII signal for DOM-sourced
+ * regions (a vision detection just means "an object occupies these
+ * pixels," not "this DOM node's text is sensitive"), and the server
+ * used to INFER provenance from "agentId present => dom" purely because
+ * that happened to mirror this module's own agentId behavior. That
+ * inference is a compatibility fallback for older payloads, not a
+ * substitute for the real fact — if this module's agentId behavior ever
+ * changes, an inferred `source` would go silently stale while an
+ * explicit one would not. Do not remove `source` or derive it
+ * downstream from `agentId`; set it once, here, where the true
+ * provenance is actually known.
  */
 
 // ---------------------------------------------------------------------------
@@ -198,7 +217,7 @@ function validateScaleFactor(scaleFactor) {
  *   devicePixelRatio). Applied to domNodes only; visionBoxes are never
  *   scaled. Defaults to 1 — see the coordinate-space hazard note at the
  *   top of this file.
- * @returns {Array<{type: string, rawType?: string, bbox: {x:number,y:number,w:number,h:number}, agentId?: string}>}
+ * @returns {Array<{type: string, rawType?: string, bbox: {x:number,y:number,w:number,h:number}, agentId?: string, source: "dom"|"vision"}>}
  */
 export function buildRedactedRegions(visionBoxes = [], domNodes = [], options = {}) {
   const { scaleFactor = 1 } = options;
@@ -210,7 +229,7 @@ export function buildRedactedRegions(visionBoxes = [], domNodes = [], options = 
     if (!isUsableVisionBox(box)) continue; // malformed box: nothing usable to draw, skip rather than crash the whole batch
     const bbox = visionBoxToBBox(box);
     const { type, rawType } = normalizePiiType(box.label);
-    const region = { type, bbox };
+    const region = { type, bbox, source: "vision" };
     if (rawType !== undefined) region.rawType = rawType;
     // Vision-only regions legitimately have no agentId — left absent, not invented.
     regions.push(region);
@@ -220,7 +239,7 @@ export function buildRedactedRegions(visionBoxes = [], domNodes = [], options = 
     if (!node || !isUsableDomBBox(node.bbox)) continue; // no usable bbox: nothing to draw here (its text is still stripped separately by sanitizeDomSnapshot)
     const bbox = scaleBBox(node.bbox, scaleFactor);
     const { type, rawType } = normalizePiiType(node.piiType ?? node.type);
-    const region = { type, bbox };
+    const region = { type, bbox, source: "dom" };
     if (rawType !== undefined) region.rawType = rawType;
     if (typeof node.agentId === "string" && node.agentId.length > 0) {
       region.agentId = node.agentId; // DOM-sourced region: include agentId for server-side two-way correlation

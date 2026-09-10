@@ -53,12 +53,23 @@ Phase 2c RESULT) — binding, implemented in this file:
      Flagging this scoping read of ruling #5 for the orchestrator to
      correct if "type fields" (plural) was meant to include DomNode.type
      too.
+  6. RETRY 2 FIX (2026-09-10, false positive found in live Phase 4
+     browser run): `RedactedRegion` gains `source: Optional[Literal["dom",
+     "vision"]]`. find_pii_leaks()'s bbox-overlap strategy (strategy 2)
+     is now restricted to `source == "dom"` regions only — see that
+     function's docstring for why. `source` defaults to None on the
+     wire and is resolved by `_infer_source_from_agent_id` below when
+     absent, so existing/older clients (nothing sends `source` yet)
+     keep working without a 422. Phase 2b's `buildRedactedRegions()`
+     should eventually populate this explicitly instead of relying on
+     inference — reported to the orchestrator to route, not edited here
+     (Phase 2b's file is out of this module's scope).
 """
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -171,6 +182,17 @@ class RedactedRegion(BaseModel):
     preserves the original string whenever the incoming value didn't
     match a known PiiType and was coerced to OTHER — never lost, just
     reclassified as unclassified-but-still-redacted.
+
+    `source` is provenance: did this region come from a DOM node
+    (Phase 2a/2b, `piiType` + `bbox` on a real element) or from Phase
+    0's vision-model object detection merged in by Phase 2b? This
+    matters because bbox-overlap correlation (find_pii_leaks strategy 2)
+    is only meaningful for "dom" regions — see that function's docstring
+    for the false positive this fixes. `source` is intentionally a
+    strict closed Literal (unlike PiiType's OTHER escape hatch): there
+    is no "unknown provenance" case that should silently do anything
+    other than fall back to inference below — an invalid value here is
+    a genuine client bug, not an unanticipated-but-legitimate category.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -182,6 +204,19 @@ class RedactedRegion(BaseModel):
     )
     bbox: BBox
     agentId: Optional[str] = None
+    source: Optional[Literal["dom", "vision"]] = Field(
+        default=None,
+        description=(
+            "provenance of this region: 'dom' or 'vision'. Optional for "
+            "back-compat — no client sends this yet. When absent, inferred "
+            "from agentId presence (see _infer_source_from_agent_id): "
+            "Phase 2b sets agentId on every DOM-sourced region and "
+            "deliberately omits it for vision-only ones, so agentId "
+            "presence is currently a reliable proxy for provenance. Once "
+            "Phase 2b sends `source` explicitly this inference becomes a "
+            "no-op fallback rather than the primary signal."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -198,6 +233,20 @@ class RedactedRegion(BaseModel):
                 data["type"] = PiiType.OTHER.value
         return data
 
+    @model_validator(mode="after")
+    def _infer_source_from_agent_id(self) -> "RedactedRegion":
+        """Back-compat default, chosen deliberately (orchestrator ruling
+        #6, 2026-09-10): absent `source` + present `agentId` -> "dom";
+        absent `source` + absent `agentId` -> "vision". This mirrors
+        Phase 2b's actual behavior today (agentId set on every DOM-sourced
+        region, omitted on vision-only ones) so it is correct NOW, not
+        just a plausible guess — but it is explicitly a fallback: an
+        explicit `source` on the wire always wins and is never
+        overridden here."""
+        if self.source is None:
+            self.source = "dom" if self.agentId is not None else "vision"
+        return self
+
 
 def find_pii_leaks(dom_snapshot: list[DomNode], redacted_regions: list[RedactedRegion]) -> list[str]:
     """Pure function: detect domSnapshot nodes carrying raw values that
@@ -211,14 +260,29 @@ def find_pii_leaks(dom_snapshot: list[DomNode], redacted_regions: list[RedactedR
 
     Two correlation strategies, either one is sufficient to flag a leak:
       1. agentId match between a DomNode and a RedactedRegion.
-      2. bbox overlap: a redacted region's box covers >50% of a
-         DomNode's box (catches vision-only redacted regions that have
-         no agentId but geometrically sit on top of a DOM node the
-         client should have blanked).
+      2. bbox overlap: a DOM-SOURCED redacted region's box covers >50%
+         of a DomNode's box, with no matching agentId (strategy 1
+         already covers the case where one exists).
     Independently of both: any DomNode with `sensitive=True` that still
     carries non-empty `text` is flagged, regardless of redactedRegions —
     a node the client itself labeled sensitive must never carry a raw
     value, redacted-region bookkeeping notwithstanding.
+
+    RETRY 2 FIX (2026-09-10, false positive from a live Phase 4 browser
+    run — orchestrator ruling #6): strategy 2 is restricted to
+    `region.source == "dom"`. It used to run against ALL regions with no
+    matching agentId, which after ruling #2 (Phase 2b sets agentId on
+    every DOM-sourced region, omits it only for vision-only ones) meant
+    strategy 2 was firing EXCLUSIVELY on vision-detected object boxes —
+    precisely the case where bbox overlap carries no PII signal. A
+    detected `person`/`laptop`/`book` box means "an object occupies
+    these pixels," not "the DOM node rendered near those pixels holds
+    PII" — on a real page vision boxes overlap ordinary text/buttons
+    constantly (the reported false positive: a vision box flagged a
+    "Continue" button's raw text as a leak). DOM-sourced regions
+    (`source == "dom"`) are unaffected by this fix and remain strict:
+    a DOM-sourced region overlapping a raw-text node is still a genuine
+    leak.
 
     SECURITY INVARIANT (added after orchestrator-caught defect, Section 7
     rule 5, 2026-09-10): violation strings identify the *location*
@@ -251,8 +315,12 @@ def find_pii_leaks(dom_snapshot: list[DomNode], redacted_regions: list[RedactedR
                 )
                 flagged_agent_ids.add(node.agentId)
 
-        # Strategy 2: bbox overlap correlation (catches vision-only regions
-        # with no agentId that geometrically sit on a DOM node).
+        # Strategy 2: bbox overlap correlation — DOM-sourced regions only.
+        # A vision-sourced region overlapping a node tells you nothing
+        # about that node's sensitivity (see docstring/ruling #6); only
+        # apply this to regions that actually came from DOM redaction.
+        if region.source != "dom":
+            continue
         for node in dom_snapshot:
             if node.agentId in flagged_agent_ids:
                 continue
@@ -263,8 +331,8 @@ def find_pii_leaks(dom_snapshot: list[DomNode], redacted_regions: list[RedactedR
             if region.bbox.overlap_ratio_with(node.bbox) > 0.5:
                 violations.append(
                     f"domSnapshot node agentId={node.agentId!r} carries raw text and its "
-                    f"bbox overlaps >50% with redactedRegions entry (type={region.type.value!r}) "
-                    f"bbox with no matching agentId declared"
+                    f"bbox overlaps >50% with a DOM-sourced redactedRegions entry "
+                    f"(type={region.type.value!r}) with no matching agentId declared"
                 )
                 flagged_agent_ids.add(node.agentId)
 
