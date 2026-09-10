@@ -347,7 +347,12 @@ async function runAgentLoop() {
     const sensitiveAgentIds = new Set(sensitiveNodes.map((n) => n.agentId));
     let mergedDomSnapshot = domSnapshot.map((node) => {
       const s = sensitiveByAgentId.get(node.agentId);
-      return s ? { ...node, sensitive: true, piiType: s.piiType } : node;
+      // NOTE: do NOT merge piiType here. server/schemas.py's DomNode is
+      // extra="forbid" and has no piiType field, so sending it is a hard 422.
+      // The PII type already reaches the server via redactedRegions
+      // ({type, bbox, agentId}) — putting it on DomNode too is redundant.
+      // sensitive:true alone still triggers sanitizeDomSnapshot()'s strip.
+      return s ? { ...node, sensitive: true } : node;
     });
 
     // ---- 4. RULING 2 -- bbox normalization, ONE point. domSnapshot's

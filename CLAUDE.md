@@ -206,7 +206,9 @@ Popup↔background messages (`SET_TASK_GOAL`, `RUN_TEST_DETECTION`, …) are int
 
 **⚠️ COLD-START = 19,407ms** (vs Phase 0's 11.7s cold / 8.4s warm). **Phase 4 MUST pre-warm** — fire a throwaway inference at install/startup so the first user-visible detection is warm. Otherwise the first detection in a live demo takes ~19s.
 
-**CONTRACT RULING — who produces `domSnapshot`?** Section 4 never said, and Phase 2c consumes it. **Phase 3 (`action-executor`) is the producer**: it already walks actionable elements and assigns `data-agent-id`, so it owns the ID→element map that `domSnapshot` is built from. Phase 2a produces `sensitiveNodes` (the flagged subset) which Phase 4 merges in — setting each node's `sensitive` flag and `piiType`. The two are complementary, not competing: 2a classifies, 3 enumerates.
+**CONTRACT RULING — who produces `domSnapshot`?** Section 4 never said, and Phase 2c consumes it. **Phase 3 (`action-executor`) is the producer**: it already walks actionable elements and assigns `data-agent-id`, so it owns the ID→element map that `domSnapshot` is built from. Phase 2a produces `sensitiveNodes` (the flagged subset) which Phase 4 merges in — setting each node's `sensitive` flag. The two are complementary, not competing: 2a classifies, 3 enumerates.
+
+> **CORRECTION (found in the Phase 4 browser run):** an earlier version of this ruling also said to merge `piiType` into `domSnapshot`. That is WRONG and produces a hard 422 — `DomNode` is `extra="forbid"` and has no `piiType` field. Merge `sensitive` ONLY. The PII type already reaches the server on `redactedRegions` (`{type, bbox, agentId}`), correlated by `agentId`; duplicating it on `DomNode` is redundant, and `DomNode` is deliberately the minimal *sanitized* shape. `sensitive: true` alone still triggers `sanitizeDomSnapshot()`'s text strip.
 
 ### Phase 2a — `dom-pii-scanner`
 Content-script DOM walker. Flags `input[type=password]`, `autocomplete` values (`cc-number`, `current-password`, `email`, etc.), and regex-matches visible text nodes for email/phone/Aadhaar(12-digit)/PAN patterns.
@@ -322,6 +324,25 @@ Content-script side of the loop: assigns `data-agent-id` to actionable elements 
 **Wiring:** `content_scripts.js` = `["vendor/browser-polyfill.js", "lib/action-executor.js", "content.js"]`. Loop = capture → detect → buildDomSnapshot (stamps ids) → scanForPii (reuses ids) → stamp `data-agent-sensitive` + merge → scale bboxes → filter vision classes → redact + sanitize → `assertNoRawPii()` (throws, fail-closed) → POST /analyze → executeAction. `MAX_STEPS = 6` or until `action === "done"`.
 **Vision filter:** `{person, tv, tvmonitor, laptop, cell phone, book}`, case-insensitive on the flattened label.
 **Server:** `server/main.py` gained only CORS middleware; 65/65 still green, preflight live-verified.
+
+#### ✅ PHASE 4 CHECKPOINT PASSED — browser-verified 2026-09-10
+
+Full loop closed on `demo/test-page.html`: `outcome: "done"`, 3 steps, `type`(agent-4) → `click`(agent-5) → `done`(page). Capture → detect → scan → redact → send → act, self-terminating.
+
+| Metric | Measured |
+|---|---|
+| Total, 3 steps | **3,182 ms** |
+| Peak JS heap | 30.5 MB |
+| scan | 1.9–5.4 ms |
+| redact | 53–57 ms |
+| send+response | 19–322 ms |
+| detect | 739–924 ms |
+
+**Integration bug found and fixed by this run:** Phase 4 merged `piiType` into `domSnapshot`, which `DomNode` (`extra="forbid"`) rejects — hard 422. The orchestrator's own Phase 3 ruling had wrongly instructed this; corrected above. Note the server behaved exactly as designed, catching a payload mismatch loudly at the boundary rather than silently ignoring an unknown field.
+
+**⚠️ OPEN: the vision path contributed ZERO on this run.** `detections: 0` across all 3 steps; all 4 redaction regions were DOM-sourced. An earlier run on the same page reported `detections: 1` (the ID-card face firing `person`) with detect at 21,971 ms. Both figures moved together, which implicates the captured image rather than the model — `captureVisibleTab` captures the visible VIEWPORT ONLY, so an ID card below the fold yields both a faster inference and nothing to find. **Re-run with the entire page visible unscrolled before trusting any vision-side rubric claim.** Visual-context accuracy (25%) + redaction precision (20%) is the largest scoring block in the rubric.
+
+**⚠️ ALSO UNVERIFIED:** the `Section 5 check PASSED` log lines (per-step assertion on the real outgoing payload) have not yet been captured. That assertion is the project's central privacy claim and remains unproven in a browser.
 Wires capture → detect → scan → redact → send → act → repeat into the actual extension. Builds the demo page (password field, email field, embedded "ID card" image) and the timing/resource instrumentation from Section 8.
 
 ---
