@@ -25,3 +25,15 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Vendored ML binaries — reproducible, not source.
+# ~116MB of ONNX weights + ORT runtime. Kept out of git history because this
+# is a public repo and these get swapped as the detector changes.
+# Re-fetch per spike/README.md; rebuild the bundle with:
+#   cd spike && npm install && npm run build-chrome-harness
+spike/chrome-harness/models/
+spike/chrome-harness/ort/
+spike/chrome-harness/offscreen.bundle.js
+
+# Python venv
+.venv/

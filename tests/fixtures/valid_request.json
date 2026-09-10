@@ -1,0 +1,25 @@
+{
+  "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "domSnapshot": [
+    {
+      "agentId": "agent-1",
+      "tag": "button",
+      "role": "button",
+      "type": "submit",
+      "text": "Submit",
+      "bbox": {"x": 10, "y": 20, "w": 80, "h": 30},
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "text": "",
+      "bbox": {"x": 10, "y": 60, "w": 200, "h": 30},
+      "sensitive": false
+    }
+  ],
+  "redactedRegions": [],
+  "taskGoal": "Click the submit button"
+}

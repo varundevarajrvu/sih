@@ -100,9 +100,84 @@ Working adapter: `spike/node-test-contract.js`. Additional confirmed details:
 
 3.5–5.8× over the ~1s gate. Measured on `onnxruntime-node` (native CPU, fp32), which is normally **faster** than browser WASM — so this is an optimistic floor, before any browser overhead. Unexplored lever: quantization (q8/int8) was deliberately not attempted, per Section 7's "don't work around a failure with an unapproved substitution."
 
-**Chrome offscreen/WebGPU half: UNVERIFIED.** Harness built at `spike/chrome-harness/` (esbuild-bundled — MV3 CSP blocks transformers.js's bare-specifier remote imports). Never run in a real browser. Open questions it exists to answer: does `navigator.gpu` exist inside an MV3 offscreen document; is the `"WORKERS"` offscreen reason accepted; does the runtime weight fetch succeed from that context. Steps in `spike/README.md`.
+**Chrome offscreen/WebGPU half: VERIFIED in browser (retry 1).**
 
-**Phase 1 is BLOCKED pending Chief's re-scope decision.**
+✅ **`navigator.gpu` IS present inside an MV3 offscreen document** — `BACKEND ACTUALLY USED: webgpu`. The single largest architectural risk in this build is resolved positively. The `"WORKERS"` offscreen reason is accepted (confirmed correct: the ORT `.mjs` self-spawns `new Worker(import.meta.url)`).
+
+⚠️ **MV3 CSP blocks the default ORT path.** onnxruntime-web resolves its backend via a dynamic `import()` from jsdelivr — a *script* load, governed by `script-src 'self'`, not a CSP-exempt `fetch()`. Host permissions do not override CSP. **Fix, mandatory for Phase 1:** bundle ORT locally and set `env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("ort/")`. Weights are likewise local with `env.allowRemoteModels = false` — required anyway, since an on-device privacy tool must not phone a CDN to function.
+
+⚠️ **dtype must be pinned explicitly.** The library defaults `wasm` to `q8` but `webgpu` to `fp32`; an unpinned webgpu→wasm fallback needs two weight files. Spike pins `fp32` on both.
+
+**GATE: STILL FAIL — and WebGPU is the slower path.**
+| Config | Warm inference |
+|---|---|
+| Node, native CPU fp32 | 3.5–5.8s |
+| Browser, WebGPU fp32 | **8.7s** (cold 14.1s) |
+| Browser, WASM fp32 | NOT YET MEASURED |
+
+WebGPU is ~2× slower than CPU. Cause is in the ORT log: `Some nodes were not assigned to the preferred execution providers`. YOLOS is a DETR-style ViT — shape ops fall back to CPU, splitting the graph and forcing GPU↔CPU tensor round-trips on a model too small to amortize them. **Do not assume WebGPU is the fast path for this model.**
+
+**FINAL MATRIX** (retry 2, measured in-browser, median of 3 warm runs per cell):
+
+| Config | Median warm | vs 1s gate |
+|---|---|---|
+| **webgpu + fp32** | **8,432 ms** | 8.4× FAIL |
+| webgpu + q8 | 13,450 ms | 13.5× FAIL |
+| wasm + fp32 | 33,576 ms | 33.6× FAIL |
+| wasm + q8 | 33,037 ms | 33× FAIL |
+
+**Conclusions — binding on Phase 1:**
+1. **WebGPU is the correct backend, decisively** — 4× faster than WASM in-browser (8.4s vs 33.6s). Do not compare against Node's native `onnxruntime-node` CPU numbers; that backend is unavailable to an extension and is not a meaningful baseline.
+2. **q8 is DOMINATED — do not ship it.** Slower than fp32 on *both* backends (quantized ops lack WebGPU kernels → CPU fallback + dequant/requant overhead per crossing) and it returned 7 detections vs fp32's 5, i.e. quantization-noise false positives. Drop the q8 weights (−9.66 MB).
+3. **`Xenova/yolos-tiny` cannot meet the gate at any setting.** It is DETR-family (a vision *transformer*): its shape ops don't map to WebGPU, the graph splits across GPU/CPU, and boundary crossings round-trip tensors. 8.4s is its floor in a browser, not a tuning problem.
+
+**CHIEF'S RE-SCOPE DECISION (2026-09-10): swap the detector to a CNN architecture.** Section 4's `Xenova/yolos-tiny` choice is SUPERSEDED. Conv-based YOLO-family detectors map cleanly to WebGPU without graph splitting. Model selection is delegated to a follow-up spike with instructions to verify availability empirically rather than assume it. The harness (local ORT, offscreen doc, benchmark matrix, contract adapter) is architecture-independent and is retained as-is.
+
+**DETECTOR SWAP ATTEMPTED — BLOCKED BY AN ONNXRUNTIME-WEB LIMITATION, NOT BY MODEL CHOICE.**
+
+`pipeline()` supports only `detr, rt_detr, rt_detr_v2, rf_detr, d_fine, table-transformer, yolos` (verified in `models.js`) — no YOLOv5/8/9/10/11. Of the CNN-backbone candidates:
+
+| Candidate | Size | Result on WebGPU |
+|---|---|---|
+| `onnx-community/rtdetr_r18vd` | 82.5 MB | ❌ crash + graph-split warnings |
+| `onnx-community/dfine_n_coco-ONNX` | 15.3 MB | ❌ crash, **zero** graph-split warnings |
+| `onnx-community/rfdetr_nano-ONNX` | 108 MB | excluded: >100 MB GitHub hard limit, DINOv2 **ViT** backbone |
+
+Both crashes are identical and are an ORT backend gap, not a model defect:
+```
+Error: using ceil() in shape computation is not yet supported for AveragePool
+```
+onnxruntime-web's WebGPU/JSEP execution provider has no `AveragePool` kernel with `ceil_mode=1`.
+
+**Key signal:** D-FINE produced NO node-assignment warnings — its graph maps cleanly to WebGPU and it failed on exactly one unsupported op. It is the strongest candidate *if* that op is worked around (graph patch, newer ORT build, or WASM).
+
+**STATE OF PLAY: `Xenova/yolos-tiny` @ 8,432 ms on WebGPU is the only configuration proven to run end-to-end in the browser.** Its weights were removed from the spike harness; Phase 1 re-fetches them. The contract, the local-ORT setup, and the offscreen architecture are all model-independent and remain valid.
+
+**Rubric note driving the next decision:** latency is 15% of the score. Visual accuracy (25%), PII recall (20%), redaction precision (20%), and resource utilization (20%) — 85% combined — all require a *working end-to-end pipeline*, which does not yet exist. A fast detector with no pipeline around it scores nothing.
+
+---
+
+### ✅ PHASE 0 CLOSED — 2026-09-10, by Chief's decision
+
+**Architecturally PASSED. Latency gate formally RE-SCOPED from ~1s to the measured 8,432 ms floor.**
+
+Every structural question Phase 0 existed to answer is resolved: WebGPU runs in an MV3 offscreen document, ORT and weights load locally with zero network calls under an unrelaxed CSP, and the inference contract is confirmed in-browser. The remaining problem is detector performance, which is an optimization, not an architectural unknown.
+
+**SHIPPING CONFIG for Phase 1:** `Xenova/yolos-tiny`, `device: "webgpu"`, `dtype: "fp32"` — the only configuration proven to run end-to-end. Weights must be re-fetched (removed from the spike harness).
+
+**Mandatory carry-overs into Phase 1** — these were learned the hard way and are not optional:
+- Bundle ORT locally; set `env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("ort/")`. The CDN default is blocked by MV3 CSP.
+- Bundle weights locally; `env.allowRemoteModels = false`. Required for the on-device privacy claim.
+- Pin `dtype` explicitly on every `pipeline()` call.
+- Flatten the library's nested `box` into the flat contract — the library never does this.
+- `RawImage.fromBlob()`, not `fromURL()` with a `data:` URI.
+
+**DEFERRED, not abandoned — the detector-speed track.** Reopen after the pipeline is demoable. Ranked by expected value:
+1. D-FINE nano (15.3 MB) on **WASM** — already bundled locally, no download needed. It produced zero graph-split warnings, so it maps cleanly; only one unsupported WebGPU op stopped it.
+2. Raw-ORT **YOLOv10n** (~9 MB, NMS-free by design) — bypasses the `pipeline()` API and its architecture whitelist entirely.
+3. Offline ONNX graph patch rewriting `ceil_mode` `AveragePool` → pad + floor-mode, unblocking D-FINE on WebGPU.
+
+**Class-name trap for whoever reopens this:** the replacement candidates use `tvmonitor`/`sofa` where `yolos-tiny` uses `tv`/`couch`. Never literal-match COCO class names across models — map through `id2label` at runtime.
 
 ### Phase 1 — `extension-scaffold`
 MV3 manifest, background service worker, content script skeleton, popup for task input, the offscreen document wired to Phase 0's confirmed inference call.
@@ -135,6 +210,25 @@ FastAPI `/analyze` endpoint, Pydantic schemas, Ollama integration (`qwen2.5vl:7b
 { "action": "click" | "type" | "scroll" | "done", "targetId": "agent-1", "value": "optional" }
 ```
 This module needs nothing from 2a/2b/1 except their *contracts* — build and test it standalone against a hand-written fixture payload.
+
+#### Phase 2c RESULT — recorded 2026-09-10. Checkpoint PASSED (verified: 43/43 tests + live curl by orchestrator).
+
+**Contract decisions (Section 7 rule 5) — binding on all downstream phases:**
+
+1. **`domSnapshot` element shape** — was unspecified (`[...]`). Now **provisional**:
+   ```
+   DomNode { agentId, tag, role, type, text, bbox:{x,y,w,h}, sensitive }
+   ```
+   Phase 2a (`dom-pii-scanner`) is the AUTHORITY. When 2a lands, reconcile — if it differs, fix it here, don't patch downstream.
+2. **`RedactedRegion` gains an optional `agentId`** — enables two-way domSnapshot↔redactedRegions correlation. bbox-overlap remains the fallback for vision-only regions with no DOM node.
+3. **`targetId` is required even for `scroll`/`done`** — use the named constant sentinel `"page"`. Phase 3 must use the constant, not re-derive the string.
+4. **Status codes:** `400` + `errorCode: "PII_LEAK_DETECTED"` for a Section 5 leak; `422` for ordinary schema violations. A client bug that leaks PII must be separately monitorable by Phase 4 instrumentation without string-matching prose.
+5. **PII `type` is a closed enum** — `password, cc-number, current-password, email, tel, aadhaar, pan` + an explicit `other` escape hatch. An unanticipated PII type degrades to flagged-but-unclassified; it is NEVER silently dropped. False negatives on PII are the dangerous direction.
+
+**⚠️ SECURITY DEFECT FOUND IN VERIFICATION — RESOLVED & VERIFIED (65/65 tests + live curl, sentinel absent from response bytes). Its lesson applies to every module, not just 2c.**
+The PII-leak rejection originally echoed the offending payload back in its own error body (Pydantic embeds the raw request under `input`), so the endpoint that refuses leaked PII reflected `"text":"hunter2"` to the caller and into logs. The test suite was green because every assertion checked only *that* the request was rejected — none checked what the rejection *contained*.
+
+**Rule for all phases: an error path is a data egress path.** Assert on the serialized bytes of error responses and log lines, not just on status codes. Section 5's invariant binds failure paths exactly as much as success paths.
 
 ### Phase 3 — `action-executor`
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.

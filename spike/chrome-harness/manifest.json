@@ -2,18 +2,19 @@
   "manifest_version": 3,
   "name": "SIH 26171 - Phase 0 webgpu-spike",
   "version": "0.0.1",
-  "description": "Spike only, not a feature. Answers one question: does Xenova/yolos-tiny run via @huggingface/transformers inside a Chrome MV3 offscreen document, on WebGPU with automatic WASM fallback, and how fast? No popup, no content script, no redaction logic.",
+  "description": "Spike only, not a feature. Retry 3: benchmarks CNN-backbone real-time detectors (rtdetr_r18vd, dfine_n_coco) via @huggingface/transformers inside a Chrome MV3 offscreen document on WebGPU, replacing the superseded Xenova/yolos-tiny (ViT-backbone, could not meet the ~1s gate). No popup, no content script, no redaction logic.",
   "permissions": ["offscreen"],
-  "host_permissions": [
-    "https://huggingface.co/*",
-    "https://*.huggingface.co/*",
-    "https://cdn.jsdelivr.net/*"
-  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["ort/*", "models/*", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
