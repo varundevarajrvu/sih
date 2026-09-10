@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "SIH 26171 - On-Device Visual Perception Agent",
-  "version": "0.1.0",
-  "description": "Phase 1 scaffold: on-device browser agent shell. Captures the visible tab and runs local WebGPU object detection (Xenova/yolos-tiny via @huggingface/transformers) entirely on-device -- zero network calls at inference time. PII scanning (Phase 2a), redaction (Phase 2b), and DOM action execution (Phase 3) are not implemented yet; content.js is a stub for them.",
+  "version": "0.2.0",
+  "description": "Phase 4: full on-device privacy-preserving browser agent loop. Captures the visible tab, runs local WebGPU object detection (Xenova/yolos-tiny), scans the DOM for PII, redacts both the screenshot and the DOM snapshot client-side, and only then sends the redacted result to a local FastAPI server for the next action -- zero raw PII ever leaves the client.",
   "permissions": ["offscreen", "activeTab", "scripting", "storage"],
+  "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
   "background": {
     "service_worker": "background.js"
   },
@@ -14,7 +15,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["vendor/browser-polyfill.js", "content.js"],
+      "js": ["vendor/browser-polyfill.js", "lib/action-executor.js", "content.js"],
       "run_at": "document_idle"
     }
   ],
@@ -23,7 +24,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["ort/*", "models/*", "assets/*"],
+      "resources": ["ort/*", "models/*", "assets/*", "lib/dom-scanner.js", "lib/redaction.js"],
       "matches": ["<all_urls>"]
     }
   ]

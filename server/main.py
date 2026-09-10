@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -47,6 +48,24 @@ from schemas import ActionResponse, AnalyzeRequest, PIILeakDetected, find_pii_le
 from vlm_client import VLMClient, VLMRequestContext, build_prompt, get_vlm_client
 
 app = FastAPI(title="SIH 26171 server-api", version="0.1.0")
+
+# Phase 4 (integration-loop) MINIMAL addition: the extension's background
+# service worker POSTs here from a chrome-extension:// origin. Chrome
+# extension host_permissions already let a privileged extension context
+# (background.js) bypass CORS entirely for a cross-origin fetch, so this
+# is defense-in-depth / dev-convenience rather than strictly load-bearing
+# for that one call path -- but it's needed for anyone hitting this
+# endpoint from a plain browser tab (e.g. Varun sanity-checking with a
+# local HTML page, or curl-from-browser debugging) and costs nothing for
+# a local-only dev server with no cookies/auth to protect
+# (allow_credentials stays at its default False, so wildcard origins are
+# spec-valid). No other change made to this file.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _safe_pydantic_errors(errors: list[dict]) -> list[dict]:

@@ -16,6 +16,8 @@ const saveGoalBtn = document.getElementById("saveGoal");
 const saveStatusEl = document.getElementById("saveStatus");
 const testDetectBtn = document.getElementById("testDetect");
 const detectResultEl = document.getElementById("detectResult");
+const runAgentLoopBtn = document.getElementById("runAgentLoop");
+const agentLoopResultEl = document.getElementById("agentLoopResult");
 
 // Restore the last-saved task goal whenever the popup is opened.
 browser.storage.local.get("taskGoal").then((stored) => {
@@ -63,5 +65,37 @@ testDetectBtn.addEventListener("click", async () => {
     detectResultEl.textContent = `Failed to reach background service worker: ${err.message || err}`;
   } finally {
     testDetectBtn.disabled = false;
+  }
+});
+
+// Phase 4 (integration-loop): "Run Agent Loop" -- forwards to
+// background.js, which relays to the active tab's content script
+// (RUN_AGENT_LOOP). The popup only shows a short pointer to the real
+// output; the full per-stage instrumentation and the Section 5
+// payload check are logged on the PAGE's own console (content.js runs
+// there, not here), which is why this button's own hint text and result
+// area deliberately don't try to duplicate that detail.
+runAgentLoopBtn.addEventListener("click", async () => {
+  agentLoopResultEl.textContent =
+    "Running full agent loop on the current tab... (up to 6 steps; first " +
+    "detection may be slow if the model hasn't pre-warmed yet). Open that " +
+    "tab's own DevTools console to watch it live.";
+  runAgentLoopBtn.disabled = true;
+  try {
+    const response = await browser.runtime.sendMessage({ type: "RUN_AGENT_LOOP" });
+    if (response && response.type === "RUN_AGENT_LOOP_RESULT") {
+      agentLoopResultEl.textContent =
+        `Loop finished: outcome=${response.outcome}, steps=${response.totalSteps}, ` +
+        `totalMs=${response.totalMs}.\nFull instrumentation is in the PAGE's console ` +
+        `(not this popup) -- look for the "RUN SUMMARY" block.`;
+    } else if (response && response.type === "RUN_AGENT_LOOP_ERROR") {
+      agentLoopResultEl.textContent = `ERROR: ${response.error}`;
+    } else {
+      agentLoopResultEl.textContent = `Unexpected response from background: ${JSON.stringify(response)}`;
+    }
+  } catch (err) {
+    agentLoopResultEl.textContent = `Failed to reach background service worker: ${err.message || err}`;
+  } finally {
+    runAgentLoopBtn.disabled = false;
   }
 });

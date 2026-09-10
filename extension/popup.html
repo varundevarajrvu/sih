@@ -50,7 +50,8 @@
       min-height: 1em;
       margin: 4px 0 0;
     }
-    #detectResult {
+    #detectResult,
+    #agentLoopResult {
       white-space: pre-wrap;
       word-break: break-word;
       background: #f4f4f4;
@@ -60,6 +61,7 @@
       max-height: 220px;
       overflow: auto;
       margin-top: 6px;
+      font-family: inherit;
     }
     hr {
       border: none;
@@ -88,6 +90,21 @@
   </p>
   <button id="testDetect" type="button">Run Test Detection on Current Tab</button>
   <pre id="detectResult"></pre>
+
+  <hr />
+
+  <h2>Phase 4: full agent loop</h2>
+  <p class="hint">
+    Runs the complete capture &rarr; detect &rarr; scan &rarr; redact &rarr;
+    send &rarr; act loop against the CURRENT tab, up to 6 steps or until the
+    agent reports "done". Requires the local FastAPI server running at
+    <code>http://localhost:8000</code> (see <code>demo/README.md</code>).
+    Open the page's own DevTools console (not this popup's) BEFORE
+    clicking -- all instrumentation and the Section 5 payload check are
+    logged there, not here.
+  </p>
+  <button id="runAgentLoop" type="button">Run Agent Loop</button>
+  <pre id="agentLoopResult"></pre>
 
   <script src="vendor/browser-polyfill.js"></script>
   <script src="popup.js"></script>

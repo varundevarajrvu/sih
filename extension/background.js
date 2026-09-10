@@ -31,6 +31,14 @@ const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 // offscreen document crashes or never replies.
 const DETECTION_TIMEOUT_MS = 60000;
 
+// Phase 4 (integration-loop): local FastAPI server, per CLAUDE.md Section
+// 4 Phase 2c. Fixed dev default (uvicorn's own default bind). Not made
+// configurable via storage/UI -- this is a hackathon demo against a
+// server Varun starts himself on his own machine, and a fixed constant
+// keeps the demo/README.md steps unambiguous. Change this one line (and
+// restart the extension) if the server is run on a different port.
+const SERVER_URL = "http://localhost:8000";
+
 function log(...args) {
   console.log("[background]", ...args);
 }
@@ -156,7 +164,7 @@ async function detectObjects(imageData) {
 // browser.runtime.sendMessage) -- both land on this same event.
 // ---------------------------------------------------------------------
 
-browser.runtime.onMessage.addListener((message) => {
+browser.runtime.onMessage.addListener((message, sender) => {
   if (!message || typeof message.type !== "string") return; // not for us
 
   switch (message.type) {
@@ -180,9 +188,34 @@ browser.runtime.onMessage.addListener((message) => {
     case "RUN_TEST_DETECTION":
       return handleRunTestDetection();
 
+    // ---- Phase 4 (integration-loop) additions below ----
+
+    case "CAPTURE_AND_DETECT":
+      // content.js -> background.js. sender.tab is populated because this
+      // message always originates from a content script (never the
+      // popup), so its windowId is a reliable capture target.
+      return handleCaptureAndDetect(sender);
+
+    case "ANALYZE":
+      // content.js -> background.js -> local FastAPI /analyze. Routed
+      // through the background service worker (a privileged extension
+      // context covered by manifest.json's host_permissions), not fetched
+      // directly from the content script, for the same reason
+      // captureVisibleTab is already background-owned: least-surprise,
+      // one place that talks to the network, consistent with Phase 1's
+      // existing architecture.
+      return handleAnalyze(message.payload);
+
+    case "RUN_AGENT_LOOP":
+      // popup.js -> background.js -> active tab's content script. The
+      // popup cannot message a content script directly; it has to go
+      // through the background service worker, which knows which tab is
+      // active.
+      return handleRunAgentLoopFromPopup();
+
     default:
-      // Not recognized yet -- e.g. a future Phase 2a/3 message type
-      // arriving before those modules land. Ignore rather than throw.
+      // Not recognized -- ignore rather than throw (matches this
+      // listener's existing behaviour for any unrecognized message type).
       return;
   }
 });
@@ -213,6 +246,109 @@ async function handleRunTestDetection() {
 function stripDataUrlPrefix(dataUrl) {
   const commaIdx = dataUrl.indexOf(",");
   return commaIdx === -1 ? dataUrl : dataUrl.slice(commaIdx + 1);
+}
+
+// ---------------------------------------------------------------------
+// Phase 4 (integration-loop): CAPTURE_AND_DETECT. Combines a tab capture
+// and a detection round trip into one content<->background message (fewer
+// hops than splitting them), but times each half SEPARATELY server-side
+// of that message boundary so content.js's instrumentation gets real
+// per-stage numbers instead of one lump sum that also includes messaging
+// overhead.
+// ---------------------------------------------------------------------
+async function handleCaptureAndDetect(sender) {
+  try {
+    const windowId = sender && sender.tab ? sender.tab.windowId : undefined;
+
+    const tCapture0 = performance.now();
+    const dataUrl = await browser.tabs.captureVisibleTab(windowId, { format: "png" });
+    const captureMs = performance.now() - tCapture0;
+    const screenshot = stripDataUrlPrefix(dataUrl);
+
+    const tDetect0 = performance.now();
+    const boxes = await detectObjects(screenshot);
+    const detectMs = performance.now() - tDetect0;
+
+    log(`CAPTURE_AND_DETECT OK -- capture ${captureMs.toFixed(0)}ms, detect ${detectMs.toFixed(0)}ms, ${boxes.length} detection(s)`);
+    return { type: "CAPTURE_AND_DETECT_RESULT", screenshot, boxes, captureMs, detectMs };
+  } catch (err) {
+    const message = err?.message || String(err);
+    console.error("[background] CAPTURE_AND_DETECT FAILED:", message);
+    return { type: "CAPTURE_AND_DETECT_ERROR", error: message };
+  }
+}
+
+// ---------------------------------------------------------------------
+// Phase 4 (integration-loop): ANALYZE. POSTs the already-redacted payload
+// (built and Section-5-checked by content.js) to the local FastAPI
+// server's /analyze endpoint.
+//
+// "An error path is a data egress path" (CLAUDE.md Section 7 rule 5):
+// neither failure branch below echoes `payload` (the request body --
+// contains the redacted image + sanitized DOM JSON, which is not raw PII
+// by the time it gets here, but is still not this function's business to
+// log). The network-failure branch surfaces only fetch()'s own error
+// message, which is a fixed string like "Failed to fetch" and structurally
+// cannot embed the request body. The HTTP-error branch surfaces only the
+// SERVER's response body -- which server/main.py already scrubs to
+// type/loc/msg (422), errorCode+violations with no raw value (400 PII
+// leak), or errorCode+message (502) -- never re-serializes what was sent.
+// ---------------------------------------------------------------------
+async function handleAnalyze(payload) {
+  if (!payload || typeof payload !== "object") {
+    return { type: "ANALYZE_ERROR", status: 0, error: { message: "ANALYZE called with no payload" } };
+  }
+  try {
+    const res = await fetch(`${SERVER_URL}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    let body = null;
+    try {
+      body = await res.json();
+    } catch (_parseErr) {
+      body = null; // non-JSON response body -- fall through to the status-based branches below
+    }
+    if (!res.ok) {
+      log(`ANALYZE: server returned HTTP ${res.status}`, body);
+      return { type: "ANALYZE_ERROR", status: res.status, error: body || { message: `HTTP ${res.status}` } };
+    }
+    return { type: "ANALYZE_RESULT", action: body };
+  } catch (err) {
+    // Network-level failure: server not running, wrong port, CORS
+    // rejection, etc. err.message here is a browser-generated string
+    // ("Failed to fetch", "NetworkError when attempting to fetch
+    // resource.", ...) -- never derived from `payload`.
+    const message = err?.message || String(err);
+    console.error("[background] ANALYZE network failure:", message);
+    return { type: "ANALYZE_ERROR", status: 0, error: { message } };
+  }
+}
+
+// ---------------------------------------------------------------------
+// Phase 4 (integration-loop): RUN_AGENT_LOOP, popup -> background ->
+// active tab's content script. The popup has no direct channel to a
+// content script; it must go through the background service worker,
+// which can look up the active tab and use chrome.tabs.sendMessage.
+// ---------------------------------------------------------------------
+async function handleRunAgentLoopFromPopup() {
+  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  const tab = tabs && tabs[0];
+  if (!tab || tab.id === undefined) {
+    return { type: "RUN_AGENT_LOOP_ERROR", error: "no active tab found" };
+  }
+  try {
+    const response = await browser.tabs.sendMessage(tab.id, { type: "RUN_AGENT_LOOP" });
+    return response || { type: "RUN_AGENT_LOOP_ERROR", error: "content script gave no response" };
+  } catch (err) {
+    // Most common cause: the content script isn't loaded on this tab
+    // (e.g. a chrome:// page, or the tab predates the extension being
+    // installed/reloaded -- content scripts only auto-inject on
+    // navigation). err.message here is a fixed browser-generated string,
+    // never page content.
+    return { type: "RUN_AGENT_LOOP_ERROR", error: err?.message || String(err) };
+  }
 }
 
 async function blobToBase64(blob) {
@@ -262,7 +398,19 @@ chrome.runtime.onInstalled.addListener(() => {
   runInstallSelfTest();
 });
 
+// RULING 5 (pre-warm), CLAUDE.md Phase 1 RESULT: cold model load measured
+// 19,407ms vs ~8,432ms warm. runInstallSelfTest() already fires a
+// throwaway inference (this WAS Phase 1's pre-warm mechanism, built before
+// Phase 4 existed -- it satisfies this ruling as-is for the "install"
+// half). This call extends the same warm-up to "startup": onInstalled
+// only fires once, at install time, but a full browser restart tears down
+// the offscreen document and its loaded model with it, so a fresh browser
+// session needs its own warm-up too, not just a re-check that the
+// (now-empty) offscreen document exists. Without this, the FIRST
+// detection after a browser restart -- which in a live demo is very
+// likely to be the one Varun watches -- pays the full ~19s cold cost
+// instead of a pre-warmed ~8.4s.
 chrome.runtime.onStartup.addListener(() => {
-  log("onStartup -- ensuring offscreen document exists.");
-  ensureOffscreenDocument().catch((err) => console.error("[background] onStartup ensureOffscreenDocument failed:", err));
+  log("onStartup -- ensuring offscreen document exists and pre-warming inference.");
+  runInstallSelfTest();
 });

@@ -304,6 +304,24 @@ Rationale: an agent typing into a password field is the exact failure this proje
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
 ### Phase 4 — `integration-loop`
+
+#### Phase 4 RESULT — recorded 2026-09-10. Wired and mechanically verified; 151/151 tests green. Browser run PENDING.
+
+**INTEGRATION MISMATCHES FOUND — the things isolated module tests could never have caught:**
+
+1. **`lib/*.js` are NOT uniformly classic scripts.** Only `action-executor.js` attaches to `globalThis`. `dom-scanner.js` and `redaction.js` use top-level `export` — a hard `SyntaxError` in MV3's declarative `content_scripts` array, which has no `type:"module"` option on any Chrome version. Resolved with dynamic `import(chrome.runtime.getURL(...))` from inside `content.js` plus `web_accessible_resources` entries, rather than rewriting two modules and risking their 56 passing tests. **This documentation was wrong in earlier RESULT blocks; this entry supersedes it.**
+
+2. **🔴 The call-order ruling was necessary but NOT SUFFICIENT.** Running `action-executor` first does stamp `data-agent-id` — but `dom-scanner`'s *fallback* numbering (for PII-bearing elements that aren't actionable, e.g. plain caption text) still restarted at `agent-1`, colliding with the id space already stamped. Not hypothetical: it fires on the demo page's own "ID No:" caption. Fixed by injecting a `getAgentId` hook that continues action-executor's numbering. **Any future module that mints agentIds must continue the existing sequence, never restart it.**
+
+3. **`domSnapshot.bbox` scaling had no owner.** No module scaled it, though Phase 2b's ruling requires screenshot-px at the server. `content.js` now owns `scaleDomSnapshotBBoxes()` explicitly. Note the asymmetry: `sensitiveNodes` passes to `redact()` RAW because `buildRedactedRegions()` scales internally; `domSnapshot` never touches `redact()` so it is scaled separately. Exactly once each — do not "fix" one to match the other.
+
+4. `host_permissions` match patterns do NOT support port wildcards (`http://localhost:*/` is invalid). Correct form is `http://localhost/*`, which matches all ports implicitly.
+
+5. Pre-warm was already half-satisfied by Phase 1's install self-test; extended to `onStartup`, since a browser restart tears down the offscreen document and its loaded model.
+
+**Wiring:** `content_scripts.js` = `["vendor/browser-polyfill.js", "lib/action-executor.js", "content.js"]`. Loop = capture → detect → buildDomSnapshot (stamps ids) → scanForPii (reuses ids) → stamp `data-agent-sensitive` + merge → scale bboxes → filter vision classes → redact + sanitize → `assertNoRawPii()` (throws, fail-closed) → POST /analyze → executeAction. `MAX_STEPS = 6` or until `action === "done"`.
+**Vision filter:** `{person, tv, tvmonitor, laptop, cell phone, book}`, case-insensitive on the flattened label.
+**Server:** `server/main.py` gained only CORS middleware; 65/65 still green, preflight live-verified.
 Wires capture → detect → scan → redact → send → act → repeat into the actual extension. Builds the demo page (password field, email field, embedded "ID card" image) and the timing/resource instrumentation from Section 8.
 
 ---

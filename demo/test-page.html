@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>SIH 26171 -- Phase 4 Demo Page</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 640px;
+    margin: 32px auto;
+    padding: 0 16px;
+    color: #1a1a1a;
+    background: #fafafa;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.lede { color: #555; margin-top: 0; }
+  .card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin: 18px 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .card h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #666; margin: 0 0 12px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  label:first-of-type { margin-top: 0; }
+  input[type="text"], input[type="password"], input[type="email"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    font-size: 14px;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+  }
+  .field-hint { font-size: 12px; color: #888; margin-top: 3px; }
+  #idCard {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 12px;
+    background: linear-gradient(135deg, #eef3fb, #f7f9fc);
+    max-width: 420px;
+  }
+  #idCard img {
+    width: 96px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+  }
+  #idCard .id-fields p { margin: 2px 0; font-size: 13px; }
+  #idCard .id-fields .id-label { color: #777; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  button {
+    margin-top: 14px;
+    padding: 8px 16px;
+    font-size: 14px;
+    border-radius: 4px;
+    border: 1px solid #2a6fdb;
+    background: #2a6fdb;
+    color: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: #1f57ad; }
+  #thanksMsg {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: #e6f6e9;
+    border: 1px solid #b7e0bf;
+    border-radius: 4px;
+    color: #256d34;
+    font-size: 14px;
+  }
+  code { background: #eee; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>SIH 26171 -- Phase 4 integration demo page</h1>
+  <p class="lede">
+    Static page exercising every PII-detection path the extension's loop
+    needs to prove: an <code>input[type=password]</code>, an
+    <code>input[type=email]</code>, an "ID card" bearing a real human face
+    (COCO-80 has no "ID card" class -- the face is what lets the vision
+    half of this demo fire at all), a plain <code>type=text</code> field
+    holding an autofilled Aadhaar-shaped value with NO
+    <code>type</code>/<code>autocomplete</code> signal (the specific
+    false-negative case Phase 2a's dom-scanner was hardened against), and
+    one genuinely benign, actionable field + button so the mock VLM
+    backend has something safe to act on. See
+    <code>demo/README.md</code> for how to run the loop against this page.
+  </p>
+
+  <div class="card">
+    <h2>Account sign-in (DOM-flagged fields)</h2>
+
+    <label for="pw">Password</label>
+    <input type="password" id="pw" name="password" autocomplete="current-password" value="hunter2Demo!" />
+    <p class="field-hint">Flagged via <code>type=password</code> + <code>autocomplete=current-password</code>. Must never appear in the outgoing DOM JSON.</p>
+
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" autocomplete="email" value="alice.demo@example.com" />
+    <p class="field-hint">Flagged via <code>type=email</code> + <code>autocomplete=email</code>.</p>
+
+    <label for="idNumber">Government ID Number</label>
+    <input type="text" id="idNumber" name="id_number" value="1234 5678 9012" />
+    <p class="field-hint">
+      Plain <code>type=text</code>, <strong>no</strong> <code>autocomplete</code>
+      attribute -- the field itself gives dom-scanner zero type/autocomplete
+      signal. Only flagged because its <em>value</em> is Aadhaar-shaped
+      (12 digits). This is the autofilled-PII false-negative case Phase 2a
+      was specifically hardened against; vision alone can never catch this
+      one, since it's never rendered as a face or a screen -- only the DOM
+      scan does.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>ID card on file (vision-flagged region)</h2>
+    <div id="idCard">
+      <img src="assets/id-card-face.jpg" alt="ID card photo" />
+      <div class="id-fields">
+        <p class="id-label">Name</p>
+        <p>Jordan A. Demo</p>
+        <p class="id-label">ID No</p>
+        <p id="idCardCaption">5678-1234-9012</p>
+      </div>
+    </div>
+    <p class="field-hint">
+      The photo is a real (CC0-licensed) human headshot, not a drawing or
+      icon -- <code>person</code> is the COCO-80 class <code>yolos-tiny</code>
+      detects most reliably (CLAUDE.md's Phase 2b RESULT, "demo risk"
+      note), so this is what makes the vision half of the redaction demo
+      actually fire. The "ID No" caption below the photo is plain visible
+      text (not a form field) and is independently flagged by dom-scanner's
+      text-node regex pass, layering a second, DOM-sourced redacted region
+      right next to the vision-sourced one over the same card.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Something safe to act on</h2>
+    <label for="fullName">Full name</label>
+    <input type="text" id="fullName" name="full_name" placeholder="Enter your full name" />
+    <p class="field-hint">
+      Genuinely benign -- empty, no PII-shaped placeholder, not flagged by
+      dom-scanner. This is the only field on the page the agent is allowed
+      to type into; the guard (Ruling 4) fail-closed-blocks click/type on
+      every field above.
+    </p>
+    <button id="continueBtn" type="button" hidden>Continue</button>
+    <div id="thanksMsg" hidden>Thanks! Full name received.</div>
+  </div>
+
+  <p class="field-hint">
+    Tip: this page has three states the agent should walk through in
+    order: (1) type into "Full name" &rarr; the field removes itself and
+    reveals "Continue"; (2) click "Continue" &rarr; it removes itself and
+    shows the thank-you message; (3) nothing safe/actionable remains, so
+    the mock backend replies "done" and the loop stops on its own. See
+    <code>demo/README.md</code> for the exact console output this
+    produces.
+  </p>
+
+  <script>
+    // Deliberately tiny, page-owned interactivity -- NOT part of the
+    // extension. Demonstrates that action-executor's dispatchType/
+    // dispatchClick fire REAL DOM events (native value-setter + input/
+    // change events; a real click event), not synthetic no-ops: this
+    // page reacts to them exactly as it would to a human typing and
+    // clicking. See demo/README.md for why the page is structured this
+    // way (it's what makes a mock VLM backend -- which has no real visual
+    // reasoning, just a simple deterministic rule -- produce one type
+    // action, then one click action, then a clean "done", instead of
+    // looping on the same field forever).
+    var fullNameInput = document.getElementById("fullName");
+    var continueBtn = document.getElementById("continueBtn");
+    var thanksMsg = document.getElementById("thanksMsg");
+
+    fullNameInput.addEventListener("input", function () {
+      if (fullNameInput.value && fullNameInput.value.trim().length > 0) {
+        fullNameInput.remove();
+        continueBtn.hidden = false;
+      }
+    });
+
+    continueBtn.addEventListener("click", function () {
+      continueBtn.remove();
+      thanksMsg.hidden = false;
+    });
+  </script>
+</body>
+</html>
