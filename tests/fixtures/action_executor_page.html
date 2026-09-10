@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Phase 3 action-executor fixture page</title>
+</head>
+<body>
+  <header>
+    <h1>Static fixture page for action-executor's checkpoint test</h1>
+    <p id="plain-text">
+      This paragraph is plain visible text -- not actionable, must NOT be
+      assigned a data-agent-id and must NOT appear in domSnapshot.
+    </p>
+  </header>
+
+  <main>
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" type="text" placeholder="Enter username" />
+
+      <label for="password">Password</label>
+      <!-- Deliberately carries a raw value: this module does NOT strip
+           sensitive values (that's Phase 2b's job, downstream of this
+           one). Tests assert this module's output still carries it and
+           that `sensitive` is always emitted as false by this producer. -->
+      <input id="password" type="password" value="hunter2" />
+
+      <input id="hidden-field" type="hidden" value="csrf-token-abc123" />
+
+      <button id="login-btn" type="submit">Log in</button>
+      <button id="disabled-btn" type="button" disabled>Unavailable</button>
+    </form>
+
+    <a id="forgot-link" href="/forgot-password">Forgot password?</a>
+
+    <select id="country-select">
+      <option value="in">India</option>
+      <option value="us" selected>United States</option>
+    </select>
+
+    <div id="custom-widget" role="button" tabindex="0">Custom clickable widget</div>
+  </main>
+</body>
+</html>

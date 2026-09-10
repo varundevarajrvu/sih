@@ -1,0 +1,7 @@
+<!--
+  Visibility gate for TEXT-NODE regex matching (form fields are NOT gated
+  the same way -- see dom-scanner.js VISIBILITY note). The hidden paragraph
+  must be skipped; the visible one must be flagged.
+-->
+<p style="display:none">Hidden email, must not be flagged: secret@example.com</p>
+<p>Visible email, must be flagged: visible@example.com</p>

@@ -1,0 +1,13 @@
+{
+  "name": "sih-26171-js-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node-native test runner (node:test) config for JS unit tests, e.g. Phase 3 (action-executor). Scoped to tests/ only -- does NOT touch extension/package.json, which is Phase 1's file and may be edited concurrently by other in-flight subagents. jsdom lives in tests/node_modules and resolves fine for test files under tests/unit/ via normal upward node_modules lookup.",
+  "scripts": {
+    "test": "node --test unit/test_action_executor.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.0"
+  }
+}

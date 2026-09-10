@@ -1,0 +1,6 @@
+<!--
+  Element already carries a data-agent-id (as if action-executor's stamping
+  pass already ran). The scanner must REUSE it, not overwrite it with a
+  self-generated id -- see dom-scanner.js's agentId CONTRACT NOTE.
+-->
+<input id="pw2" type="password" data-agent-id="agent-42" />

@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SIH 26171 Agent</title>
+  <style>
+    body {
+      width: 320px;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 13px;
+      padding: 12px;
+      margin: 0;
+    }
+    h1 {
+      font-size: 14px;
+      margin: 0 0 6px;
+    }
+    h2 {
+      font-size: 12px;
+      margin: 14px 0 4px;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: inherit;
+      font-size: 13px;
+      resize: vertical;
+      padding: 6px;
+    }
+    button {
+      margin-top: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    button:disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+    p.hint {
+      color: #666;
+      margin: 4px 0 6px;
+      line-height: 1.4;
+    }
+    #saveStatus {
+      color: #2a7d2a;
+      min-height: 1em;
+      margin: 4px 0 0;
+    }
+    #detectResult {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #f4f4f4;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 6px;
+      max-height: 220px;
+      overflow: auto;
+      margin-top: 6px;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #ddd;
+      margin: 14px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Task Goal</h1>
+  <p class="hint">Plain-text description of what the agent should do. Saved to this extension's local storage; Phase 2a/2b/3/4 will read it once they exist.</p>
+  <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form"></textarea>
+  <button id="saveGoal" type="button">Save Task</button>
+  <p id="saveStatus"></p>
+
+  <hr />
+
+  <h2>Phase 1 diagnostic</h2>
+  <p class="hint">
+    Captures the current tab and runs the on-device object detector
+    end-to-end through background.js and the offscreen document. This is
+    the interactive way to exercise the round trip described in
+    <code>extension/README.md</code>. First run loads the model
+    (Phase 0 measured warm WebGPU inference at ~8.4s -- this can take
+    noticeably longer, be patient).
+  </p>
+  <button id="testDetect" type="button">Run Test Detection on Current Tab</button>
+  <pre id="detectResult"></pre>
+
+  <script src="vendor/browser-polyfill.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "SIH 26171 - On-Device Visual Perception Agent",
+  "version": "0.1.0",
+  "description": "Phase 1 scaffold: on-device browser agent shell. Captures the visible tab and runs local WebGPU object detection (Xenova/yolos-tiny via @huggingface/transformers) entirely on-device -- zero network calls at inference time. PII scanning (Phase 2a), redaction (Phase 2b), and DOM action execution (Phase 3) are not implemented yet; content.js is a stub for them.",
+  "permissions": ["offscreen", "activeTab", "scripting", "storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SIH 26171 Agent"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["vendor/browser-polyfill.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["ort/*", "models/*", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

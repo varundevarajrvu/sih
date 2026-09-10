@@ -1,0 +1,9 @@
+<!--
+  An email-shaped string that lives inside inline JS source, not visible
+  text. Must NOT be flagged -- scanning <script>/<style> contents as if
+  they were page text would be a large, useless false-positive source.
+-->
+<script>
+  var trapEmail = "trap@example.com";
+</script>
+<p>No PII in this paragraph.</p>

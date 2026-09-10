@@ -1,0 +1,10 @@
+<!--
+  False-positive TRAP fixture (explicitly requested by the Phase 2a task
+  brief): a 12-digit order number that is NOT an Aadhaar number but matches
+  the same bare-12-digit shape. This is expected to be flagged as "aadhaar"
+  by the current heuristic -- that is a documented, intentional
+  over-flagging trade-off (false negatives on real PII are worse than false
+  positives here), not a bug. See dom-scanner.js's header comment and the
+  Phase 2a report for the full writeup.
+-->
+<p>Your order ID is 100200300400. Thank you for shopping with us.</p>

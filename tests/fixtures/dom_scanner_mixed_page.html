@@ -1,0 +1,17 @@
+<!--
+  A more realistic composite page: password field, email field via type=,
+  plain prose, an embedded email in text, and an Aadhaar-like number --
+  used to sanity-check ordering/dedup across a bigger DOM in one pass.
+-->
+<form>
+  <label for="uname">Username</label>
+  <input id="uname" type="text" name="username" />
+
+  <label for="mail">Email</label>
+  <input id="mail" type="email" name="email" />
+
+  <label for="pw3">Password</label>
+  <input id="pw3" type="password" name="password" autocomplete="current-password" />
+</form>
+<p>Thanks for signing up! Our support team is reachable at help@example.org.</p>
+<p>Reference number for your records: 456789012345.</p>

@@ -1,0 +1,7 @@
+<!--
+  A genuine type="hidden" input (CSRF-token style). Must NOT be flagged --
+  it doesn't match any password/email/tel/autocomplete PII signal, it just
+  happens to be invisible. Sanity check that "hidden" isn't over-broadly
+  conflated with "sensitive".
+-->
+<input type="hidden" name="csrf" value="abc123" autocomplete="off" />

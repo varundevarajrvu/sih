@@ -1,0 +1,9 @@
+{
+  "name": "dom-pii-scanner-test-vendor",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Isolated test-only dependency vendor for tests/unit/test_dom_scanner.mjs (Phase 2a, dom-pii-scanner). Kept separate from extension/package.json and any repo-root package.json to avoid npm-install races with other subagents (redaction-engine, action-executor) building concurrently.",
+  "devDependencies": {
+    "jsdom": "^25.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "_comment": "Hand-written action JSON per server/schemas.py's ActionResponse shape ({action, targetId, value}), targeting the fixture at action_executor_page.html. targetId values assume the deterministic scan order documented and asserted in tests/unit/test_action_executor.test.mjs (username=agent-1, password=agent-2, login-btn=agent-3, disabled-btn=agent-4, forgot-link=agent-5, country-select=agent-6, custom-widget=agent-7). If that scan order ever changes, the test's own precondition assertion fails first and loudly, rather than this file going silently stale.",
+
+  "click_login_button": { "action": "click", "targetId": "agent-3", "value": null },
+  "type_username": { "action": "type", "targetId": "agent-1", "value": "varun" },
+  "click_custom_widget": { "action": "click", "targetId": "agent-7", "value": null },
+  "scroll_page_down": { "action": "scroll", "targetId": "page", "value": "down" },
+  "scroll_into_view_select": { "action": "scroll", "targetId": "agent-6", "value": null },
+  "done_on_page": { "action": "done", "targetId": "page", "value": null },
+  "done_on_element": { "action": "done", "targetId": "agent-3", "value": null },
+
+  "negative_unknown_target": { "action": "click", "targetId": "agent-999", "value": null },
+  "negative_missing_target_id": { "action": "click", "targetId": "", "value": null },
+  "negative_unknown_action": { "action": "hover", "targetId": "agent-1", "value": null },
+  "negative_type_on_page_sentinel": { "action": "type", "targetId": "page", "value": "nope" }
+}

@@ -187,6 +187,27 @@ MV3 manifest, background service worker, content script skeleton, popup for task
 ← { type: "DETECTION_RESULT", requestId, boxes: [{label, score, xmin, ymin, xmax, ymax}] }
 ```
 
+#### Phase 1 RESULT — recorded 2026-09-10. Contract additions, APPROVED and binding.
+
+**Error variant — the spec had no failure path; a crashed offscreen doc would hang the caller forever:**
+```
+← { type: "DETECTION_ERROR", requestId, error: { message, stage: "model_load"|"image_decode"|"inference"|"unknown" } }
+```
+`requestId` correlation is a `Map` in `background.js` (concurrent requests supported) with a 60s per-request timeout.
+
+**Ruled decisions — do not re-derive these differently:**
+1. `imageData` is **raw base64 with NO `data:` prefix** on the wire. Background strips it; offscreen strips defensively too.
+2. **Detection threshold = `0.5`**, not the library's `0.9` default — continuity with every Phase 0 measurement.
+3. **Task goal lives at `chrome.storage.local.taskGoal`** as a plain string. Phase 4 wires this exact key into `AnalyzeRequest.taskGoal`.
+
+Popup↔background messages (`SET_TASK_GOAL`, `RUN_TEST_DETECTION`, …) are internal to Phase 1 and not part of any cross-module contract.
+
+**✅ CHECKPOINT PASSED (Section 6), verified in browser 2026-09-10:** pipeline loaded on **webgpu** in 1,575ms; `DETECT_OBJECTS` round-tripped and returned 5 detections in the **flat** contract shape. The nested-box adapter survives the message channel; `requestId` correlation works; WebGPU initialises under the real manifest.
+
+**⚠️ COLD-START = 19,407ms** (vs Phase 0's 11.7s cold / 8.4s warm). **Phase 4 MUST pre-warm** — fire a throwaway inference at install/startup so the first user-visible detection is warm. Otherwise the first detection in a live demo takes ~19s.
+
+**CONTRACT RULING — who produces `domSnapshot`?** Section 4 never said, and Phase 2c consumes it. **Phase 3 (`action-executor`) is the producer**: it already walks actionable elements and assigns `data-agent-id`, so it owns the ID→element map that `domSnapshot` is built from. Phase 2a produces `sensitiveNodes` (the flagged subset) which Phase 4 merges in — setting each node's `sensitive` flag and `piiType`. The two are complementary, not competing: 2a classifies, 3 enumerates.
+
 ### Phase 2a — `dom-pii-scanner`
 Content-script DOM walker. Flags `input[type=password]`, `autocomplete` values (`cc-number`, `current-password`, `email`, etc.), and regex-matches visible text nodes for email/phone/Aadhaar(12-digit)/PAN patterns.
 **Interface it produces:**
@@ -196,9 +217,44 @@ Content-script DOM walker. Flags `input[type=password]`, `autocomplete` values (
 ]}
 ```
 
+#### Phase 2a RESULT — recorded 2026-09-10. Checkpoint PASSED (23/23, verified by orchestrator).
+
+**⚠️ PIPELINE CALL ORDER — Phase 4 MUST NOT get this backwards:**
+> **`action-executor` runs FIRST** and stamps `data-agent-id` on elements. **`dom-scanner` runs SECOND** and reuses those IDs.
+
+Reversed, the two modules mint independent ID spaces, `sensitiveNodes.agentId` stops correlating with `domSnapshot.agentId`, and Phase 2c's PII-leak correlation silently degrades to bbox-overlap only. `dom-scanner` already prefers an existing `data-agent-id` and self-assigns only as fallback — correct, keep it.
+
+**Accepted scope limits (deliberate, not defects):**
+- `piiType` is recall-biased throughout. Aadhaar detection flags ANY bare 12-digit number — a 12-digit order ID over-flags by design. No checksum validation anywhere.
+- Phone detection is India-tuned (`+91` or bare 10-digit starting 6–9). Other countries' bare 10-digit formats are an accepted false negative.
+- `new-password`, `cc-csc`, `cc-exp`, `cc-name` degrade to `piiType: "other"` — still FLAGGED and still redacted, only the label is imprecise. Enum refinement deferred to Phase 4; not worth a cross-module edit to `server/schemas.py` while it is green at 65/65.
+- Generic autocomplete tokens (`name`, `street-address`, `postal-code`) are NOT flagged. Flagging them would redact most of a form and leave the agent unable to operate — an accepted tradeoff, explicitly ruled.
+
+**bbox values are UNVERIFIED outside a browser** — jsdom returns zeros. Confirm real geometry when Phase 4 loads this in Chrome. Same caveat applies to Phase 3.
+
+**Test infra note:** jsdom is vendored twice (`tests/unit/dom-scanner-vendor/` and `tests/node_modules/`) because three agents built concurrently and a shared `npm install` target was a genuine Windows race risk. Consolidate at Phase 4.
+
 ### Phase 2b — `redaction-engine`
 Canvas 2D redaction. Merges Phase 0's vision boxes with Phase 2a's DOM boxes, blacks/blurs them on the captured screenshot, re-encodes PNG. Also strips flagged values from the DOM JSON before it's sent anywhere.
 **Interface it produces:** `redact(screenshotBase64, visionBoxes, domNodes) → { redactedImage: base64, redactedRegions: [{type, bbox}] }` — the `redactedRegions` array is what Phase 2c's prompt tells the VLM to ignore.
+
+#### Phase 2b RESULT — recorded 2026-09-10. Checkpoint PASSED (28/28, verified by orchestrator).
+
+**🔴 RULING 1 — BBOX UNIT SPACE. This is the highest-risk silent failure in the project.**
+Vision boxes are in **screenshot pixels**. `getBoundingClientRect()` returns **CSS pixels**. On any HiDPI display these differ by `devicePixelRatio`, and every symptom of getting it wrong looks like success: redaction rectangles land near — not on — the password field, and `find_pii_leaks()` strategy 2 (bbox overlap) silently stops correlating.
+
+> **Phase 4 owns ONE normalization point.** Convert every CSS-pixel bbox to screenshot-pixel space by `devicePixelRatio` BEFORE building the payload or calling `redact()`. Phase 2a and Phase 3 emit raw CSS pixels (natural from `getBoundingClientRect()`); Phase 2b already takes an injectable `scaleFactor`. Do NOT scale in two places — double-scaling is as broken as not scaling, and equally silent.
+
+Everything crossing a module boundary — `domSnapshot.bbox`, `redactedRegions.bbox`, vision boxes — must be in screenshot-pixel space by the time it reaches `server/`.
+
+**🔴 RULING 2 — VISION-BOX FILTERING BELONGS TO PHASE 4.**
+`redaction.js` redacts every box it is handed, unconditionally — correct, that keeps the module dumb and testable. But Phase 0's detector is general COCO-80, not PII-specific. Handing it every detection blacks out couches and remotes and destroys the screenshot.
+
+> **Phase 4 must filter vision boxes to a privacy-relevant subset before calling `redact()`.** Starting set: `person` (faces), `tv`/`tvmonitor`, `laptop`, `cell phone`, `book` (document/card proxies). Map through `id2label` — never literal-match class names across models (see the Phase 0 class-name trap).
+
+**⚠️ DEMO RISK, act on this when building the demo page:** COCO-80 has no "ID card" class. A plain ID-card graphic may be detected as nothing at all, and the vision half of the demo would show zero redactions. **Put a human face on the mock ID card** — `person` is the class `yolos-tiny` detects most reliably, so the card gets redacted via a detection that actually fires.
+
+**Other notes:** solid black fill (deterministic and verifiable; `fillStyle` is injectable if blur is wanted later). `redact()`'s `domNodes` param is Phase 2a's *flagged* node list; `sanitizeDomSnapshot()` separately handles the *full* snapshot — Section 4 conflated these under one name and splitting them was correct. `@napi-rs/canvas` is a **devDependency only**; the production module injects its canvas and imports nothing. The 2 high-severity `npm audit` advisories are pre-existing, inherited from `@huggingface/transformers` → `sharp`.
 
 ### Phase 2c — `server-api`
 FastAPI `/analyze` endpoint, Pydantic schemas, Ollama integration (`qwen2.5vl:7b` for dev — chosen because it returns real bounding-box JSON and is built for agentic/grounding tasks, not just image description; swap to a cloud VLM for the finale per the problem statement's explicit allowance, same endpoint).
@@ -231,6 +287,20 @@ The PII-leak rejection originally echoed the offending payload back in its own e
 **Rule for all phases: an error path is a data egress path.** Assert on the serialized bytes of error responses and log lines, not just on status codes. Section 5's invariant binds failure paths exactly as much as success paths.
 
 ### Phase 3 — `action-executor`
+
+#### Phase 3 RESULT — recorded 2026-09-10. Checkpoint PASSED (30/30, verified by orchestrator).
+
+**SAFETY POLICY RULING — sensitive-element targeting is FAIL-CLOSED. Binding.**
+`click` and `type` on any element flagged sensitive are BLOCKED (`SENSITIVE_TARGET_BLOCKED`). `scroll`/`done` are ungated (they neither write to nor trigger a specific element). Override hooks (`allowSensitiveTargets`, `onSensitiveTarget`) exist but **Phase 4 must NOT enable them for the demo**.
+Rationale: an agent typing into a password field is the exact failure this project exists to prevent; Phase 2c's VLM client already skips sensitive nodes when selecting targets, so fail-closed keeps the system self-consistent end to end; and blocking is the reversible failure mode — a blocked action is a log line, a typed password is a leaked credential.
+**Phase 4 wiring requirement:** set `data-agent-sensitive="true"` from Phase 2a's merged `sensitiveNodes`, or pass `options.sensitiveAgentIds`. Without that wiring the guard has nothing to act on and silently protects nothing.
+
+**Phase 4 integration notes:**
+- `action-executor.js` uses NO `import`/`export` — it attaches to `globalThis.ActionExecutor`, matching `content.js`'s classic-script loading. Add `"lib/action-executor.js"` BEFORE `content.js` in the manifest's `content_scripts.js` array.
+- `PAGE_TARGET_ID = "page"` is mirrored in JS; it cannot be imported across languages from `server/schemas.py`. If that constant ever changes, both sides must change together.
+- `domSnapshot` matches `DomNode` field-for-field — the provisional schema held against a real DOM. `sensitive` is always `false` from this module by design; Phase 4 merges 2a's classification in.
+- `type` uses the prototype-walking native value setter plus `input`/`change` dispatch, so React-style controlled inputs actually observe the change.
+- ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
 ### Phase 4 — `integration-loop`

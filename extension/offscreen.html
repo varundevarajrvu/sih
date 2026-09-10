@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SIH 26171 offscreen inference host (Phase 1)</title>
+</head>
+<body>
+  <p>
+    Phase 1 offscreen document -- the on-device inference host. Open this
+    page's DevTools console (chrome://extensions -&gt; this extension -&gt;
+    "Inspect views: offscreen.html") to see model load / detection logs,
+    each line prefixed <code>[offscreen]</code>. Nothing is rendered here
+    on purpose -- see extension/README.md for how to exercise the
+    background&lt;-&gt;offscreen round trip.
+  </p>
+  <script type="module" src="offscreen.bundle.js"></script>
+</body>
+</html>

@@ -34,6 +34,9 @@ Thumbs.db
 spike/chrome-harness/models/
 spike/chrome-harness/ort/
 spike/chrome-harness/offscreen.bundle.js
+extension/models/
+extension/ort/
+extension/offscreen.bundle.js
 
 # Python venv
 .venv/
