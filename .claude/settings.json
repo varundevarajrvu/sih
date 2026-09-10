@@ -1,0 +1,8 @@
+{
+  "model": "opusplan",
+  "effortLevel": "high",
+  "fallbackModel": ["claude-sonnet-5", "claude-haiku-4-5"],
+  "permissions": {
+    "allow": ["Bash(npm run *)", "Bash(pip install *)", "Bash(ollama *)"]
+  }
+}
