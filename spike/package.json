@@ -1,0 +1,18 @@
+{
+  "name": "webgpu-spike",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Phase 0 spike: does Xenova/yolos-tiny run via @huggingface/transformers, and how fast? Node run is a WASM-backend proxy; the Chrome offscreen harness (offscreen.js) is unverified pending manual load.",
+  "type": "module",
+  "scripts": {
+    "test-node": "node node-test.js",
+    "test-node-contract": "node node-test-contract.js",
+    "build-chrome-harness": "esbuild chrome-harness/src/offscreen.entry.js --bundle --format=esm --platform=browser --outfile=chrome-harness/offscreen.bundle.js"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

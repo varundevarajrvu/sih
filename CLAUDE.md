@@ -78,6 +78,32 @@ Chrome is the reference platform for every phase. Firefox is a post-Phase-4 opti
 **Interface it produces:** a confirmed inference call shape — `runDetection(imageBase64) → [{label, score, xmin, ymin, xmax, ymax}]` — and a measured latency number.
 **Gate:** does it return boxes in under ~1s on WASM fallback (WebGPU may not be available in your dev environment — that's fine, WASM is the floor everything else is built against per Section 2's earlier browser-compat findings).
 
+#### Phase 0 RESULT — recorded 2026-09-10 (Section 7 rule 5 contract correction)
+
+**The flat shape above is WRONG.** `@huggingface/transformers` returns the box **nested**, verified against live output and `ObjectDetectionPipeline._call`:
+```js
+// ACTUAL library output:
+{ score: 0.93, label: "cat", box: { xmin: 332, ymin: 25, xmax: 638, ymax: 369 } }
+// CONTRACT downstream modules consume — Phase 1 MUST flatten box.* itself:
+{ label, score, xmin, ymin, xmax, ymax }
+```
+Working adapter: `spike/node-test-contract.js`. Additional confirmed details:
+- Coordinates are **absolute pixels** only because `percentage` defaults to `false`. Passing `percentage: true` silently switches to 0–1 normalized floats. Set it deliberately.
+- `score` is a 0–1 float (matches). Library's own `threshold` defaults to `0.9`; the spike used `0.5`.
+- `RawImage.fromURL()` rejects `data:` URIs in Node (reads them as file paths). Use `RawImage.fromBlob()` — portable across Node and browser.
+
+**GATE: FAIL.** Warm inference measured twice, independently:
+| Run | Warm inference |
+|---|---|
+| Subagent | 3.5–4.1s |
+| Orchestrator re-run | 5.1–5.8s |
+
+3.5–5.8× over the ~1s gate. Measured on `onnxruntime-node` (native CPU, fp32), which is normally **faster** than browser WASM — so this is an optimistic floor, before any browser overhead. Unexplored lever: quantization (q8/int8) was deliberately not attempted, per Section 7's "don't work around a failure with an unapproved substitution."
+
+**Chrome offscreen/WebGPU half: UNVERIFIED.** Harness built at `spike/chrome-harness/` (esbuild-bundled — MV3 CSP blocks transformers.js's bare-specifier remote imports). Never run in a real browser. Open questions it exists to answer: does `navigator.gpu` exist inside an MV3 offscreen document; is the `"WORKERS"` offscreen reason accepted; does the runtime weight fetch succeed from that context. Steps in `spike/README.md`.
+
+**Phase 1 is BLOCKED pending Chief's re-scope decision.**
+
 ### Phase 1 — `extension-scaffold`
 MV3 manifest, background service worker, content script skeleton, popup for task input, the offscreen document wired to Phase 0's confirmed inference call.
 **Interface it produces:** message-passing contract between background SW and offscreen doc:
