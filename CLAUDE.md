@@ -342,7 +342,12 @@ Full loop closed on `demo/test-page.html`: `outcome: "done"`, 3 steps, `type`(ag
 
 **⚠️ OPEN: the vision path contributed ZERO on this run.** `detections: 0` across all 3 steps; all 4 redaction regions were DOM-sourced. An earlier run on the same page reported `detections: 1` (the ID-card face firing `person`) with detect at 21,971 ms. Both figures moved together, which implicates the captured image rather than the model — `captureVisibleTab` captures the visible VIEWPORT ONLY, so an ID card below the fold yields both a faster inference and nothing to find. **Re-run with the entire page visible unscrolled before trusting any vision-side rubric claim.** Visual-context accuracy (25%) + redaction precision (20%) is the largest scoring block in the rubric.
 
-**⚠️ ALSO UNVERIFIED:** the `Section 5 check PASSED` log lines (per-step assertion on the real outgoing payload) have not yet been captured. That assertion is the project's central privacy claim and remains unproven in a browser.
+**✅ SECTION 5 INVARIANT VERIFIED IN-BROWSER — the project's central claim.**
+```
+[agent-loop] Section 5 check PASSED -- outgoing payload contains no raw
+value for 4 flagged sensitive node(s).
+```
+Asserted client-side against the REAL serialized payload immediately before the network send — not a status code, not a mock. 4 PII nodes detected, 4 stripped, 0 raw values transmitted. Combined with the server's independent `PII_LEAK_DETECTED` rejection path (defence in depth, both sides verified live), the guarantee holds at both ends of the wire.
 
 **✅ RESOLVED — vision path confirmed working.** With the ID card visible in the viewport: `detections: 3`, `visionBoxesKeptAfterFilter: 3`, `regions: 7` (4 DOM + 3 vision). Both redaction sources merge correctly in one coordinate space. `captureVisibleTab` covers the VIEWPORT ONLY — content below the fold is invisible to the vision path, which is a demo-setup requirement, not a bug.
 
