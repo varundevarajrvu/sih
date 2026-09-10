@@ -368,7 +368,29 @@ RedactedRegion.source: Optional[Literal["dom","vision"]]
 - The server still infers when `source` is absent (`agentId` present → `dom`, else `vision`) for back-compat, but that is a fallback, NOT a substitute: it is correct only because it mirrors 2b's current behaviour, and would go silently stale if that behaviour changed.
 - `source` is a STRICT closed literal (invalid values hard-reject) — deliberately unlike `PiiType`'s `other` escape hatch, because provenance is a fact the producer knows, not an ambiguous classification.
 
-**Test totals: 170** — 80 server, 32 redaction, 30 action-executor, 28 dom-scanner.
+**Test totals: 202** — 112 server, 32 redaction, 30 action-executor, 28 dom-scanner.
+
+#### REAL VLM BACKEND — `ClaudeVLMClient` (Chief's decision, 2026-09-10)
+
+Section 4's `qwen2.5vl:7b` was always "for dev — swap to a cloud VLM for the finale per the problem statement's explicit allowance." Local was abandoned because this machine has 3.7GB free RAM against a 7B VLM needing ~6GB.
+
+**This does NOT weaken Section 5.** The invariant is "nothing leaves the client EXCEPT the redacted image and sanitized DOM JSON." Sending *redacted* data to a cloud model is precisely the scenario this project exists to make safe — and it sharpens the demo: a frontier model reasons about the page while never seeing the password, the email, or the face.
+
+```
+VLM_BACKEND=mock    (default — deterministic, no credentials, keeps CI green)
+VLM_BACKEND=claude  ANTHROPIC_API_KEY=sk-ant-...  [ANTHROPIC_MODEL=claude-opus-4-8]
+VLM_BACKEND=ollama  (written, never exercised — no model installed)
+```
+
+Implementation notes, verified against the installed SDK, not recalled:
+- Official `anthropic` SDK, model id `claude-opus-4-8` exactly — never append a date suffix.
+- **`output_config={"format": {"type":"json_schema", ...}}`** with the enum derived from `schemas.ActionType`. This is load-bearing: the loop breaks if the model returns prose instead of `{action,targetId,value}`. The `output_format` parameter is deprecated — do not use it.
+- **No `thinking` kwarg at all** (absent, not `None`). Omitting is what makes Opus 4.8 run without thinking, which a real-time loop wants. `budget_tokens` is removed on this family and returns 400.
+- No assistant prefill — removed on 4.6+, returns 400.
+- Image block FIRST in user content, `media_type: "image/png"`.
+- Error chain is specific (`NotFoundError`/`RateLimitError`/`APIStatusError`/`APIConnectionError` → four distinct exception types), never one broad `except` — a 429 is retryable, a 400 is not.
+- `build_prompt()` REUSED VERBATIM. Tests assert byte-for-byte equality. That prompt carries the "these regions are intentionally hidden, do not guess" instruction and is the core privacy contract — never let a new backend write its own.
+- Missing credentials fail BEFORE any call is attempted, with a clean 502 naming `ANTHROPIC_API_KEY`; no SDK stack trace reaches the response or the log.
 Wires capture → detect → scan → redact → send → act → repeat into the actual extension. Builds the demo page (password field, email field, embedded "ID card" image) and the timing/resource instrumentation from Section 8.
 
 ---

@@ -10,6 +10,7 @@ import pytest
 
 from schemas import PAGE_TARGET_ID, BBox, DomNode, RedactedRegion
 from vlm_client import (
+    ClaudeVLMClient,
     MockVLMClient,
     OllamaVLMClient,
     VLMRequestContext,
@@ -120,6 +121,20 @@ def test_factory_selects_ollama_without_calling_it(monkeypatch):
     client = get_vlm_client()
     assert isinstance(client, OllamaVLMClient)
     assert client.model == "qwen2.5vl:7b"
+
+
+def test_factory_selects_claude_without_calling_it(monkeypatch):
+    """ClaudeVLMClient must be constructible (imports cleanly, no network
+    call and no credential resolution on __init__) even though it is
+    never executed against a live API in this suite — mirrors
+    test_factory_selects_ollama_without_calling_it above. Deliberately
+    does NOT set ANTHROPIC_API_KEY: constructing the client must not
+    require it (only analyze() does, and only at call time)."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("VLM_BACKEND", "claude")
+    client = get_vlm_client()
+    assert isinstance(client, ClaudeVLMClient)
+    assert client.model == "claude-opus-4-8"
 
 
 def test_factory_rejects_unknown_backend(monkeypatch):

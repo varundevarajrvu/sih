@@ -1,21 +1,32 @@
 """
 Swappable VLM client behind one interface.
 
-Two implementations:
-  - MockVLMClient:   deterministic, no network, no model. Used by all tests
-                      and the default runtime backend (Chief's decision:
-                      build mock-first, don't pull a model, don't run Ollama).
-  - OllamaVLMClient:  real integration targeting qwen2.5vl:7b, written but
-                      NOT executed anywhere in this module's test suite or
-                      startup path — no vision model is installed on this
-                      machine. It only runs if VLM_BACKEND=ollama is set
-                      AND something actually calls .analyze() against a
-                      live Ollama server.
+Three implementations:
+  - MockVLMClient:   deterministic, no network, no model. DEFAULT backend —
+                      used by all tests and every current runtime path
+                      unless VLM_BACKEND is set otherwise.
+  - OllamaVLMClient:  real integration targeting qwen2.5vl:7b via raw HTTP
+                      (no official Ollama SDK exists, so httpx is the
+                      correct pattern there). Written but NOT executed
+                      anywhere in this module's test suite — no vision
+                      model is installed on the dev machine.
+  - ClaudeVLMClient:  real integration targeting a cloud Claude model via
+                      the OFFICIAL `anthropic` Python SDK (an SDK exists
+                      here, so — unlike Ollama — raw httpx would be the
+                      WRONG pattern). Chief's decision: swap the
+                      mock/Ollama dev path for a cloud model for the
+                      finale, since this machine's ~3.7GB free RAM can't
+                      run a 7B local VLM. Written but NOT executed against
+                      a live API — no ANTHROPIC_API_KEY is configured on
+                      this machine; validated entirely with a stubbed/
+                      injected fake client (tests/unit/test_claude_vlm_client.py).
 
 Selection is via the VLM_BACKEND env var (defaults to "mock") through
 get_vlm_client(). The interface (VLMClient.analyze) never mentions Ollama
-in its signature or docstring contract — Section 4 requires this be
-swappable to a cloud VLM later without touching main.py.
+or Claude (or any other backend) in its signature or docstring contract —
+Section 4 requires this be swappable between backends without touching
+main.py, and that swap already happened once (mock -> real cloud model)
+without any main.py change, which is exactly the design proving out.
 """
 
 from __future__ import annotations
@@ -26,7 +37,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from schemas import PAGE_TARGET_ID, DomNode, RedactedRegion
+from schemas import PAGE_TARGET_ID, ActionType, DomNode, RedactedRegion
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +278,220 @@ class OllamaVLMClient(VLMClient):
 
 
 # ---------------------------------------------------------------------------
+# Claude implementation — written, NOT executed against a live API. No
+# ANTHROPIC_API_KEY is configured on this machine; validated entirely
+# against a stubbed/injected fake client (see
+# tests/unit/test_claude_vlm_client.py).
+# ---------------------------------------------------------------------------
+
+DEFAULT_CLAUDE_MODEL = "claude-opus-4-8"
+"""Exact model id string per Chief's instruction — no date suffix appended."""
+
+ACTION_RESPONSE_JSON_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": [a.value for a in ActionType]},
+        "targetId": {"type": "string"},
+        "value": {"type": ["string", "null"]},
+    },
+    "required": ["action", "targetId", "value"],
+    "additionalProperties": False,
+}
+"""Mirrors schemas.ActionResponse, sent to Claude via `output_config` so
+the model is CONSTRAINED at generation time to this exact shape — this is
+the structured-output requirement the whole integration hinges on: a
+model returning prose instead of {action, targetId, value} breaks the
+agent loop. `action`'s enum is derived from schemas.ActionType (single
+source of truth, not a hand-copied duplicate list). `value` is a nullable
+string rather than an "optional" key because JSON-schema structured-
+output modes generally require every property listed in `required` once
+additionalProperties is locked down — there's no separate "optional
+property" concept to reach for."""
+
+
+class ClaudeCredentialsMissing(Exception):
+    """Raised by ClaudeVLMClient.analyze() when the Anthropic SDK client
+    has no resolved API key at call time.
+
+    Deliberately a pre-flight check on the SDK client's own `.api_key`
+    attribute (set during `anthropic.Anthropic()`'s own credential
+    resolution — this class never reads ANTHROPIC_API_KEY itself), rather
+    than catching-and-string-matching the SDK's internal TypeError from
+    header validation. That TypeError fires deep inside request
+    preparation and its message text is not a stable public contract to
+    depend on; inspecting the client's already-resolved `.api_key` is a
+    directly testable, version-stable signal instead.
+    """
+
+
+class ClaudeModelNotFound(RuntimeError):
+    """Wraps anthropic.NotFoundError — bad/unavailable ANTHROPIC_MODEL. Not retryable."""
+
+
+class ClaudeRateLimited(RuntimeError):
+    """Wraps anthropic.RateLimitError (HTTP 429). Retryable in principle — this
+    class does not retry itself, but callers can distinguish this from a hard failure."""
+
+
+class ClaudeAPIError(RuntimeError):
+    """Wraps any other anthropic.APIStatusError (4xx/5xx) not already handled above."""
+
+
+class ClaudeConnectionError(RuntimeError):
+    """Wraps anthropic.APIConnectionError — no HTTP response at all (DNS/timeout/network)."""
+
+
+class ClaudeVLMClient(VLMClient):
+    """Real integration targeting a cloud Claude model via the OFFICIAL
+    `anthropic` Python SDK — not raw httpx. (Raw httpx is the correct
+    pattern for OllamaVLMClient above because no official Ollama SDK
+    exists; here one does, so using it is the correct pattern, not an
+    inconsistency between the two implementations.)
+
+    SECTION 5 / PRIVACY NOTE: sending redacted data to a cloud model is
+    exactly the scenario this project exists to make safe, not a weakening
+    of the invariant. The invariant is "nothing leaves the client except
+    the redacted image and sanitized DOM JSON" — this class sends exactly
+    that (`context.image_b64` and `context.prompt`, both already
+    constructed upstream from the already-redacted/sanitized
+    VLMRequestContext; see the request-shape tests in
+    test_claude_vlm_client.py that assert on this directly). Nothing about
+    swapping mock/Ollama for a cloud backend changes what data the
+    client-side pipeline is allowed to produce in the first place.
+
+    NOT executed live: no ANTHROPIC_API_KEY is configured on this
+    machine. Every code path here is exercised via a fake object injected
+    through the `client=` constructor parameter, standing in for
+    `anthropic.Anthropic` — request shape, response parsing, and each
+    error branch are all unit-tested without credentials or network
+    access.
+    """
+
+    def __init__(
+        self,
+        model: str | None = None,
+        max_tokens: int = 2048,
+        client: Any = None,
+    ) -> None:
+        self.model = model or os.environ.get("ANTHROPIC_MODEL", DEFAULT_CLAUDE_MODEL)
+        self.max_tokens = max_tokens
+        # Dependency-injection point for tests: a fake object exposing
+        # `.api_key` and `.messages.create(...)`. When None (the real
+        # runtime path), a bare `anthropic.Anthropic()` is constructed
+        # lazily on first use in analyze() — never here — so merely
+        # SELECTING this backend (VLM_BACKEND=claude, i.e. constructing
+        # this class via get_vlm_client()) never touches the SDK's
+        # credential resolution or makes any network call.
+        self._injected_client = client
+
+    def _get_client(self) -> Any:
+        if self._injected_client is not None:
+            return self._injected_client
+        import anthropic  # local import: keep this dependency optional for mock-only runs
+
+        # Bare constructor — per Chief's instruction, let the SDK resolve
+        # credentials itself (env var, credential files, etc.). This
+        # class does not hardcode or read the key itself.
+        return anthropic.Anthropic()
+
+    def analyze(self, context: VLMRequestContext) -> dict[str, Any]:
+        import anthropic  # local import: keep this dependency optional for mock-only runs
+
+        client = self._get_client()
+
+        if not getattr(client, "api_key", None):
+            raise ClaudeCredentialsMissing(
+                "Claude backend selected (VLM_BACKEND=claude) but no API key is "
+                "configured — set the ANTHROPIC_API_KEY environment variable "
+                "before starting the server."
+            )
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    # Image block BEFORE the text block — per Chief's
+                    # explicit instruction on vision content ordering.
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": context.image_b64,
+                        },
+                    },
+                    # build_prompt() REUSED VERBATIM (already built into
+                    # context.prompt upstream) — it is the already
+                    # unit-tested privacy contract: every redacted region
+                    # named, "do not guess" instruction present. Not
+                    # rewritten or paraphrased here.
+                    {"type": "text", "text": context.prompt},
+                ],
+            }
+            # Exactly one user turn. No assistant-role message is ever
+            # added here — assistant prefill is removed on this model
+            # family and returns a 400.
+        ]
+
+        try:
+            response = client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=messages,
+                output_config={
+                    "format": {"type": "json_schema", "schema": ACTION_RESPONSE_JSON_SCHEMA}
+                },
+                # No `thinking` kwarg at all (not thinking=None or
+                # thinking=False — simply absent). Omitting it is what
+                # makes Opus 4.8 run without thinking, which a real-time
+                # agent loop wants. Do NOT add budget_tokens — it is
+                # fully removed on 4.8 and returns a 400.
+            )
+        except anthropic.NotFoundError as exc:
+            raise ClaudeModelNotFound(
+                f"Claude model {self.model!r} not found or unavailable "
+                f"(check ANTHROPIC_MODEL if you set it)."
+            ) from exc
+        except anthropic.RateLimitError as exc:
+            raise ClaudeRateLimited("Claude API rate limit exceeded (HTTP 429).") from exc
+        except anthropic.APIStatusError as exc:
+            raise ClaudeAPIError(
+                f"Claude API returned an error status (HTTP {exc.status_code})."
+            ) from exc
+        except anthropic.APIConnectionError as exc:
+            raise ClaudeConnectionError("Could not connect to the Claude API.") from exc
+
+        return self._extract_action_dict(response)
+
+    @staticmethod
+    def _extract_action_dict(response: Any) -> dict[str, Any]:
+        """Pull the structured JSON out of the response's text content
+        block.
+
+        Deliberately does NOT validate against ActionResponse here — same
+        single-validation-boundary rule as every VLMClient implementation
+        (see the base class's analyze() docstring): main.py is the one
+        place a malformed/improvised action gets rejected, regardless of
+        which backend produced it.
+
+        Uses raw `messages.create()` + manual JSON parsing rather than
+        `messages.parse()`'s `output_format=<PydanticModel>` convenience:
+        that path does its own SDK-internal validation via
+        pydantic.TypeAdapter before returning, which would be a second,
+        backend-specific validation path living outside main.py's single
+        boundary — exactly what this codebase's architecture rules out.
+        `output_config={"format": {...}}` (used above) is the correct,
+        SDK-confirmed way to pass a raw JSON schema dict without pulling
+        in that second path; `output_format` was explicitly avoided per
+        instruction.
+        """
+        for block in response.content:
+            if getattr(block, "type", None) == "text":
+                return json.loads(block.text)
+        raise ValueError("Claude response contained no text content block to parse as JSON.")
+
+
+# ---------------------------------------------------------------------------
 # Factory — env-var selection, defaulting to mock.
 # ---------------------------------------------------------------------------
 
@@ -274,13 +499,20 @@ class OllamaVLMClient(VLMClient):
 def get_vlm_client() -> VLMClient:
     """Select a VLMClient implementation via the VLM_BACKEND env var.
 
-    Defaults to "mock" (Chief's decision: build mock-first, no model pull,
-    no Ollama execution). Set VLM_BACKEND=ollama to switch, once a vision
-    model is actually installed.
+    Defaults to "mock" — nothing currently working breaks by adding a new
+    backend option. "ollama" targets a local qwen2.5vl:7b (untested, no
+    model installed here). "claude" targets a cloud Claude model via the
+    official SDK (Chief's finale decision) — untested live, no
+    ANTHROPIC_API_KEY on this machine, but fully unit-tested against a
+    stubbed client. Constructing any of these three does NOT itself touch
+    a network or resolve credentials — that only happens inside
+    .analyze(), on first real use.
     """
     backend = os.environ.get("VLM_BACKEND", "mock").strip().lower()
     if backend == "mock":
         return MockVLMClient()
     if backend == "ollama":
         return OllamaVLMClient()
-    raise ValueError(f"Unknown VLM_BACKEND: {backend!r} (expected 'mock' or 'ollama')")
+    if backend == "claude":
+        return ClaudeVLMClient()
+    raise ValueError(f"Unknown VLM_BACKEND: {backend!r} (expected 'mock', 'ollama', or 'claude')")
