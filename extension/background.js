@@ -116,15 +116,24 @@ function makeRequestId() {
 
 /**
  * Sends { type: "DETECT_OBJECTS", requestId, imageData } to the offscreen
- * document and resolves with `boxes` from the matching DETECTION_RESULT,
- * or rejects on DETECTION_ERROR / timeout / delivery failure. Never hangs
- * forever -- every path (explicit error reply, timeout, or a
- * sendMessage() that fails outright because the offscreen doc isn't up
- * yet) settles the returned promise.
+ * document and resolves with the full matching DETECTION_RESULT message
+ * (not just `boxes` -- see Phase 4 diagnostic note below), or rejects on
+ * DETECTION_ERROR / timeout / delivery failure. Never hangs forever --
+ * every path (explicit error reply, timeout, or a sendMessage() that
+ * fails outright because the offscreen doc isn't up yet) settles the
+ * returned promise.
+ *
+ * Phase 4 diagnostic addition (2026-09-11): previously resolved with just
+ * `message.boxes`. Now resolves with the whole message object, which
+ * offscreen.entry.js additionally populates with `modelLoadMs`,
+ * `inferenceMs`, `pipelineWasAlreadyLoaded`, and `device` -- fields that
+ * ONLY the offscreen document's own module state can produce (see that
+ * file's runDetection() comment). Additive: every existing caller has
+ * been updated to read `.boxes` off the resolved object.
  *
  * @param {string} imageData raw base64 (no `data:` prefix -- see
  *   extension/README.md's "Message contract" section for why).
- * @returns {Promise<Array<{label:string,score:number,xmin:number,ymin:number,xmax:number,ymax:number}>>}
+ * @returns {Promise<{boxes:Array<{label:string,score:number,xmin:number,ymin:number,xmax:number,ymax:number}>, modelLoadMs:number, inferenceMs:number, pipelineWasAlreadyLoaded:boolean, device:string}>}
  */
 async function detectObjects(imageData) {
   await ensureOffscreenDocument();
@@ -175,7 +184,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
       clearTimeout(pending.timeoutId);
       pendingDetections.delete(message.requestId);
       if (message.type === "DETECTION_RESULT") {
-        pending.resolve(message.boxes);
+        pending.resolve(message); // full message -- see detectObjects()'s updated JSDoc
       } else {
         pending.reject(new Error(message.error?.message || "detection failed (no error message provided)"));
       }
@@ -232,10 +241,10 @@ async function handleRunTestDetection() {
     const dataUrl = await browser.tabs.captureVisibleTab(undefined, { format: "png" });
     const imageData = stripDataUrlPrefix(dataUrl);
     const t0 = performance.now();
-    const boxes = await detectObjects(imageData);
+    const result = await detectObjects(imageData);
     const elapsedMs = performance.now() - t0;
-    log(`test detection OK in ${elapsedMs.toFixed(0)}ms:`, boxes);
-    return { type: "TEST_DETECTION_RESULT", boxes, elapsedMs };
+    log(`test detection OK in ${elapsedMs.toFixed(0)}ms:`, result.boxes);
+    return { type: "TEST_DETECTION_RESULT", boxes: result.boxes, elapsedMs };
   } catch (err) {
     const message = err?.message || String(err);
     console.error("[background] test detection FAILED:", message);
@@ -255,10 +264,23 @@ function stripDataUrlPrefix(dataUrl) {
 // of that message boundary so content.js's instrumentation gets real
 // per-stage numbers instead of one lump sum that also includes messaging
 // overhead.
+//
+// LATENCY DIAGNOSTIC (2026-09-11): a live multi-step run measured `detect`
+// at ~17-21s PER STEP (not just the first), vs. an earlier single-shot
+// measurement of ~800ms -- the coordinator's hypothesis was that MV3 SW
+// eviction tears down the offscreen document (and its loaded model)
+// between steps, so every step pays a full cold load. This handler now
+// checks hasOffscreenDocument() explicitly, BEFORE ensureOffscreenDocument()
+// has a chance to (re)create one, so the response can report whether the
+// document already existed -- the other half of offscreen.entry.js's own
+// `pipelineWasAlreadyLoaded` signal. Together the two answer the question
+// directly instead of guessing from wall-clock time alone.
 // ---------------------------------------------------------------------
 async function handleCaptureAndDetect(sender) {
   try {
     const windowId = sender && sender.tab ? sender.tab.windowId : undefined;
+
+    const offscreenDocumentAlreadyExisted = await hasOffscreenDocument();
 
     const tCapture0 = performance.now();
     const dataUrl = await browser.tabs.captureVisibleTab(windowId, { format: "png" });
@@ -266,11 +288,28 @@ async function handleCaptureAndDetect(sender) {
     const screenshot = stripDataUrlPrefix(dataUrl);
 
     const tDetect0 = performance.now();
-    const boxes = await detectObjects(screenshot);
+    const result = await detectObjects(screenshot);
     const detectMs = performance.now() - tDetect0;
 
-    log(`CAPTURE_AND_DETECT OK -- capture ${captureMs.toFixed(0)}ms, detect ${detectMs.toFixed(0)}ms, ${boxes.length} detection(s)`);
-    return { type: "CAPTURE_AND_DETECT_RESULT", screenshot, boxes, captureMs, detectMs };
+    log(
+      `CAPTURE_AND_DETECT OK -- capture ${captureMs.toFixed(0)}ms, detect ${detectMs.toFixed(0)}ms total ` +
+        `(modelLoadMs=${result.modelLoadMs.toFixed(0)}, inferenceMs=${result.inferenceMs.toFixed(0)}, ` +
+        `offscreenDocumentAlreadyExisted=${offscreenDocumentAlreadyExisted}, ` +
+        `pipelineWasAlreadyLoaded=${result.pipelineWasAlreadyLoaded}), ${result.boxes.length} detection(s)`,
+    );
+    return {
+      type: "CAPTURE_AND_DETECT_RESULT",
+      screenshot,
+      boxes: result.boxes,
+      captureMs,
+      detectMs,
+      // Phase 4 diagnostic additions -- see comment above.
+      modelLoadMs: result.modelLoadMs,
+      inferenceMs: result.inferenceMs,
+      pipelineWasAlreadyLoaded: result.pipelineWasAlreadyLoaded,
+      offscreenDocumentAlreadyExisted,
+      device: result.device,
+    };
   } catch (err) {
     const message = err?.message || String(err);
     console.error("[background] CAPTURE_AND_DETECT FAILED:", message);
@@ -383,10 +422,14 @@ async function runInstallSelfTest() {
         "Phase 0 measured median warm WebGPU inference at 8,432ms, cold load was 14,097ms -- see CLAUDE.md 'PHASE 0 CLOSED')...",
     );
     const t0 = performance.now();
-    const boxes = await detectObjects(imageData);
+    const result = await detectObjects(imageData);
     const elapsedMs = performance.now() - t0;
-    log(`SELF-TEST PASSED in ${elapsedMs.toFixed(0)}ms -- ${boxes.length} detection(s):`);
-    log(JSON.stringify(boxes, null, 2));
+    log(
+      `SELF-TEST PASSED in ${elapsedMs.toFixed(0)}ms -- ${result.boxes.length} detection(s) ` +
+        `(modelLoadMs=${result.modelLoadMs.toFixed(0)}, inferenceMs=${result.inferenceMs.toFixed(0)}, ` +
+        `pipelineWasAlreadyLoaded=${result.pipelineWasAlreadyLoaded}, device=${result.device}):`,
+    );
+    log(JSON.stringify(result.boxes, null, 2));
   } catch (err) {
     console.error("[background] SELF-TEST FAILED:", err?.message || err);
     console.error(err);

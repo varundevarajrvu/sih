@@ -159,13 +159,41 @@ class DetectionStageError extends Error {
 
 // THE INTERFACE CONTRACT (CLAUDE.md Section 4, Phase 0/1) --
 // runDetection(imageBase64) -> [{label, score, xmin, ymin, xmax, ymax}].
+//
+// Phase 4 diagnostic instrumentation (coordinator-requested, 2026-09-11):
+// a live run measured `detect` at ~17-21s per step across a multi-step
+// loop, vs. an earlier single-shot measurement of ~800ms -- ambiguous
+// because the old contract conflated model-LOAD time with INFERENCE time
+// into one number. This is the ONLY place that ambiguity can be resolved:
+// `detectorPromise` (below) is module-local state invisible to
+// background.js, so only code in THIS file can truthfully report whether
+// a given call paid a fresh model-load cost or reused an already-warm
+// pipeline. The return shape below is therefore an OBJECT, not the bare
+// array the contract originally specified -- additive, not a breaking
+// rename (`boxes` is still exactly the old array). No detection LOGIC
+// changed: same model, same device/dtype, same threshold.
 async function runDetection(imageDataBase64) {
+  // Captured BEFORE getDetector() runs: is there already a (settled or
+  // in-flight) pipeline promise? If yes, this call will NOT pay a load
+  // cost. If this offscreen document was just freshly created (or its
+  // module state was otherwise reset), detectorPromise is null and this
+  // call WILL pay the full load cost -- exactly the signal needed to
+  // confirm or refute "the offscreen doc/pipeline gets torn down between
+  // steps."
+  const wasAlreadyLoaded = detectorPromise !== null;
+
   let detector;
+  const tLoad0 = performance.now();
   try {
     detector = await getDetector();
   } catch (err) {
     throw new DetectionStageError("model_load", err);
   }
+  // If the pipeline was already loaded/loading, this await resolves near-
+  // instantly (microtask overhead only, not a real load) -- report a
+  // clean 0 rather than a few stray milliseconds of noise, so
+  // modelLoadMs is unambiguous: >0 means a real load happened THIS call.
+  const modelLoadMs = wasAlreadyLoaded ? 0 : performance.now() - tLoad0;
 
   // Mandatory carry-over #5: RawImage.fromBlob(), not fromURL() with a
   // data: URI (fromURL rejects data: URIs under Node; the Blob path is
@@ -180,6 +208,7 @@ async function runDetection(imageDataBase64) {
     throw new DetectionStageError("image_decode", err);
   }
 
+  const tInfer0 = performance.now();
   try {
     // percentage:false -> absolute pixel coordinates in the INPUT
     // image's own dimensions (matches the contract's implicit
@@ -187,7 +216,14 @@ async function runDetection(imageDataBase64) {
     // clarity per spike/README.md's guidance not to rely on either
     // default silently).
     const raw = await detector(image, { threshold: SCORE_THRESHOLD, percentage: false });
-    return flattenDetections(raw);
+    const inferenceMs = performance.now() - tInfer0;
+    return {
+      boxes: flattenDetections(raw),
+      modelLoadMs,
+      inferenceMs,
+      pipelineWasAlreadyLoaded: wasAlreadyLoaded,
+      device: activeDevice,
+    };
   } catch (err) {
     throw new DetectionStageError("inference", err);
   }
@@ -216,10 +252,24 @@ async function handleDetectObjects(requestId, imageData) {
   log(`DETECT_OBJECTS ${requestId} received (device so far: ${activeDevice ?? "not loaded yet"})`);
   try {
     const t0 = performance.now();
-    const boxes = await runDetection(imageData);
+    const result = await runDetection(imageData);
     const ms = performance.now() - t0;
-    log(`DETECT_OBJECTS ${requestId} OK in ${ms.toFixed(1)}ms on device=${activeDevice}, ${boxes.length} detection(s)`);
-    chrome.runtime.sendMessage({ type: "DETECTION_RESULT", requestId, boxes }).catch(() => {
+    log(
+      `DETECT_OBJECTS ${requestId} OK in ${ms.toFixed(1)}ms on device=${result.device} ` +
+        `(modelLoadMs=${result.modelLoadMs.toFixed(1)}, inferenceMs=${result.inferenceMs.toFixed(1)}, ` +
+        `pipelineWasAlreadyLoaded=${result.pipelineWasAlreadyLoaded}), ${result.boxes.length} detection(s)`,
+    );
+    chrome.runtime.sendMessage({
+      type: "DETECTION_RESULT",
+      requestId,
+      boxes: result.boxes,
+      // Phase 4 diagnostic additions -- additive, existing consumers that
+      // only read `boxes` are unaffected.
+      modelLoadMs: result.modelLoadMs,
+      inferenceMs: result.inferenceMs,
+      pipelineWasAlreadyLoaded: result.pipelineWasAlreadyLoaded,
+      device: result.device,
+    }).catch(() => {
       // Background may have been torn down/restarted mid-flight (MV3 SWs
       // are killed on idle). Nothing more this side can do for this
       // specific request -- background's own request timeout is the

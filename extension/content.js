@@ -201,6 +201,69 @@ function assertNoRawPii(outgoingPayload, sensitiveNodes, idMap) {
 }
 
 // ---------------------------------------------------------------------
+// PROBLEM 1 fix (coordinator, 2026-09-11): a transient upstream 5xx/429
+// currently ends the whole demo run. Bounded retry with exponential
+// backoff + jitter around the /analyze send.
+//
+// RETRY LOOP OWNERSHIP -- deliberately placed HERE, in content.js, not in
+// background.js's handleAnalyze (which literally calls fetch()). Reason:
+// the Section 5 check (assertNoRawPii) must re-run on EVERY attempt, not
+// just the first -- "a retry is a fresh egress" -- and that check needs
+// `sensitiveNodes`/`idMap`, which are LIVE DOM REFERENCES. A
+// Map<string, Element> cannot cross the content<->background message
+// boundary (structured clone has no representation for a live Element),
+// so the check can only run where those references already live: here.
+// background.js's handleAnalyze stays a simple, retry-unaware single-shot
+// POST -- easier to reason about, and consistent with every other message
+// type it already handles.
+//
+// RETRYABLE SET: HTTP 429 and any 5xx, per the coordinator's explicit
+// policy ("NEVER retry a 4xx -- those are deterministic"). EXTENSION
+// BEYOND THE LITERAL POLICY, flagged explicitly rather than silently
+// folded in: status 0 (fetch() itself threw -- no HTTP response at all,
+// e.g. a transient network blip or the server mid-restart) is ALSO
+// treated as retryable here. It is structurally indistinguishable from a
+// "transient upstream hiccup" and is not a deterministic 4xx client
+// error -- but it wasn't literally named in the "5xx and 429" policy, so
+// this is called out explicitly rather than silently assumed.
+// ---------------------------------------------------------------------
+const ANALYZE_MAX_ATTEMPTS = 3;
+const ANALYZE_BASE_DELAY_MS = 1000; // -> roughly 1s / 2s before attempts 2 / 3
+
+function isRetryableAnalyzeFailure(resp) {
+  if (!resp) return false;
+  const status = resp.status;
+  if (status === 429) return true;
+  if (typeof status === "number" && status >= 500 && status <= 599) return true;
+  if (status === 0) return true; // see block comment above: documented extension beyond the literal policy
+  return false;
+}
+
+function errorClassOf(resp) {
+  if (!resp) return "no_response";
+  if (resp.status === 0) return "network_error";
+  if (resp.error && typeof resp.error === "object" && resp.error.errorCode) return resp.error.errorCode;
+  if (typeof resp.status === "number") return `http_${resp.status}`;
+  return "unknown";
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Full jitter around exponential backoff: base * 2^(attempt-1), +/-30%,
+// clamped to >=0. "Roughly 1s/2s/4s with jitter" per the coordinator's
+// spec -- jitter is a deliberate inclusion, not padding: it's what keeps
+// a real backoff from looking robotic/exact in the RUN SUMMARY, and is
+// standard practice so concurrent retries (if this code ever runs more
+// than one loop at once) don't all wake in lockstep.
+function backoffDelayMs(attempt) {
+  const base = ANALYZE_BASE_DELAY_MS * Math.pow(2, attempt - 1); // 1000, 2000, (4000, unused at MAX_ATTEMPTS=3)
+  const jitter = base * 0.3 * (Math.random() * 2 - 1);
+  return Math.max(0, Math.round(base + jitter));
+}
+
+// ---------------------------------------------------------------------
 // Instrumentation (item C). Timestamps every stage transition and logs
 // performance.memory where available (Chrome-only, non-standard API --
 // feature-detected, degrades to null rather than throwing). Structured so
@@ -309,8 +372,34 @@ async function runAgentLoop() {
       outcome = "capture_failed";
       break;
     }
-    instr.mark(step, "capture", { durationMs: +captureResp.captureMs.toFixed(1) });
-    instr.mark(step, "detect", { durationMs: +captureResp.detectMs.toFixed(1), detections: (captureResp.boxes || []).length });
+    instr.mark(step, "capture", {
+      durationMs: +captureResp.captureMs.toFixed(1),
+      offscreenDocumentAlreadyExisted: captureResp.offscreenDocumentAlreadyExisted,
+    });
+    // Split load vs. inference (coordinator-requested diagnostic,
+    // 2026-09-11) -- these were previously conflated into one "detect"
+    // mark, which is exactly why a 20x slowdown across repeated steps was
+    // ambiguous (cold model reload each step? vs. inference itself
+    // getting slow?). modelLoadMs/inferenceMs/pipelineWasAlreadyLoaded
+    // come from offscreen.entry.js's own module state -- see that file's
+    // runDetection() -- the only place that can truthfully answer this.
+    instr.mark(step, "model-load", {
+      durationMs: +captureResp.modelLoadMs.toFixed(1),
+      pipelineWasAlreadyLoaded: captureResp.pipelineWasAlreadyLoaded,
+      device: captureResp.device,
+    });
+    instr.mark(step, "inference", {
+      durationMs: +captureResp.inferenceMs.toFixed(1),
+      detections: (captureResp.boxes || []).length,
+      // detectMs is kept for continuity/backward-compat with earlier runs'
+      // RUN SUMMARY output -- it's the WALL-CLOCK total of the combined
+      // detectObjects() call (load + inference + message-passing overhead
+      // inside background.js), which should now roughly equal
+      // modelLoadMs + inferenceMs + a small remainder when they don't,
+      // that remainder is messaging/offscreen-doc-creation overhead, not
+      // load or inference time.
+      detectMsTotal: +captureResp.detectMs.toFixed(1),
+    });
 
     // ---- 2. SCAN -- RULING 1: action-executor FIRST (stamps
     // data-agent-id), dom-scanner SECOND (reuses those ids). Reversed,
@@ -384,24 +473,85 @@ async function runAgentLoop() {
       visionBoxesKeptAfterFilter: filteredBoxes.length,
     });
 
-    // ---- 7. SECTION 5 CHECK, before send, fail-closed. ----
-    const payload = { image: redactedImage, domSnapshot: sanitizedDomSnapshot, redactedRegions, taskGoal };
-    try {
-      assertNoRawPii(payload, sensitiveNodes, idMap);
-    } catch (err) {
-      instr.mark(step, "send", { error: err.message });
-      stepResults.push({ step, error: "section5_invariant_violation", detail: err.message });
-      outcome = "section5_violation";
-      break;
+    // ---- 7 & 8. SECTION 5 CHECK + SEND, with bounded retry on transient
+    // upstream failures. THE SECTION 5 CHECK RE-RUNS ON EVERY ATTEMPT --
+    // not just the first -- because a retry is a fresh network egress
+    // ("an error path is a data egress path", CLAUDE.md Section 7 rule
+    // 5, and a retry path is too). See the block comment above
+    // isRetryableAnalyzeFailure() (near the top of this file) for why
+    // this loop lives here in content.js rather than in background.js's
+    // handleAnalyze. ----
+    let analyzeResp = null;
+    let attemptsUsed = 0;
+    let section5Failed = false;
+
+    for (let attempt = 1; attempt <= ANALYZE_MAX_ATTEMPTS; attempt++) {
+      attemptsUsed = attempt;
+
+      // Freshly constructed AND freshly re-checked every attempt -- not
+      // hoisted above the loop and reused. The underlying values
+      // (redactedImage/sanitizedDomSnapshot/redactedRegions/taskGoal)
+      // don't change between attempts, but assertNoRawPii() still runs
+      // against this exact object on every single iteration, so a retry
+      // can never skip the check that guards what actually goes over the
+      // wire.
+      const payload = { image: redactedImage, domSnapshot: sanitizedDomSnapshot, redactedRegions, taskGoal };
+      try {
+        assertNoRawPii(payload, sensitiveNodes, idMap);
+      } catch (err) {
+        instr.mark(step, "send", { attempt, error: err.message });
+        section5Failed = true;
+        stepResults.push({ step, error: "section5_invariant_violation", detail: err.message, attempt });
+        outcome = "section5_violation";
+        break; // out of the retry loop -- a sanitization bug is not retryable, ever
+      }
+
+      const tSend0 = performance.now();
+      analyzeResp = await browser.runtime.sendMessage({ type: "ANALYZE", payload });
+      const sendMs = +(performance.now() - tSend0).toFixed(1);
+
+      if (analyzeResp && analyzeResp.type === "ANALYZE_RESULT") {
+        instr.mark(step, "send+response", { attempt, durationMs: sendMs });
+        break; // success -- stop retrying
+      }
+
+      const retryable = isRetryableAnalyzeFailure(analyzeResp);
+      const errClass = errorClassOf(analyzeResp);
+      const willRetry = retryable && attempt < ANALYZE_MAX_ATTEMPTS;
+      const delay = willRetry ? backoffDelayMs(attempt) : 0;
+
+      // Every attempt -- success, failed-but-retrying, or failed-and-
+      // exhausted -- produces its own "send+response" entry in the RUN
+      // SUMMARY, tagged with `attempt`. This is what makes a slow step
+      // read as "retrying" (3 entries, increasing delay) rather than
+      // "frozen" (1 entry, then nothing for 7 seconds).
+      instr.mark(step, "send+response", {
+        attempt,
+        durationMs: sendMs,
+        errorClass: errClass,
+        retrying: willRetry,
+        nextDelayMs: willRetry ? delay : undefined,
+      });
+
+      if (!willRetry) break; // not retryable (4xx), or attempts exhausted -- stop
+
+      console.log(`[agent-loop] step ${step} attempt ${attempt} failed (${errClass}) -- retrying in ${delay}ms`);
+      await sleep(delay);
+      // loop continues to attempt+1, which re-runs assertNoRawPii() above
+      // before sending again -- see the comment at the top of this block.
     }
 
-    // ---- 8. SEND ----
-    const tSend0 = performance.now();
-    const analyzeResp = await browser.runtime.sendMessage({ type: "ANALYZE", payload });
-    instr.mark(step, "send+response", { durationMs: +(performance.now() - tSend0).toFixed(1) });
+    if (section5Failed) {
+      break; // out of the STEP loop -- already recorded above, do not fall through to the generic analyze_failed handling below
+    }
+
     if (!analyzeResp || analyzeResp.type !== "ANALYZE_RESULT") {
       const errDetail = (analyzeResp && analyzeResp.error) || "no response from background";
-      stepResults.push({ step, error: "analyze_failed", detail: errDetail });
+      // A step that didn't happen must never look like one that
+      // succeeded: this records the SAME "analyze_failed" outcome as
+      // before retry logic existed, plus how many attempts were actually
+      // made, and stops the loop exactly as it always did on failure.
+      stepResults.push({ step, error: "analyze_failed", detail: errDetail, attempts: attemptsUsed });
       outcome = "analyze_failed";
       break;
     }
