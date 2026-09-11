@@ -1,0 +1,6 @@
+{
+  "_comment": "An ordinary contact/feedback form's Submit button. Bare 'submit' is deliberately NOT in the keyword list -- flagging it would block the majority of an agent's routine, harmless form completions. Only the compound 'submit payment' is flagged.",
+  "domNode": { "tag": "button", "type": "submit", "text": "Submit" },
+  "actionJson": { "action": "click", "targetId": "agent-7" },
+  "expected": { "risk": "safe" }
+}

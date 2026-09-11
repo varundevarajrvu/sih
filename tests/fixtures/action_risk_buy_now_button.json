@@ -1,0 +1,6 @@
+{
+  "_comment": "Classic <button>Buy Now</button>. Must flag via the text field, and must report the specific 2-word phrase (not the redundant bare 'buy') since the matcher prefers the longest match.",
+  "domNode": { "tag": "button", "type": "button", "text": "Buy Now" },
+  "actionJson": { "action": "click", "targetId": "agent-1" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "buy now" }
+}

@@ -1,0 +1,2109 @@
+{
+  "taskGoal": "add the blue shirt to the cart and view the shopping cart",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "domSnapshot": [
+    {
+      "agentId": "agent-1",
+      "tag": "button",
+      "role": null,
+      "type": "button",
+      "text": "Add to Cart",
+      "bbox": {
+        "x": 520,
+        "y": 300,
+        "w": 140,
+        "h": 40
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "View Cart",
+      "bbox": {
+        "x": 1100,
+        "y": 20,
+        "w": 90,
+        "h": 24
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-3",
+      "tag": "select",
+      "role": null,
+      "type": null,
+      "text": "Blue Shirt - Size M",
+      "bbox": {
+        "x": 100,
+        "y": 200,
+        "w": 220,
+        "h": 36
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-4",
+      "tag": "button",
+      "role": null,
+      "type": "button",
+      "text": "Add to Cart",
+      "bbox": {
+        "x": 100,
+        "y": 7600,
+        "w": 140,
+        "h": 40
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-5",
+      "tag": "input",
+      "role": null,
+      "type": "number",
+      "text": "Shirt Quantity",
+      "bbox": {
+        "x": 100,
+        "y": 340,
+        "w": 60,
+        "h": 32
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-6",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shopping Cart (2 items)",
+      "bbox": {
+        "x": 1150,
+        "y": 60,
+        "w": 110,
+        "h": 24
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-7",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 0",
+      "bbox": {
+        "x": 0,
+        "y": 40,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-8",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 0",
+      "bbox": {
+        "x": 37,
+        "y": 95,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-9",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 0",
+      "bbox": {
+        "x": 74,
+        "y": 150,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-10",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 0",
+      "bbox": {
+        "x": 111,
+        "y": 205,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-11",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 0",
+      "bbox": {
+        "x": 148,
+        "y": 260,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-12",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 0",
+      "bbox": {
+        "x": 185,
+        "y": 315,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-13",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 0",
+      "bbox": {
+        "x": 222,
+        "y": 370,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-14",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 0",
+      "bbox": {
+        "x": 259,
+        "y": 425,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-15",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 0",
+      "bbox": {
+        "x": 296,
+        "y": 480,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-16",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 0",
+      "bbox": {
+        "x": 333,
+        "y": 535,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-17",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 0",
+      "bbox": {
+        "x": 370,
+        "y": 590,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-18",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 0",
+      "bbox": {
+        "x": 407,
+        "y": 645,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-19",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 0",
+      "bbox": {
+        "x": 444,
+        "y": 700,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-20",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 0",
+      "bbox": {
+        "x": 481,
+        "y": 755,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-21",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 0",
+      "bbox": {
+        "x": 518,
+        "y": 810,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-22",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 1",
+      "bbox": {
+        "x": 555,
+        "y": 865,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-23",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 1",
+      "bbox": {
+        "x": 592,
+        "y": 920,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-24",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 1",
+      "bbox": {
+        "x": 629,
+        "y": 975,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-25",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 1",
+      "bbox": {
+        "x": 666,
+        "y": 1030,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-26",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 1",
+      "bbox": {
+        "x": 703,
+        "y": 1085,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-27",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 1",
+      "bbox": {
+        "x": 740,
+        "y": 1140,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-28",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 1",
+      "bbox": {
+        "x": 777,
+        "y": 1195,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-29",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 1",
+      "bbox": {
+        "x": 814,
+        "y": 1250,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-30",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 1",
+      "bbox": {
+        "x": 851,
+        "y": 1305,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-31",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 1",
+      "bbox": {
+        "x": 888,
+        "y": 1360,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-32",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 1",
+      "bbox": {
+        "x": 925,
+        "y": 1415,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-33",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 1",
+      "bbox": {
+        "x": 962,
+        "y": 1470,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-34",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 1",
+      "bbox": {
+        "x": 999,
+        "y": 1525,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-35",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 1",
+      "bbox": {
+        "x": 1036,
+        "y": 1580,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-36",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 1",
+      "bbox": {
+        "x": 1073,
+        "y": 1635,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-37",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 2",
+      "bbox": {
+        "x": 10,
+        "y": 1690,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-38",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 2",
+      "bbox": {
+        "x": 47,
+        "y": 1745,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-39",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 2",
+      "bbox": {
+        "x": 84,
+        "y": 1800,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-40",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 2",
+      "bbox": {
+        "x": 121,
+        "y": 1855,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-41",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 2",
+      "bbox": {
+        "x": 58,
+        "y": 1910,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-42",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 2",
+      "bbox": {
+        "x": 195,
+        "y": 1965,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-43",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 2",
+      "bbox": {
+        "x": 232,
+        "y": 2020,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-44",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 2",
+      "bbox": {
+        "x": 269,
+        "y": 2075,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-45",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 2",
+      "bbox": {
+        "x": 306,
+        "y": 2130,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-46",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 2",
+      "bbox": {
+        "x": 343,
+        "y": 2185,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-47",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 2",
+      "bbox": {
+        "x": 380,
+        "y": 2240,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-48",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 2",
+      "bbox": {
+        "x": 417,
+        "y": 2295,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-49",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 2",
+      "bbox": {
+        "x": 454,
+        "y": 2350,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-50",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 2",
+      "bbox": {
+        "x": 491,
+        "y": 2405,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-51",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 2",
+      "bbox": {
+        "x": 528,
+        "y": 2460,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-52",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 3",
+      "bbox": {
+        "x": 565,
+        "y": 2515,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-53",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 3",
+      "bbox": {
+        "x": 602,
+        "y": 2570,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-54",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 3",
+      "bbox": {
+        "x": 639,
+        "y": 2625,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-55",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 3",
+      "bbox": {
+        "x": 676,
+        "y": 2680,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-56",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 3",
+      "bbox": {
+        "x": 713,
+        "y": 2735,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-57",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 3",
+      "bbox": {
+        "x": 750,
+        "y": 2790,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-58",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 3",
+      "bbox": {
+        "x": 687,
+        "y": 2845,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-59",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 3",
+      "bbox": {
+        "x": 824,
+        "y": 2900,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-60",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 3",
+      "bbox": {
+        "x": 861,
+        "y": 2955,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-61",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 3",
+      "bbox": {
+        "x": 898,
+        "y": 3010,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-62",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 3",
+      "bbox": {
+        "x": 935,
+        "y": 3065,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-63",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 3",
+      "bbox": {
+        "x": 972,
+        "y": 3120,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-64",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 3",
+      "bbox": {
+        "x": 1009,
+        "y": 3175,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-65",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 3",
+      "bbox": {
+        "x": 1046,
+        "y": 3230,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-66",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 3",
+      "bbox": {
+        "x": 1083,
+        "y": 3285,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-67",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 4",
+      "bbox": {
+        "x": 20,
+        "y": 3340,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-68",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 4",
+      "bbox": {
+        "x": 57,
+        "y": 3395,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-69",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 4",
+      "bbox": {
+        "x": 94,
+        "y": 3450,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-70",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 4",
+      "bbox": {
+        "x": 131,
+        "y": 3505,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-71",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 4",
+      "bbox": {
+        "x": 168,
+        "y": 3560,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-72",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 4",
+      "bbox": {
+        "x": 205,
+        "y": 3615,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-73",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 4",
+      "bbox": {
+        "x": 242,
+        "y": 3670,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-74",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 4",
+      "bbox": {
+        "x": 279,
+        "y": 3725,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-75",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 4",
+      "bbox": {
+        "x": 116,
+        "y": 3780,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-76",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 4",
+      "bbox": {
+        "x": 353,
+        "y": 3835,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-77",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 4",
+      "bbox": {
+        "x": 390,
+        "y": 3890,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-78",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 4",
+      "bbox": {
+        "x": 427,
+        "y": 3945,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-79",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 4",
+      "bbox": {
+        "x": 464,
+        "y": 4000,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-80",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 4",
+      "bbox": {
+        "x": 501,
+        "y": 4055,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-81",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 4",
+      "bbox": {
+        "x": 538,
+        "y": 4110,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-82",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 5",
+      "bbox": {
+        "x": 575,
+        "y": 4165,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-83",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 5",
+      "bbox": {
+        "x": 612,
+        "y": 4220,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-84",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 5",
+      "bbox": {
+        "x": 649,
+        "y": 4275,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-85",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 5",
+      "bbox": {
+        "x": 686,
+        "y": 4330,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-86",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 5",
+      "bbox": {
+        "x": 723,
+        "y": 4385,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-87",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 5",
+      "bbox": {
+        "x": 760,
+        "y": 4440,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-88",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 5",
+      "bbox": {
+        "x": 797,
+        "y": 4495,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-89",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 5",
+      "bbox": {
+        "x": 834,
+        "y": 4550,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-90",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 5",
+      "bbox": {
+        "x": 871,
+        "y": 4605,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-91",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 5",
+      "bbox": {
+        "x": 908,
+        "y": 4660,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-92",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 5",
+      "bbox": {
+        "x": 745,
+        "y": 4715,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-93",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 5",
+      "bbox": {
+        "x": 982,
+        "y": 4770,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-94",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 5",
+      "bbox": {
+        "x": 1019,
+        "y": 4825,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-95",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 5",
+      "bbox": {
+        "x": 1056,
+        "y": 4880,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-96",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 5",
+      "bbox": {
+        "x": 1093,
+        "y": 4935,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-97",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 6",
+      "bbox": {
+        "x": 30,
+        "y": 4990,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-98",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 6",
+      "bbox": {
+        "x": 67,
+        "y": 5045,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-99",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 6",
+      "bbox": {
+        "x": 104,
+        "y": 5100,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-100",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 6",
+      "bbox": {
+        "x": 141,
+        "y": 5155,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-101",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 6",
+      "bbox": {
+        "x": 178,
+        "y": 5210,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-102",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 6",
+      "bbox": {
+        "x": 215,
+        "y": 5265,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-103",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 6",
+      "bbox": {
+        "x": 252,
+        "y": 5320,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-104",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 6",
+      "bbox": {
+        "x": 289,
+        "y": 5375,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-105",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 6",
+      "bbox": {
+        "x": 326,
+        "y": 5430,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-106",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 6",
+      "bbox": {
+        "x": 363,
+        "y": 5485,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-107",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 6",
+      "bbox": {
+        "x": 400,
+        "y": 5540,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-108",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 6",
+      "bbox": {
+        "x": 437,
+        "y": 5595,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-109",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 6",
+      "bbox": {
+        "x": 174,
+        "y": 5650,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-110",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 6",
+      "bbox": {
+        "x": 511,
+        "y": 5705,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-111",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 6",
+      "bbox": {
+        "x": 548,
+        "y": 5760,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-112",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 7",
+      "bbox": {
+        "x": 585,
+        "y": 5815,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-113",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 7",
+      "bbox": {
+        "x": 622,
+        "y": 5870,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-114",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 7",
+      "bbox": {
+        "x": 659,
+        "y": 5925,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-115",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 7",
+      "bbox": {
+        "x": 696,
+        "y": 5980,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-116",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 7",
+      "bbox": {
+        "x": 733,
+        "y": 6035,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-117",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 7",
+      "bbox": {
+        "x": 770,
+        "y": 6090,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-118",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 7",
+      "bbox": {
+        "x": 807,
+        "y": 6145,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-119",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 7",
+      "bbox": {
+        "x": 844,
+        "y": 6200,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-120",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 7",
+      "bbox": {
+        "x": 881,
+        "y": 6255,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-121",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 7",
+      "bbox": {
+        "x": 918,
+        "y": 6310,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-122",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 7",
+      "bbox": {
+        "x": 955,
+        "y": 6365,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-123",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 7",
+      "bbox": {
+        "x": 992,
+        "y": 6420,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-124",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 7",
+      "bbox": {
+        "x": 1029,
+        "y": 6475,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-125",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 7",
+      "bbox": {
+        "x": 1066,
+        "y": 6530,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-126",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 7",
+      "bbox": {
+        "x": 803,
+        "y": 6585,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-127",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 8",
+      "bbox": {
+        "x": 40,
+        "y": 6640,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-128",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 8",
+      "bbox": {
+        "x": 77,
+        "y": 6695,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-129",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 8",
+      "bbox": {
+        "x": 114,
+        "y": 6750,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-130",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 8",
+      "bbox": {
+        "x": 151,
+        "y": 6805,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-131",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 8",
+      "bbox": {
+        "x": 188,
+        "y": 6860,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-132",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 8",
+      "bbox": {
+        "x": 225,
+        "y": 6915,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-133",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 8",
+      "bbox": {
+        "x": 262,
+        "y": 6970,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-134",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 8",
+      "bbox": {
+        "x": 299,
+        "y": 7025,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-135",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 8",
+      "bbox": {
+        "x": 336,
+        "y": 7080,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-136",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Store Locator 8",
+      "bbox": {
+        "x": 373,
+        "y": 7135,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-137",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Size Guide 8",
+      "bbox": {
+        "x": 410,
+        "y": 7190,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-138",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Returns 8",
+      "bbox": {
+        "x": 447,
+        "y": 7245,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-139",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Shipping Info 8",
+      "bbox": {
+        "x": 484,
+        "y": 7300,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-140",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Gift Cards 8",
+      "bbox": {
+        "x": 521,
+        "y": 7355,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-141",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Sitemap 8",
+      "bbox": {
+        "x": 558,
+        "y": 7410,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-142",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 9",
+      "bbox": {
+        "x": 595,
+        "y": 7465,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-143",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "About Us 9",
+      "bbox": {
+        "x": 232,
+        "y": 7520,
+        "w": 0,
+        "h": 0
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-144",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Contact 9",
+      "bbox": {
+        "x": 669,
+        "y": 7575,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-145",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Privacy Policy 9",
+      "bbox": {
+        "x": 706,
+        "y": 7630,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-146",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Terms of Service 9",
+      "bbox": {
+        "x": 743,
+        "y": 7685,
+        "w": 140,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-147",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Help Center 9",
+      "bbox": {
+        "x": 780,
+        "y": 7740,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-148",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "FAQ 9",
+      "bbox": {
+        "x": 817,
+        "y": 7795,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-149",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Careers 9",
+      "bbox": {
+        "x": 854,
+        "y": 7850,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-150",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Blog 9",
+      "bbox": {
+        "x": 891,
+        "y": 7905,
+        "w": 130,
+        "h": 20
+      },
+      "sensitive": false
+    }
+  ]
+}

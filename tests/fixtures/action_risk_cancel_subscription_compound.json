@@ -1,0 +1,6 @@
+{
+  "_comment": "Contrast case for action_risk_benign_cancel_dialog.json: the compound phrase 'cancel subscription' unambiguously names a destructive action and IS flagged, even though bare 'cancel' alone is deliberately excluded.",
+  "domNode": { "tag": "button", "type": "button", "text": "Cancel Subscription" },
+  "actionJson": { "action": "click", "targetId": "agent-9" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "cancel subscription" }
+}

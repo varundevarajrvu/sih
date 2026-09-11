@@ -1,0 +1,849 @@
+{
+  "taskGoal": "search for wireless headphones and open the first result",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "domSnapshot": [
+    {
+      "agentId": "agent-1",
+      "tag": "input",
+      "role": null,
+      "type": "password",
+      "text": "",
+      "bbox": {
+        "x": 100,
+        "y": 400,
+        "w": 200,
+        "h": 32
+      },
+      "sensitive": true
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "input",
+      "role": null,
+      "type": "email",
+      "text": "",
+      "bbox": {
+        "x": 100,
+        "y": 440,
+        "w": 200,
+        "h": 32
+      },
+      "sensitive": true
+    },
+    {
+      "agentId": "agent-3",
+      "tag": "div",
+      "role": null,
+      "type": null,
+      "text": "",
+      "bbox": {
+        "x": 100,
+        "y": 480,
+        "w": 220,
+        "h": 20
+      },
+      "sensitive": true
+    },
+    {
+      "agentId": "agent-4",
+      "tag": "input",
+      "role": null,
+      "type": "tel",
+      "text": "",
+      "bbox": {
+        "x": 100,
+        "y": 9000,
+        "w": 200,
+        "h": 32
+      },
+      "sensitive": true
+    },
+    {
+      "agentId": "agent-5",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "text": "",
+      "bbox": {
+        "x": 100,
+        "y": 520,
+        "w": 200,
+        "h": 32
+      },
+      "sensitive": true
+    },
+    {
+      "agentId": "agent-6",
+      "tag": "input",
+      "role": null,
+      "type": "search",
+      "text": "Search",
+      "bbox": {
+        "x": 300,
+        "y": 60,
+        "w": 200,
+        "h": 36
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-7",
+      "tag": "button",
+      "role": null,
+      "type": "button",
+      "text": "Wireless Headphones",
+      "bbox": {
+        "x": 310,
+        "y": 100,
+        "w": 200,
+        "h": 36
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-8",
+      "tag": "input",
+      "role": null,
+      "type": "search",
+      "text": "Search Results",
+      "bbox": {
+        "x": 320,
+        "y": 140,
+        "w": 200,
+        "h": 36
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-9",
+      "tag": "button",
+      "role": null,
+      "type": "button",
+      "text": "Open Result",
+      "bbox": {
+        "x": 330,
+        "y": 180,
+        "w": 200,
+        "h": 36
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-10",
+      "tag": "input",
+      "role": null,
+      "type": "search",
+      "text": "Search",
+      "bbox": {
+        "x": 340,
+        "y": 220,
+        "w": 200,
+        "h": 36
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-11",
+      "tag": "button",
+      "role": null,
+      "type": "button",
+      "text": "Wireless Headphones",
+      "bbox": {
+        "x": 350,
+        "y": 260,
+        "w": 200,
+        "h": 36
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-12",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 0",
+      "bbox": {
+        "x": 0,
+        "y": 40,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-13",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Deals 0",
+      "bbox": {
+        "x": 41,
+        "y": 100,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-14",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "New Arrivals 0",
+      "bbox": {
+        "x": 82,
+        "y": 160,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-15",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Support 0",
+      "bbox": {
+        "x": 123,
+        "y": 220,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-16",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Track Order 0",
+      "bbox": {
+        "x": 164,
+        "y": 280,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-17",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Account 0",
+      "bbox": {
+        "x": 205,
+        "y": 340,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-18",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Wishlist 0",
+      "bbox": {
+        "x": 246,
+        "y": 400,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-19",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Compare 0",
+      "bbox": {
+        "x": 287,
+        "y": 460,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-20",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 1",
+      "bbox": {
+        "x": 328,
+        "y": 520,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-21",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Deals 1",
+      "bbox": {
+        "x": 369,
+        "y": 580,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-22",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "New Arrivals 1",
+      "bbox": {
+        "x": 410,
+        "y": 640,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-23",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Support 1",
+      "bbox": {
+        "x": 451,
+        "y": 700,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-24",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Track Order 1",
+      "bbox": {
+        "x": 492,
+        "y": 760,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-25",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Account 1",
+      "bbox": {
+        "x": 533,
+        "y": 820,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-26",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Wishlist 1",
+      "bbox": {
+        "x": 574,
+        "y": 880,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-27",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Compare 1",
+      "bbox": {
+        "x": 615,
+        "y": 940,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-28",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 2",
+      "bbox": {
+        "x": 656,
+        "y": 1000,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-29",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Deals 2",
+      "bbox": {
+        "x": 697,
+        "y": 1060,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-30",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "New Arrivals 2",
+      "bbox": {
+        "x": 738,
+        "y": 1120,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-31",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Support 2",
+      "bbox": {
+        "x": 779,
+        "y": 1180,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-32",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Track Order 2",
+      "bbox": {
+        "x": 820,
+        "y": 1240,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-33",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Account 2",
+      "bbox": {
+        "x": 861,
+        "y": 1300,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-34",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Wishlist 2",
+      "bbox": {
+        "x": 902,
+        "y": 1360,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-35",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Compare 2",
+      "bbox": {
+        "x": 943,
+        "y": 1420,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-36",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 3",
+      "bbox": {
+        "x": 984,
+        "y": 1480,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-37",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Deals 3",
+      "bbox": {
+        "x": 1025,
+        "y": 1540,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-38",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "New Arrivals 3",
+      "bbox": {
+        "x": 1066,
+        "y": 1600,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-39",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Support 3",
+      "bbox": {
+        "x": 7,
+        "y": 1660,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-40",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Track Order 3",
+      "bbox": {
+        "x": 48,
+        "y": 1720,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-41",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Account 3",
+      "bbox": {
+        "x": 89,
+        "y": 1780,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-42",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Wishlist 3",
+      "bbox": {
+        "x": 130,
+        "y": 1840,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-43",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Compare 3",
+      "bbox": {
+        "x": 171,
+        "y": 1900,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-44",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 4",
+      "bbox": {
+        "x": 212,
+        "y": 1960,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-45",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Deals 4",
+      "bbox": {
+        "x": 253,
+        "y": 2020,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-46",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "New Arrivals 4",
+      "bbox": {
+        "x": 294,
+        "y": 2080,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-47",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Support 4",
+      "bbox": {
+        "x": 335,
+        "y": 2140,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-48",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Track Order 4",
+      "bbox": {
+        "x": 376,
+        "y": 2200,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-49",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Account 4",
+      "bbox": {
+        "x": 417,
+        "y": 2260,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-50",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Wishlist 4",
+      "bbox": {
+        "x": 458,
+        "y": 2320,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-51",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Compare 4",
+      "bbox": {
+        "x": 499,
+        "y": 2380,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-52",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 5",
+      "bbox": {
+        "x": 540,
+        "y": 2440,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-53",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Deals 5",
+      "bbox": {
+        "x": 581,
+        "y": 2500,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-54",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "New Arrivals 5",
+      "bbox": {
+        "x": 622,
+        "y": 2560,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-55",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Support 5",
+      "bbox": {
+        "x": 663,
+        "y": 2620,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-56",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Track Order 5",
+      "bbox": {
+        "x": 704,
+        "y": 2680,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-57",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Account 5",
+      "bbox": {
+        "x": 745,
+        "y": 2740,
+        "w": 100,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-58",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Wishlist 5",
+      "bbox": {
+        "x": 786,
+        "y": 2800,
+        "w": 110,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-59",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Compare 5",
+      "bbox": {
+        "x": 827,
+        "y": 2860,
+        "w": 120,
+        "h": 20
+      },
+      "sensitive": false
+    },
+    {
+      "agentId": "agent-60",
+      "tag": "a",
+      "role": null,
+      "type": null,
+      "text": "Home 6",
+      "bbox": {
+        "x": 868,
+        "y": 2920,
+        "w": 90,
+        "h": 20
+      },
+      "sensitive": false
+    }
+  ]
+}

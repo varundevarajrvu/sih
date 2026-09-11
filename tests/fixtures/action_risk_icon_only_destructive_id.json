@@ -1,0 +1,6 @@
+{
+  "_comment": "Icon-only button: no visible text, no aria-label (a real accessibility bug some sites ship, not hypothetical) -- the ONLY signal is a camelCase code-level id. Proves the id/name decomposition (camelCase -> spaced words) is load-bearing, not decorative: 'deleteAccountBtn' must decompose to 'delete account btn' before the phrase matcher can find 'delete account' inside it.",
+  "domNode": { "tag": "button", "type": "button", "text": "", "value": "", "ariaLabel": "", "name": "", "id": "deleteAccountBtn" },
+  "actionJson": { "action": "click", "targetId": "agent-5" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "id matches destructive-intent keyword \"delete account\"" }
+}

@@ -1,0 +1,17 @@
+{
+  "_comment": "Hand-computed fixture isolating each scoring signal via near-identical pairs that differ in exactly ONE dimension: agent-1 vs agent-2 (kind: input vs link, same text/position), agent-1 vs agent-6 (viewport: on-screen vs off-screen, same text/kind/size), agent-1 vs agent-7 (size: normal vs 2x2px, same text/kind/position), agent-8 vs agent-9 (proximity: near agent-1 vs far from everything, same text/kind/size). See test_element_ranker.mjs for the worked-out expected ordering.",
+  "taskGoal": "fill in the email field",
+  "viewport": { "width": 1280, "height": 800 },
+  "domSnapshot": [
+    { "agentId": "agent-1", "tag": "input", "role": "textbox", "type": "email", "text": "Email Address", "bbox": { "x": 100, "y": 100, "w": 200, "h": 36 }, "sensitive": false },
+    { "agentId": "agent-2", "tag": "a", "role": "link", "type": null, "text": "Email Address", "bbox": { "x": 400, "y": 100, "w": 100, "h": 20 }, "sensitive": false },
+    { "agentId": "agent-3", "tag": "input", "role": "textbox", "type": "text", "text": "Full Name", "bbox": { "x": 100, "y": 160, "w": 200, "h": 36 }, "sensitive": false },
+    { "agentId": "agent-4", "tag": "button", "role": "button", "type": "button", "text": "Submit", "bbox": { "x": 100, "y": 220, "w": 120, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-5", "tag": "a", "role": "link", "type": null, "text": "Home", "bbox": { "x": 600, "y": 100, "w": 80, "h": 20 }, "sensitive": false },
+    { "agentId": "agent-6", "tag": "input", "role": "textbox", "type": "email", "text": "Email Address", "bbox": { "x": 100, "y": 5000, "w": 200, "h": 36 }, "sensitive": false },
+    { "agentId": "agent-7", "tag": "input", "role": "textbox", "type": "email", "text": "Email Address", "bbox": { "x": 100, "y": 280, "w": 2, "h": 2 }, "sensitive": false },
+    { "agentId": "agent-8", "tag": "div", "role": null, "type": null, "text": "Email Address", "bbox": { "x": 130, "y": 104, "w": 150, "h": 30 }, "sensitive": false },
+    { "agentId": "agent-9", "tag": "div", "role": null, "type": null, "text": "Email Address", "bbox": { "x": 1000, "y": 700, "w": 150, "h": 30 }, "sensitive": false },
+    { "agentId": "agent-10", "tag": "a", "role": "link", "type": null, "text": "Terms and Conditions", "bbox": { "x": 600, "y": 160, "w": 100, "h": 20 }, "sensitive": false }
+  ]
+}

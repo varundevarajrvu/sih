@@ -1,0 +1,6 @@
+{
+  "_comment": "'Add to Cart' is deliberately NOT in the keyword list -- it is a reversible, extremely common e-commerce action (unlike checkout/place-order/pay, which ARE flagged). Flagging it would make an autonomous shopping-assistant demo unable to add anything to a cart without a constant block-and-override loop, for no safety benefit (removing a cart item costs nothing).",
+  "domNode": { "tag": "button", "type": "button", "text": "Add to Cart" },
+  "actionJson": { "action": "click", "targetId": "agent-12" },
+  "expected": { "risk": "safe" }
+}

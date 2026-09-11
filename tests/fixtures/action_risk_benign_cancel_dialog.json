@@ -1,0 +1,6 @@
+{
+  "_comment": "The single most common bare-'Cancel' use on the web: a modal's abort/back-out control. Deliberately NOT flagged (see action-risk.js's 'DELIBERATELY EXCLUDED' comment) -- flagging it would misclassify the escape hatch itself as dangerous and fire on a huge fraction of ordinary dialog clicks.",
+  "domNode": { "tag": "button", "type": "button", "text": "Cancel" },
+  "actionJson": { "action": "click", "targetId": "agent-6" },
+  "expected": { "risk": "safe" }
+}

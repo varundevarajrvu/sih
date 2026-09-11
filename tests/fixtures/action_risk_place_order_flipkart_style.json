@@ -1,0 +1,6 @@
+{
+  "_comment": "Indian e-commerce checkout step (Flipkart/Amazon.in-style): an <input type=submit value=\"Place Order\">. Exercises the brief's explicit requirement to cover input[type=submit] value=... the same way as <button> text -- this element has NO textContent at all (inputs can't have children), so the `value` field is the ONLY signal available.",
+  "domNode": { "tag": "input", "type": "submit", "value": "Place Order", "text": "" },
+  "actionJson": { "action": "click", "targetId": "agent-2" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "value matches destructive-intent keyword \"place order\"" }
+}

@@ -1,0 +1,6 @@
+{
+  "_comment": "IRCTC/BookMyShow/flight-and-hotel-style 'Book Now' -- an Indian-market ticket/appointment booking flow that commits a real, usually non-refundable payment, same risk class as a product purchase.",
+  "domNode": { "tag": "button", "type": "button", "text": "Book Now" },
+  "actionJson": { "action": "click", "targetId": "agent-11" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "book now" }
+}

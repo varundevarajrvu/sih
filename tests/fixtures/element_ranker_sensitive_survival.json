@@ -1,0 +1,21 @@
+{
+  "_comment": "THE critical safety fixture. 3 sensitive nodes are engineered to hit the theoretical FLOOR of every scoring component this module has (empty text -- realistic, since Phase 2b strips sensitive text before this module ever runs -- generic div/span kind, zero-area/collapsed bbox parked far outside the viewport and far from every other node so proximity contributes ~0 too). The 10 non-sensitive candidates are engineered to score as high as this module can produce, on a taskGoal that matches them almost perfectly. Under any tight maxElements, the 10 great candidates would normally crowd out the 3 terrible sensitive ones by a wide margin on score alone -- the test asserts they never do.",
+  "taskGoal": "place the order and pay now",
+  "viewport": { "width": 1280, "height": 800 },
+  "domSnapshot": [
+    { "agentId": "agent-1", "tag": "div", "role": null, "type": null, "text": "", "bbox": { "x": 9999, "y": 9999, "w": 0, "h": 0 }, "sensitive": true },
+    { "agentId": "agent-2", "tag": "div", "role": null, "type": null, "text": "", "bbox": { "x": 9999, "y": 9999, "w": 0, "h": 0 }, "sensitive": true },
+    { "agentId": "agent-3", "tag": "span", "role": null, "type": null, "text": "", "bbox": { "x": 9999, "y": 9999, "w": 0, "h": 0 }, "sensitive": true },
+
+    { "agentId": "agent-4", "tag": "button", "role": "button", "type": "submit", "text": "Place Order", "bbox": { "x": 500, "y": 300, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-5", "tag": "button", "role": "button", "type": "submit", "text": "Pay Now", "bbox": { "x": 500, "y": 350, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-6", "tag": "input", "role": "button", "type": "submit", "text": "Place Order", "bbox": { "x": 500, "y": 400, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-7", "tag": "button", "role": "button", "type": "button", "text": "Confirm and Pay", "bbox": { "x": 500, "y": 450, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-8", "tag": "button", "role": "button", "type": "submit", "text": "Order Now", "bbox": { "x": 500, "y": 500, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-9", "tag": "button", "role": "button", "type": "button", "text": "Pay Now and Place Order", "bbox": { "x": 500, "y": 550, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-10", "tag": "input", "role": "textbox", "type": "text", "text": "Order Quantity", "bbox": { "x": 700, "y": 300, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-11", "tag": "select", "role": "combobox", "type": null, "text": "Pay With Card", "bbox": { "x": 700, "y": 350, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-12", "tag": "button", "role": "button", "type": "submit", "text": "Place Order Now", "bbox": { "x": 700, "y": 400, "w": 160, "h": 40 }, "sensitive": false },
+    { "agentId": "agent-13", "tag": "button", "role": "button", "type": "submit", "text": "Pay Order", "bbox": { "x": 700, "y": 450, "w": 160, "h": 40 }, "sensitive": false }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "_comment": "A second input[type=submit] case with a different phrase ('Pay Now' vs 'Place Order') to prove the value-field path isn't a one-phrase fluke.",
+  "domNode": { "tag": "input", "type": "submit", "value": "Pay Now", "text": "" },
+  "actionJson": { "action": "click", "targetId": "agent-3" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "pay now" }
+}

@@ -320,6 +320,29 @@ Rationale: an agent typing into a password field is the exact failure this proje
 - ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
+### TIER 2 — `element-ranker.js` + `action-risk.js`. Recorded 2026-09-11. Built, tested, **NOT YET WIRED**.
+
+Real pages have hundreds of actionable elements; the demo page has five. And the existing guard only blocks PII fields — it would happily let an autonomous agent click "Buy Now", because a purchase button is not PII.
+
+**`rankElements(domSnapshot, taskGoal, options?) → {selected, dropped}`** — weights: text-relevance 0.40 > kind 0.25 > viewport 0.15 > size 0.10 + proximity 0.10. Off-screen scores 0.1 rather than 0, because the agent may scroll to it next step. Deterministic; reports `dropped` so truncation is never silent.
+
+**🔴 THE SAFETY PROPERTY — sensitive nodes are partitioned out BEFORE the budget and unioned back unconditionally.** Their survival is never a function of score. Proven, not asserted: the fixture engineers 3 sensitive nodes to the literal floor of every component (empty text, 0×0 bbox, far off-screen), shows they score below *every* non-sensitive node, and confirms all 3 still appear at `maxElements: 0` — `selected.length` deliberately EXCEEDS the budget. The budget is overridden, not respected.
+Why this matters: sensitive nodes are not candidate targets. They are load-bearing for the server's `find_pii_leaks()` correlation AND the client guard that refuses to act on them. Dropping one to save tokens means the guard no longer knows to block it — and every other test still passes.
+
+**`classifyActionRisk(domNode, actionJson) → {risk, reasons[]}`** — covers US and Indian-market phrasing (buy/checkout/place order, plus book now/recharge/top up for IRCTC/BookMyShow/Paytm-style flows), both `<button>` text and `<input type="submit" value>`. Scans text → value → ariaLabel → name → id, with camelCase/kebab/snake decomposition so `id="deleteAccountBtn"` catches icon-only buttons.
+
+**Accepted tradeoffs, documented with fixtures rather than hidden:**
+- Bare `cancel`/`reset`/`clear`/`submit` are EXCLUDED — the one place this module favours precision. Flagging bare "Cancel" would break the modal-abort escape hatch everywhere. A destructive control whose *entire* signal is one of those words is an accepted blind spot.
+- Bare `confirm`/`order` are INCLUDED, which does fire on "Confirm Email" and "Track Order". Accepted false positives: blocking a harmless button is recoverable and obvious; letting an autonomous agent complete a purchase is not. Tune later if it proves annoying in practice.
+- An icon-only control with zero textual signal anywhere is unclassifiable by a text-based module. Out of scope — would need a visual signal.
+
+**ORCHESTRATOR RULINGS for the wiring pass:**
+1. **Error code: `IRREVERSIBLE_ACTION_BLOCKED`** — distinct from `SENSITIVE_TARGET_BLOCKED` so Phase 4 instrumentation can count them separately without string-matching prose.
+2. **Add an `onIrreversibleAction` override hook** mirroring the existing sensitive-guard pattern, **DISABLED by default**. Same reasoning as `onSensitiveTarget`: a real product needs a consent path; a demo that silently auto-approves proves nothing.
+3. **Check order: `guardSensitive()` FIRST, then `classifyActionRisk()`.** Sensitive is the project's core invariant and the more specific signal. When an element trips BOTH (e.g. a "Confirm Payment" button beside card fields), report `SENSITIVE_TARGET_BLOCKED` but include reasons from both — a refusal that explains itself is a product, one that just says no is a bug report.
+
+**Consumption points** (each file carries a HOW TO CONSUME block): `element-ranker` runs after the sensitive-flag merge and before the `/analyze` POST, fed real viewport dims. `action-risk` runs inside `executeAction()` at the same point `guardSensitive()` does, passed the **live DOM element's** attributes — not the lossy `domSnapshot` — for best recall.
+
 ### TIER 1 — IFRAME + SHADOW DOM COVERAGE. Recorded 2026-09-11. **Closed a real privacy hole.**
 
 Before this, `all_frames` was unset and neither DOM walker pierced shadow roots. PII inside an iframe or shadow root was never scanned, flagged, redacted, or stripped — **and the Section 5 assertion still PASSED**, because it only checks nodes the scanner found. A guarantee that silently doesn't cover part of the page is worse than none. Real sites put payment fields in iframes.

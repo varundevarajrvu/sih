@@ -1,0 +1,6 @@
+{
+  "_comment": "Indian-market mobile/utility recharge flow (Paytm/Airtel-style 'Recharge Now') -- triggers a real payment just like a product purchase, same risk class, different vocabulary than US e-commerce phrasing.",
+  "domNode": { "tag": "button", "type": "button", "text": "Recharge Now" },
+  "actionJson": { "action": "click", "targetId": "agent-10" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "recharge now" }
+}

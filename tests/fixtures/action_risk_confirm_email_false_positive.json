@@ -1,0 +1,6 @@
+{
+  "_comment": "DOCUMENTED, ACCEPTED false positive (not a bug): 'Confirm Email' is a benign email-verification button, but bare 'confirm' is explicitly named in the task brief's own keyword list and the recall-first bias resolves the ambiguity toward flagging over risking a missed 'Confirm Purchase'/'Confirm Order' button. See action-risk.js's 'Generic, broad, deliberately kept despite the noise' comment.",
+  "domNode": { "tag": "button", "type": "button", "text": "Confirm Email" },
+  "actionJson": { "action": "click", "targetId": "agent-14" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "confirm" }
+}

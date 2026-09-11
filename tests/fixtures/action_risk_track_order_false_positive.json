@@ -1,0 +1,6 @@
+{
+  "_comment": "DOCUMENTED, ACCEPTED false positive (not a bug): a plain 'Track Order' / order-history link is informational, not destructive, but bare 'order' is explicitly named in the task brief's own keyword list and the recall-first bias resolves the ambiguity toward flagging. See action-risk.js's 'Generic, broad, deliberately kept despite the noise' comment.",
+  "domNode": { "tag": "a", "type": null, "text": "Track Order" },
+  "actionJson": { "action": "click", "targetId": "agent-13" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "order" }
+}

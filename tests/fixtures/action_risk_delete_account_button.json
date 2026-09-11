@@ -1,0 +1,6 @@
+{
+  "_comment": "Unambiguous account-destruction button. Compound phrase 'delete account' should win over the bare 'delete' single-word entry (longest-match-wins).",
+  "domNode": { "tag": "button", "type": "button", "text": "Delete Account" },
+  "actionJson": { "action": "click", "targetId": "agent-4" },
+  "expected": { "risk": "irreversible", "reasonIncludes": "delete account" }
+}
