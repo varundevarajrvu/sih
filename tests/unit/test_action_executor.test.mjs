@@ -46,6 +46,8 @@ const ACTION_EXECUTOR_PATH = path.resolve(__dirname, "..", "..", "extension", "l
 const PAGE_HTML = readFileSync(path.join(FIXTURES_DIR, "action_executor_page.html"), "utf-8");
 const ACTIONS = JSON.parse(readFileSync(path.join(FIXTURES_DIR, "action_executor_actions.json"), "utf-8"));
 const ACTION_EXECUTOR_SRC = readFileSync(ACTION_EXECUTOR_PATH, "utf-8");
+// Real-site hardening pass: shadow DOM + closed-shadow-marker fixture page.
+const SHADOW_PAGE_HTML = readFileSync(path.join(FIXTURES_DIR, "action_executor_shadow_page.html"), "utf-8");
 
 /**
  * Build a fresh jsdom document from the fixture page and evaluate
@@ -502,5 +504,204 @@ describe("SAFETY: sensitive-target guard hook (Section 5 -- policy is the orches
       scrollElementIntoView: () => {},
     });
     assert.equal(result.ok, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SHADOW DOM PIERCING + CROSS-FRAME agentId PREFIXING (real-site hardening
+// pass). See test_dom_scanner.mjs's matching section for the full "what's
+// mechanically testable vs. what needs a browser" breakdown -- the same
+// facts apply here: open shadow roots are fully testable (jsdom 25 supports
+// attachShadow/shadowRoot/querySelectorAll-within-shadow-root correctly,
+// confirmed empirically), closed-shadow DETECTION is testable via the
+// marker attribute but the browser-only mechanism that PRODUCES that
+// marker (extension/shadow-detect.js) is not, and iframe coverage is
+// tested by calling buildDomSnapshot() directly against an iframe's own
+// .contentDocument -- exactly what that frame's own content-script
+// instance does in the real extension.
+// ---------------------------------------------------------------------------
+describe("shadow DOM piercing: actionable elements + domSnapshot", () => {
+  let dom, window, document, AE;
+
+  beforeEach(() => {
+    dom = freshDom(SHADOW_PAGE_HTML);
+    window = dom.window;
+    document = window.document;
+    AE = window.ActionExecutor;
+  });
+
+  test("an actionable element inside an open shadow root is found and assigned a stable id", () => {
+    const host = document.getElementById("widget");
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `<button id="shadow-btn">Click me (inside shadow)</button>`;
+
+    const { domSnapshot, idMap } = AE.buildDomSnapshot(document);
+    const shadowBtn = shadow.getElementById("shadow-btn");
+
+    const node = domSnapshot.find((n) => idMap.get(n.agentId) === shadowBtn);
+    assert.ok(node, "the shadow-DOM button must appear in domSnapshot");
+    assert.equal(node.tag, "button");
+
+    // The light-DOM control button (#light-btn) is ALSO still found --
+    // shadow piercing is additive, not a replacement for the normal walk.
+    const lightBtnNode = domSnapshot.find((n) => idMap.get(n.agentId) === document.getElementById("light-btn"));
+    assert.ok(lightBtnNode, "the ordinary light-DOM button must still be found");
+  });
+
+  test("executeAction can click a button living inside an open shadow root, via its stable agentId", () => {
+    const host = document.getElementById("widget");
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `<button id="shadow-btn">Click me</button>`;
+    const shadowBtn = shadow.getElementById("shadow-btn");
+
+    let clicks = 0;
+    shadowBtn.addEventListener("click", () => clicks++);
+
+    const { idMap } = AE.buildDomSnapshot(document);
+    const agentId = shadowBtn.getAttribute(AE.AGENT_ID_ATTR);
+    assert.ok(agentId, "the shadow button must have been stamped with a data-agent-id");
+
+    const result = AE.executeAction({ action: "click", targetId: agentId }, idMap);
+    assert.equal(result.ok, true);
+    assert.equal(clicks, 1);
+  });
+
+  test("STABILITY holds across a shadow boundary: re-scanning keeps the same id for the same shadow element", () => {
+    const host = document.getElementById("widget");
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `<button id="shadow-btn">x</button>`;
+    const shadowBtn = shadow.getElementById("shadow-btn");
+
+    const first = AE.buildDomSnapshot(document);
+    const firstId = shadowBtn.getAttribute(AE.AGENT_ID_ATTR);
+    const second = AE.buildDomSnapshot(document);
+    const secondId = shadowBtn.getAttribute(AE.AGENT_ID_ATTR);
+
+    assert.equal(firstId, secondId);
+    assert.equal(second.idMap.get(secondId), shadowBtn);
+  });
+});
+
+describe("shadow DOM piercing: CLOSED shadow root is REPORTED, never silently skipped", () => {
+  test("buildDomSnapshot reports a closed-shadow-marked host in unscannableRegions", () => {
+    const dom = freshDom(SHADOW_PAGE_HTML);
+    const document = dom.window.document;
+    const AE = dom.window.ActionExecutor;
+
+    const { unscannableRegions } = AE.buildDomSnapshot(document);
+    assert.equal(unscannableRegions.length, 1);
+    assert.equal(unscannableRegions[0].reason, "closed-shadow-root");
+    assert.equal(unscannableRegions[0].tag, "div");
+    // #closed-host is not itself actionable (no href/button/role/etc), so
+    // it never gets its own data-agent-id -- agentId correctly comes back
+    // null rather than a fabricated value.
+    assert.equal(unscannableRegions[0].agentId, null);
+  });
+
+  test("CLOSED_SHADOW_HOST_ATTR mirrors dom-scanner.js's exported constant of the same name (drift guard)", () => {
+    const dom = freshDom(SHADOW_PAGE_HTML);
+    const AE = dom.window.ActionExecutor;
+    assert.equal(AE.CLOSED_SHADOW_HOST_ATTR, "data-sih-closed-shadow");
+  });
+});
+
+describe("cross-frame agentId uniqueness: options.idPrefix", () => {
+  test("default (no idPrefix) produces bare 'agent-<n>' ids -- 100% unchanged from before this option existed", () => {
+    const dom = freshDom(PAGE_HTML);
+    const AE = dom.window.ActionExecutor;
+    const { domSnapshot } = AE.buildDomSnapshot(dom.window.document);
+    assert.deepEqual(
+      plain(domSnapshot.map((n) => n.agentId)),
+      ["agent-1", "agent-2", "agent-3", "agent-4", "agent-5", "agent-6", "agent-7"]
+    );
+  });
+
+  test("options.idPrefix mints frame-scoped ids that can never collide with the top frame's bare ids", () => {
+    const dom = freshDom(PAGE_HTML);
+    const AE = dom.window.ActionExecutor;
+    const { domSnapshot } = AE.buildDomSnapshot(dom.window.document, { idPrefix: "f7-" });
+    assert.deepEqual(
+      plain(domSnapshot.map((n) => n.agentId)),
+      ["agent-f7-1", "agent-f7-2", "agent-f7-3", "agent-f7-4", "agent-f7-5", "agent-f7-6", "agent-f7-7"]
+    );
+  });
+
+  test("RE-SCAN STABILITY holds under a prefix: a previously-stamped 'agent-f7-3' is recognized as already-valid, not reassigned", () => {
+    const dom = freshDom(PAGE_HTML);
+    const document = dom.window.document;
+    const AE = dom.window.ActionExecutor;
+
+    const first = AE.buildDomSnapshot(document, { idPrefix: "f7-" });
+    const loginBtn = document.getElementById("login-btn");
+    const firstId = loginBtn.getAttribute(AE.AGENT_ID_ATTR);
+    assert.equal(firstId, "agent-f7-3");
+
+    const second = AE.buildDomSnapshot(document, { idPrefix: "f7-" });
+    assert.equal(loginBtn.getAttribute(AE.AGENT_ID_ATTR), firstId, "id must not change across a re-scan with the same prefix");
+    assert.equal(second.idMap.get(firstId), loginBtn);
+
+    // A NEW element added after the first scan gets an id that continues
+    // THIS frame's own counter (never restarts at 1) -- mirrors the
+    // existing no-prefix stability guarantee, now proven to hold under a
+    // prefix too.
+    const newBtn = document.createElement("button");
+    newBtn.textContent = "new";
+    document.body.appendChild(newBtn);
+    const third = AE.buildDomSnapshot(document, { idPrefix: "f7-" });
+    const newId = newBtn.getAttribute(AE.AGENT_ID_ATTR);
+    assert.equal(newId, "agent-f7-8");
+    assert.equal(third.idMap.get(newId), newBtn);
+  });
+
+  test("two different frame prefixes on the SAME document never collide with each other (simulates two frames' id spaces coexisting after a merge)", () => {
+    // This does not simulate the real cross-frame merge (that lives in
+    // content.js, browser-only) -- it proves the NARROWER, fully pure
+    // claim: the id-minting scheme itself is collision-free across
+    // prefixes, which is the property content.js's merge step depends on.
+    const dom = freshDom(PAGE_HTML);
+    const document = dom.window.document;
+    const AE = dom.window.ActionExecutor;
+
+    const topScan = AE.buildDomSnapshot(document, { idPrefix: "" });
+    const topIds = new Set(topScan.domSnapshot.map((n) => n.agentId));
+
+    // A second, independent document simulating a different frame's own
+    // DOM, prefixed as if it were Chrome frameId 3.
+    const dom2 = freshDom(PAGE_HTML);
+    const AE2 = dom2.window.ActionExecutor;
+    const subScan = AE2.buildDomSnapshot(dom2.window.document, { idPrefix: "f3-" });
+    const subIds = new Set(subScan.domSnapshot.map((n) => n.agentId));
+
+    for (const id of subIds) {
+      assert.equal(topIds.has(id), false, `frame-prefixed id "${id}" must not collide with a top-frame id`);
+    }
+  });
+});
+
+describe("iframe coverage: buildDomSnapshot() run against a child frame's OWN document", () => {
+  test("an actionable element inside a same-origin iframe's contentDocument is found when scanned with its own document", () => {
+    const dom = freshDom(PAGE_HTML);
+    const document = dom.window.document;
+    const AE = dom.window.ActionExecutor;
+
+    const iframe = document.createElement("iframe");
+    document.body.appendChild(iframe);
+    iframe.contentDocument.body.innerHTML = `<button id="frame-btn">Pay now</button>`;
+
+    // The TOP document's own scan does NOT see into the iframe -- this is
+    // the bug being fixed: without a per-frame content-script instance
+    // (manifest.json's all_frames:true), nothing ever calls
+    // buildDomSnapshot on the iframe's own document at all.
+    const topScan = AE.buildDomSnapshot(document);
+    assert.ok(!topScan.domSnapshot.some((n) => n.text === "Pay now"));
+
+    // What DOES find it: the iframe's own document, scanned directly --
+    // exactly what its own content-script instance does in the real
+    // extension (see content.js's frame-coordination notes for the
+    // relay/offset-translation glue that gets it back to the top frame).
+    const frameScan = AE.buildDomSnapshot(iframe.contentDocument, { idPrefix: "f9-" });
+    const btnNode = frameScan.domSnapshot.find((n) => n.text === "Pay now");
+    assert.ok(btnNode);
+    assert.equal(btnNode.agentId, "agent-f9-1");
   });
 });

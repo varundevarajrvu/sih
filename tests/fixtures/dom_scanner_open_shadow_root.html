@@ -1,0 +1,17 @@
+<!--
+  PII inside an OPEN shadow root. The scanner must pierce it: a password
+  field and an email address living inside <my-widget>'s shadow tree are
+  invisible to plain document.querySelectorAll()/TreeWalker -- shadow
+  boundaries are NOT crossed by ordinary DOM queries -- so finding these
+  requires the shadow-DOM-piercing walk added in this hardening pass.
+
+  The actual shadow root is attached by the fixture LOADER
+  (buildShadowDomFixture() in the test file), not by inline <script> here,
+  because JSDOM(html) alone does not execute <script> tags by default in
+  this repo's test harness (see freshDom()/loadFixtureDocument() in the
+  two test files -- neither passes runScripts:"dangerously" and this
+  fixture deliberately keeps that unchanged rather than loosening it project-wide
+  just for this one fixture).
+-->
+<div id="light-dom-marker">Not inside any shadow root -- control element.</div>
+<my-widget id="widget"></my-widget>

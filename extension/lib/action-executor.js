@@ -73,6 +73,14 @@
   var AGENT_ID_PATTERN = /^agent-(\d+)$/;
   var SENSITIVE_ATTR = "data-agent-sensitive";
 
+  // Mirrors dom-scanner.js's exported CLOSED_SHADOW_HOST_ATTR constant --
+  // duplicated, not imported, because this file has zero import/export
+  // statements by design (see file header). Keep the literal string in
+  // sync if it ever changes; a drift-guard test in
+  // tests/unit/test_action_executor.test.mjs checks this against
+  // dom-scanner.js's own export.
+  var CLOSED_SHADOW_HOST_ATTR = "data-sih-closed-shadow";
+
   // Actionable-element selector for Set-of-Mark grounding: form controls,
   // links, buttons, and anything wearing an interactive ARIA role or
   // explicit interactivity signal (onclick/tabindex/contenteditable).
@@ -135,6 +143,60 @@
   // Set-of-Mark grounding: agentId assignment
   // -------------------------------------------------------------------
 
+  // -------------------------------------------------------------------
+  // SHADOW DOM SUPPORT (real-site hardening pass). Mirrors
+  // dom-scanner.js's collectShadowPiercingRoots()/CLOSED_SHADOW_HOST_ATTR
+  // handling exactly -- see that file's SHADOW DOM SUPPORT block for the
+  // full reasoning on why a closed shadow root is genuinely undetectable
+  // by a pure function on its own, and why this module reports rather
+  // than silently skips one when an external signal marks it. Duplicated
+  // here (not shared via import) for the same classic-script reason as
+  // CLOSED_SHADOW_HOST_ATTR above.
+  //
+  // Deliberately does NOT reach into <iframe>.contentDocument -- see
+  // dom-scanner.js's identical note. Each frame gets its own
+  // content-script instance calling buildDomSnapshot() with ITS OWN
+  // document (manifest.json's all_frames:true); this function never
+  // crosses a frame boundary itself.
+  // -------------------------------------------------------------------
+  function collectShadowPiercingRoots(root) {
+    var roots = [root];
+    var closedShadowHosts = [];
+    var queue = [root];
+    while (queue.length > 0) {
+      var current = queue.shift();
+      if (!current || typeof current.querySelectorAll !== "function") continue;
+      var all;
+      try {
+        all = current.querySelectorAll("*");
+      } catch (e) {
+        continue; // a malformed/detached root must not crash the whole scan
+      }
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        if (el.shadowRoot) {
+          roots.push(el.shadowRoot);
+          queue.push(el.shadowRoot);
+        } else if (el.hasAttribute && el.hasAttribute(CLOSED_SHADOW_HOST_ATTR)) {
+          closedShadowHosts.push(el);
+        }
+      }
+    }
+    return { roots: roots, closedShadowHosts: closedShadowHosts };
+  }
+
+  /**
+   * Walk `root` AND every open shadow root reachable from it, collecting
+   * actionable elements from each. Returns them concatenated in the order
+   * each root was discovered (root itself first, exactly matching the
+   * original single-root behavior when there is no shadow content at all
+   * -- this is what keeps every pre-existing fixture/test byte-for-byte
+   * unaffected), plus every element confirmed to host a closed
+   * (unreachable) shadow root.
+   *
+   * @param {Document|Element} root
+   * @returns {{ elements: Element[], closedShadowHosts: Element[] }}
+   */
   function queryActionableElements(root) {
     if (!root || typeof root.querySelectorAll !== "function") {
       throw new ActionExecutionError(
@@ -142,14 +204,37 @@
         "root must be a Document or Element with querySelectorAll()"
       );
     }
-    // Array.from + querySelectorAll returns elements in document (tree)
-    // order -- deterministic, and the basis of stability below.
-    return Array.prototype.slice.call(root.querySelectorAll(ACTIONABLE_SELECTOR));
+    var found = [];
+    var allClosedShadowHosts = [];
+    var piercing = collectShadowPiercingRoots(root);
+    for (var r = 0; r < piercing.roots.length; r++) {
+      var sub = piercing.roots[r];
+      var matched;
+      try {
+        matched = sub.querySelectorAll(ACTIONABLE_SELECTOR);
+      } catch (e) {
+        continue;
+      }
+      for (var i = 0; i < matched.length; i++) found.push(matched[i]);
+    }
+    allClosedShadowHosts = piercing.closedShadowHosts;
+    return { elements: found, closedShadowHosts: allClosedShadowHosts };
+  }
+
+  // Builds an id-recognition pattern for a given (possibly empty) frame
+  // prefix. Default (no prefix) is EXACTLY the original
+  // `/^agent-(\d+)$/` -- byte-for-byte unchanged behavior for every
+  // existing caller that never passes options.idPrefix.
+  function buildAgentIdPattern(idPrefix) {
+    if (!idPrefix) return AGENT_ID_PATTERN;
+    var escaped = String(idPrefix).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp("^agent-" + escaped + "(\\d+)$");
   }
 
   /**
-   * Walk actionable elements under `root` and assign each a stable
-   * `data-agent-id`, returning a Map<agentId, Element>.
+   * Walk actionable elements under `root` (piercing open shadow roots --
+   * see SHADOW DOM SUPPORT above) and assign each a stable
+   * `data-agent-id`, returning `{ idMap, closedShadowHosts }`.
    *
    * STABILITY: an element that already carries `data-agent-id` (from a
    * prior scan) keeps that exact id -- the attribute lives on the DOM
@@ -163,15 +248,43 @@
    * never collide, which is the actual bar CLAUDE.md sets ("agent-1
    * must refer to the same element across re-scans of an unchanged
    * page").
+   *
+   * CROSS-FRAME UNIQUENESS (real-site hardening pass): with
+   * manifest.json's all_frames:true, every frame (top page + every
+   * iframe, same-origin or cross-origin) runs its OWN instance of this
+   * module against its OWN document, each independently counting
+   * "agent-1, agent-2, ..." from scratch. Left alone, a subframe's
+   * "agent-1" would collide with the top frame's "agent-1" once
+   * content.js merges their reports into one payload -- silently
+   * corrupting the agentId->element correlation the whole Section 5
+   * check and the sensitive-target guard depend on. `options.idPrefix`
+   * (e.g. "f7-", one per Chrome frameId) is content.js's fix: every id
+   * this frame mints is "agent-" + idPrefix + n instead of bare
+   * "agent-" + n, and the recognition pattern used for RE-SCAN
+   * stability is prefix-aware too, so a previously-stamped
+   * "agent-f7-3" is correctly recognized as already-valid (not
+   * reassigned) on the next scan. The TOP frame passes no idPrefix at
+   * all (empty string), so its own ids stay bare "agent-<n>" exactly as
+   * before -- 100% backward compatible for every existing caller/test,
+   * none of which know frames exist.
+   *
+   * @param {Document|Element} root
+   * @param {{ idPrefix?: string }} [options]
+   * @returns {{ idMap: Map<string, Element>, closedShadowHosts: Element[] }}
    */
-  function assignAgentIds(root) {
-    var elements = queryActionableElements(root);
+  function assignAgentIds(root, options) {
+    var opts = options || {};
+    var idPrefix = typeof opts.idPrefix === "string" ? opts.idPrefix : "";
+    var pattern = buildAgentIdPattern(idPrefix);
+
+    var queried = queryActionableElements(root);
+    var elements = queried.elements;
 
     var maxIndex = 0;
     for (var i = 0; i < elements.length; i++) {
       var existing = elements[i].getAttribute(AGENT_ID_ATTR);
       if (existing) {
-        var m = AGENT_ID_PATTERN.exec(existing);
+        var m = pattern.exec(existing);
         if (m) {
           var n = parseInt(m[1], 10);
           if (n > maxIndex) maxIndex = n;
@@ -184,14 +297,14 @@
     for (var j = 0; j < elements.length; j++) {
       var el = elements[j];
       var id = el.getAttribute(AGENT_ID_ATTR);
-      if (!id || !AGENT_ID_PATTERN.test(id)) {
+      if (!id || !pattern.test(id)) {
         counter += 1;
-        id = "agent-" + counter;
+        id = "agent-" + idPrefix + counter;
         el.setAttribute(AGENT_ID_ATTR, id);
       }
       idMap.set(id, el);
     }
-    return idMap;
+    return { idMap: idMap, closedShadowHosts: queried.closedShadowHosts };
   }
 
   // -------------------------------------------------------------------
@@ -301,8 +414,23 @@
    * @param {Document|Element} [root] defaults to global `document` if
    *   available (browser content-script context); pass explicitly in
    *   tests (a jsdom document, or a container element).
-   * @param {{getBBox?: function}} [options]
-   * @returns {{domSnapshot: object[], idMap: Map<string, Element>}}
+   * @param {{getBBox?: function, idPrefix?: string}} [options]
+   *   `idPrefix`: see assignAgentIds()'s CROSS-FRAME UNIQUENESS note --
+   *   passed straight through, empty by default (bare "agent-<n>" ids,
+   *   100% unchanged from before this option existed).
+   * @returns {{
+   *   domSnapshot: object[],
+   *   idMap: Map<string, Element>,
+   *   unscannableRegions: Array<{agentId: string|null, tag: string, bbox: object, reason: string}>
+   * }}
+   *   `unscannableRegions` (CONTRACT ADDITION, real-site hardening pass):
+   *   elements confirmed to host a CLOSED shadow root this walk could not
+   *   see into -- reported explicitly, always present (possibly empty).
+   *   `agentId` is the HOST element's own id if it happened to also be
+   *   independently actionable (e.g. a custom element with role="button"
+   *   that also has a closed shadow root); the shadow TREE's own content
+   *   was never enumerable in the first place, so there is nothing to
+   *   assign an id to there -- only the host is identifiable.
    */
   function buildDomSnapshot(root, options) {
     var opts = options || {};
@@ -315,7 +443,8 @@
     }
     var getBBox = opts.getBBox || defaultGetBBox;
 
-    var idMap = assignAgentIds(resolvedRoot);
+    var assigned = assignAgentIds(resolvedRoot, { idPrefix: opts.idPrefix });
+    var idMap = assigned.idMap;
     var domSnapshot = [];
     idMap.forEach(function (el, agentId) {
       domSnapshot.push({
@@ -329,7 +458,16 @@
       });
     });
 
-    return { domSnapshot: domSnapshot, idMap: idMap };
+    var unscannableRegions = assigned.closedShadowHosts.map(function (el) {
+      return {
+        agentId: el.getAttribute(AGENT_ID_ATTR) || null,
+        tag: el.tagName.toLowerCase(),
+        bbox: getBBox(el),
+        reason: "closed-shadow-root",
+      };
+    });
+
+    return { domSnapshot: domSnapshot, idMap: idMap, unscannableRegions: unscannableRegions };
   }
 
   // -------------------------------------------------------------------
@@ -656,6 +794,7 @@
     ACTIONABLE_SELECTOR: ACTIONABLE_SELECTOR,
     AGENT_ID_ATTR: AGENT_ID_ATTR,
     SENSITIVE_ATTR: SENSITIVE_ATTR,
+    CLOSED_SHADOW_HOST_ATTR: CLOSED_SHADOW_HOST_ATTR,
     ActionExecutionError: ActionExecutionError,
 
     assignAgentIds: assignAgentIds,

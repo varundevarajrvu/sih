@@ -320,6 +320,34 @@ Rationale: an agent typing into a password field is the exact failure this proje
 - ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
+### TIER 1 — IFRAME + SHADOW DOM COVERAGE. Recorded 2026-09-11. **Closed a real privacy hole.**
+
+Before this, `all_frames` was unset and neither DOM walker pierced shadow roots. PII inside an iframe or shadow root was never scanned, flagged, redacted, or stripped — **and the Section 5 assertion still PASSED**, because it only checks nodes the scanner found. A guarantee that silently doesn't cover part of the page is worse than none. Real sites put payment fields in iframes.
+
+**Cross-origin offset — the hard part, solved.** A cross-origin frame cannot read its own position in the parent (SOP; `window.frameElement` is null). But the PARENT can always measure its own `<iframe>` element. The missing link is *which* iframe sent a report:
+> `MessageEvent.source` is a browser-guaranteed, unspoofable `WindowProxy` reference that works cross-origin by design. The parent matches it against `iframe.contentWindow` to identify the sender, then re-measures that element's rect fresh at merge time.
+
+**Security detail that matters:** `postMessage` delivers to *every* listener on the target window, including page script. So only a meaningless random token travels that way. The actual `sensitiveNodes`/`domSnapshot` go over `chrome.runtime` messaging, which page script cannot observe. Sending PII over `postMessage` would have opened a new leak while closing an old one.
+
+**agentId across frames:** top frame keeps bare `agent-<n>` (byte-identical to all prior behaviour); subframes get `agent-f<frameId>-<n>`. Collision-freedom is structural — a subframe id always contains a literal `f<digits>-` segment a top-frame id never can, and Chrome guarantees frameId uniqueness per tab. Action routing recovers the frameId from the id string itself.
+
+**🔴 BBOX TRANSFORM ORDER — exactly once each, in this order:**
+1. **Frame offset** (`frame-coords.js`, additive): subframe-local CSS px → top-frame CSS px. Applied ONLY to subframe-sourced nodes, once, at merge. Top-frame nodes skip it entirely.
+2. **devicePixelRatio** (pre-existing Ruling 2, unchanged): applied once, uniformly, to the whole merged set.
+
+`frame-coords.js` does zero DPR scaling by design, so there is no path to double-transforming. It **throws on an unresolved offset rather than defaulting to zero** — a wrong bbox is a leak that looks like success.
+
+**ORCHESTRATOR RULINGS on the two decisions flagged:**
+1. **Closed shadow roots are defensively redacted (whole host blacked out), not merely reported — APPROVED.** Closed roots are genuinely unreachable by any script. Consistent with the project's recall-first stance everywhere else: when you cannot see inside, over-redact. A visible black box is a recoverable annoyance; an unredacted credential is not.
+2. **`shadow-detect.js` stays a STATIC `world: "MAIN"` declaration — APPROVED.** Dynamic `chrome.scripting.registerContentScripts()` may be more reliable but requires broader `host_permissions`. **Do not escalate permissions for an unverified reliability gain.** Verify static in a browser first; only if it demonstrably fails does the permission conversation reopen.
+
+**Declared limitations — stated, never silently claimed:**
+- **Only ONE level of iframe nesting.** Iframe-inside-iframe is not covered. The realistic case (a payment provider's frame sitting directly in the checkout page) is.
+- CSS `transform: scale` on an `<iframe>` element is not compensated (position offset only).
+- Closed-shadow *detection* depends on the MAIN-world patch firing before page scripts — **unverified in a real browser**.
+- A slow-loading iframe may miss the first loop step (self-heals within remaining steps).
+- `assertNoRawPii` cannot check subframe nodes against live element references. Mitigated: each subframe runs its own sanitize + leak check before its report leaves that frame's isolated world. The guarantee is distributed rather than centralized — worth knowing.
+
 ### UI-DETECTOR SPIKE — recorded 2026-09-11. **NEGATIVE RESULT. Do not ship UI detection for grounding.**
 
 Chief asked whether a UI-trained detector could replace `yolos-tiny`'s COCO classes for grounding on real websites. Investigated properly; the answer is no.

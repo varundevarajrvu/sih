@@ -1,0 +1,23 @@
+<!--
+  A closed shadow root. Its content is GENUINELY unreachable by any pure
+  DOM-inspection function -- see dom-scanner.js's SHADOW DOM SUPPORT block
+  for why there is no public API to see into it (not even to detect its
+  presence) without intercepting the attachShadow() call itself before it
+  happens, which is a browser-only, page-load-time mechanism
+  (extension/shadow-detect.js) outside this pure function's reach.
+
+  The CLOSED_SHADOW_HOST_ATTR marker below simulates what that browser-only
+  mechanism would have stamped onto #closed-host after observing a real
+  `closed-host.attachShadow({mode:"closed"})` call -- this is the one part
+  of the fixture that stands in for something a unit test cannot produce on
+  its own (jsdom has no page-script-interception mechanism), stated
+  explicitly rather than silently assumed. See the test file's describe
+  block for what this proves vs. what still needs real-browser
+  verification.
+-->
+<div id="closed-host" data-sih-closed-shadow>
+  This element hosts a closed shadow root in the real scenario being
+  simulated. Its light-DOM text (this sentence) is still ordinary,
+  scannable content -- attachShadow() does not hide the HOST's own
+  text/attributes, only its shadow TREE's internal content.
+</div>

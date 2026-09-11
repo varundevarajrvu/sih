@@ -45,6 +45,7 @@ console.log("[content] Phase 4 agent-loop content script loaded on", location.hr
 
 let DomScanner = null;
 let Redaction = null;
+let FrameCoords = null;
 
 async function loadLibModules() {
   if (!DomScanner) {
@@ -53,6 +54,377 @@ async function loadLibModules() {
   if (!Redaction) {
     Redaction = await import(browser.runtime.getURL("lib/redaction.js"));
   }
+  if (!FrameCoords) {
+    FrameCoords = await import(browser.runtime.getURL("lib/frame-coords.js"));
+  }
+}
+
+// =======================================================================
+// FRAME COORDINATION (real-site hardening pass).
+//
+// manifest.json's content_scripts[].all_frames is now true, so this exact
+// file is evaluated once per frame on a matched page -- the top page AND
+// every <iframe>, same-origin or cross-origin. Before this, PII inside an
+// iframe (Amazon's payment iframe, an embedded auth widget, ...) was
+// simply never scanned: nothing ever ran a content script inside it at
+// all. That silent gap -- Section 5 still reporting PASSED because it
+// only checks nodes the scanner found -- is the bug this pass fixes.
+//
+// ARCHITECTURE: only the TOP frame runs the agent loop end to end. Every
+// subframe instead: (1) scans ITSELF (shadow-DOM-piercing dom-scanner.js +
+// action-executor.js, exactly as before -- neither module has ANY
+// frame-specific code; "am I in an iframe" is meaningless to a pure
+// function handed a document), (2) reports its findings to the top frame
+// via background.js, and (3) executes an action on ITS OWN elements when
+// the top frame relays one. The top frame aggregates every subframe's
+// report into its own per-step scan before redacting/sending.
+//
+// THE HARD PART -- COORDINATE SPACES: getBoundingClientRect() inside an
+// iframe is relative to THAT FRAME's own viewport, not the top-level
+// page's. The screenshot content.js sends for redaction is a capture of
+// the TOP-LEVEL viewport (chrome.tabs.captureVisibleTab always captures
+// the whole visible tab). So every bbox a subframe reports must be
+// offset by that iframe's own position within its parent before it means
+// anything to redact() or the server -- see extension/lib/frame-coords.js
+// for the pure translation math, and below for how the offset itself is
+// discovered.
+//
+//   - SAME-ORIGIN iframe: trivial in principle (the parent could read
+//     iframe.getBoundingClientRect() directly) -- but this codebase does
+//     NOT special-case that; see below, the SAME mechanism is used for
+//     both same- and cross-origin children, on purpose (one code path,
+//     not two, and no origin-sniffing to get subtly wrong).
+//   - CROSS-ORIGIN iframe: the CHILD cannot read its own position in the
+//     parent. This is a hard Same-Origin-Policy constraint, not a missing
+//     API -- window.frameElement is null cross-origin, and there is no
+//     cross-origin-accessible geometry property on Window at all. Only
+//     the PARENT can measure the offset (it can always read its OWN
+//     <iframe> element's getBoundingClientRect(), regardless of what's
+//     inside it) -- but the parent needs to know WHICH of its (possibly
+//     several) <iframe> elements a given report came from.
+//
+// THE STANDARD WORKAROUND, implemented below: window.postMessage's
+// MessageEvent.source is a browser-guaranteed, unspoofable reference to
+// the exact WindowProxy that sent the message -- this works identically
+// cross-origin (that is the whole point of postMessage). Every subframe,
+// once, sends its PARENT a single opaque random token via
+// `window.parent.postMessage({type:"SIH_FRAME_TOKEN", token}, "*")`. The
+// parent's listener finds `Array.from(document.querySelectorAll("iframe"))
+// .find(f => f.contentWindow === event.source)` -- an EXACT, unspoofable
+// match regardless of cross-origin-ness -- and remembers `token ->
+// thatIframeElement`. At merge time, the top frame re-measures
+// `iframeElement.getBoundingClientRect()` fresh (not a cached value, so a
+// scroll/layout change between steps is reflected) to get the offset.
+//
+// WHY THE TOKEN CARRIES *ONLY* AN OPAQUE STRING, NEVER PII: postMessage
+// delivers to EVERY "message" listener registered on the target window --
+// including the page's OWN script, if the page happens to register one.
+// Even with a specific targetOrigin, postMessage has no concept of
+// "only my own extension's listener may read this." Putting real PII
+// metadata (bboxes are fine -- see below -- but text content would not
+// be) on that channel would be a NEW, self-inflicted leak surface this
+// project exists to prevent. So the token is the ONLY thing that ever
+// crosses via postMessage; the actual sensitiveNodes/domSnapshot data
+// crosses via chrome.runtime messaging instead (background.js's
+// COLLECT_FRAME_REPORTS/SCAN_THIS_FRAME), which is NOT observable by page
+// script at all -- it is Chrome's own privileged extension-messaging
+// channel. (bbox NUMBERS alone, with no accompanying text, are judged
+// low-sensitivity -- they reveal roughly where an input sits on a page --
+// but even so they do not travel over postMessage in this design; only
+// the token does.)
+//
+// FAIL LOUD, NOT WRONG: if a subframe's report arrives before its token
+// has been correlated to an iframe element (a startup race -- the report
+// round-trips through background.js and could in principle arrive before
+// the postMessage does), or a token never resolves at all (e.g. the
+// iframe was removed from the DOM between sending its token and this
+// step), that frame's findings are DROPPED for this step and logged
+// loudly -- NEVER merged with a fabricated {x:0,y:0} offset. A wrong bbox
+// is a leak that looks like success; a dropped-and-logged region is an
+// honest, visible gap. See frame-coords.js's translateBBox()/
+// translateNodeBBoxes() for where this is actually enforced (they THROW
+// on an unresolved offset rather than defaulting one).
+//
+// SCOPE BOUNDARY, stated explicitly rather than silently assumed: this
+// mechanism handles ONE level of iframe nesting (the top page's direct
+// <iframe> children) -- the realistic case for how real sites actually
+// embed third-party content (a payment provider's iframe sits directly in
+// the checkout page, not three iframes deep). An iframe nested inside
+// another iframe is a natural extension of the exact same
+// measure-your-direct-children-and-report-up pattern, applied
+// recursively, but is NOT implemented or verified here. Flagged for the
+// orchestrator rather than silently claimed as general.
+// =======================================================================
+
+const IS_TOP_FRAME = window.top === window.self;
+
+// Chrome's frameId for this frame's content-script instance (0 = top,
+// stable for this navigation otherwise). Learned via FRAME_HELLO's round
+// trip to background.js, which is the only context that can read
+// MessageSender.frameId -- a content script has no direct way to ask
+// "what is my own frameId". Every frame sends this once on load,
+// including the top frame (so background.js's registry -- and future
+// debugging -- sees every frame uniformly), though the top frame never
+// uses the returned id itself (it mints unprefixed "agent-<n>" ids, same
+// as before this pass existed).
+let myFrameId = null;
+const frameHelloPromise = browser.runtime
+  .sendMessage({ type: "FRAME_HELLO" })
+  .then((resp) => {
+    myFrameId = typeof resp?.frameId === "number" ? resp.frameId : null;
+    return myFrameId;
+  })
+  .catch((err) => {
+    console.error("[content] FRAME_HELLO failed (non-fatal -- this frame just won't be coordinated):", err?.message || err);
+    return null;
+  });
+
+// This frame's own id-minting prefix, per action-executor.js's
+// CROSS-FRAME UNIQUENESS scheme: "" for the top frame (unprefixed
+// "agent-<n>", byte-identical to every pre-existing test/behavior), "f<N>-"
+// for every subframe. Computed once frameHelloPromise resolves.
+async function getIdPrefix() {
+  if (IS_TOP_FRAME) return "";
+  const frameId = await frameHelloPromise;
+  return typeof frameId === "number" ? `f${frameId}-` : "f?-"; // "f?-" only if the handshake itself failed -- still collision-safe against the top frame's bare ids, just not disambiguated from another failed handshake in a DIFFERENT frame (a real, if rare, residual risk -- see the report to the orchestrator).
+}
+
+// Regex to recover which frame owns a given prefixed agentId, e.g.
+// "agent-f7-3" -> frameId 7. Mirrors action-executor.js's own
+// AGENT_ID_PATTERN-with-prefix scheme; kept here (not exported from
+// action-executor.js) because it is a content.js-level ROUTING concern
+// (which frame do I relay this action to), not something the pure module
+// itself needs to know about.
+const PREFIXED_AGENT_ID_RE = /^agent-f(\d+)-\d+$/;
+
+function frameIdForAgentId(agentId) {
+  const m = typeof agentId === "string" ? PREFIXED_AGENT_ID_RE.exec(agentId) : null;
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// ---- SUBFRAME-ONLY state and wiring ----
+// Populated by this frame's own SCAN_THIS_FRAME handler, consumed by its
+// own RUN_ACTION_IN_FRAME handler -- lets a relayed action resolve
+// against THIS frame's live idMap without re-scanning (the idMap from the
+// most recent scan is what the top frame's merged report was actually
+// built from; re-scanning here could in principle produce different
+// agentIds if the page mutated between scan and act, which would be
+// silently wrong -- reusing the cached map is the correct, and cheaper,
+// choice).
+let lastFrameScan = null; // { idMap, sensitiveAgentIds }
+
+if (!IS_TOP_FRAME) {
+  // One opaque, random, PII-free token, announced to the immediate parent
+  // exactly once. See the FRAME COORDINATION block comment above for why
+  // this is the ONLY thing that ever crosses via postMessage.
+  const frameToken =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `tok-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+  try {
+    window.parent.postMessage({ type: "SIH_FRAME_TOKEN", token: frameToken }, "*");
+  } catch (err) {
+    // Should not happen (postMessage to window.parent is always legal,
+    // same- or cross-origin) but must never crash this frame's content
+    // script if it somehow does.
+    console.error("[content] failed to announce SIH_FRAME_TOKEN to parent (non-fatal):", err?.message || err);
+  }
+
+  /**
+   * Scan THIS frame's own document and return a report shaped for the
+   * top frame to merge. Mirrors runAgentLoop()'s own scan step (RULING 1:
+   * action-executor first to stamp ids, dom-scanner second to reuse
+   * them) exactly, but scoped to this one frame's document and prefixed
+   * ids.
+   *
+   * SECTION 5 APPLIES HERE TOO, NOT JUST AT THE TOP FRAME: this frame's
+   * domSnapshot is sanitized (sensitive text stripped) AND
+   * leak-asserted against its OWN live elements BEFORE it is ever handed
+   * to chrome.runtime.sendMessage -- i.e. before it leaves this frame's
+   * isolated world at all. The top frame's own assertNoRawPii (later,
+   * right before the network send) cannot re-verify a raw value against
+   * THIS frame's live DOM -- it has no reference into another frame's
+   * document, cross-frame element references are not a thing -- so this
+   * frame is the ONLY place that can make that specific guarantee for
+   * its own elements. Skipping this here would silently narrow Section
+   * 5's coverage back down exactly where this whole pass is trying to
+   * widen it.
+   */
+  async function scanThisFrame() {
+    await loadLibModules();
+    const idPrefix = await getIdPrefix();
+
+    const { domSnapshot, idMap, unscannableRegions: actionableUnscannable } = ActionExecutor.buildDomSnapshot(document, {
+      idPrefix,
+    });
+    const maxIndex = computeMaxAgentIndex(idMap);
+    let nextFallbackIndex = maxIndex;
+    const { sensitiveNodes, unscannableRegions: scannerUnscannable } = DomScanner.scanForPii(document, {
+      getAgentId: () => `agent-${idPrefix}${++nextFallbackIndex}`,
+    });
+
+    const sensitiveByAgentId = new Map(sensitiveNodes.map((n) => [n.agentId, n]));
+    for (const node of sensitiveNodes) {
+      const el = idMap.get(node.agentId);
+      if (el) el.setAttribute(ActionExecutor.SENSITIVE_ATTR, "true");
+    }
+    const sensitiveAgentIds = new Set(sensitiveNodes.map((n) => n.agentId));
+    const mergedDomSnapshot = domSnapshot.map((node) => {
+      const s = sensitiveByAgentId.get(node.agentId);
+      return s ? { ...node, sensitive: true } : node;
+    });
+
+    // Sanitize BEFORE this ever leaves the frame (see doc comment above).
+    const sanitizedDomSnapshot = Redaction.sanitizeDomSnapshot(mergedDomSnapshot);
+
+    // Local Section 5 check against THIS frame's own live elements. If it
+    // fails, do NOT send the report at all -- fail closed, exactly like
+    // the top frame's own retry loop does for the final network send.
+    try {
+      assertNoRawPii({ domSnapshot: sanitizedDomSnapshot }, sensitiveNodes, idMap);
+    } catch (err) {
+      console.error("[content][subframe] Section 5 check FAILED for this frame -- report withheld, not sent:", err.message);
+      lastFrameScan = { idMap, sensitiveAgentIds };
+      return { ok: false, error: "section5_invariant_violation_in_subframe: " + err.message };
+    }
+
+    lastFrameScan = { idMap, sensitiveAgentIds };
+
+    return {
+      ok: true,
+      token: frameToken,
+      sensitiveNodes, // RAW CSS-px bboxes, no text -- mirrors what the top frame passes to redact() for its own nodes
+      domSnapshot: sanitizedDomSnapshot,
+      unscannableRegions: [...actionableUnscannable, ...scannerUnscannable],
+    };
+  }
+
+  browser.runtime.onMessage.addListener((message) => {
+    if (!message || typeof message.type !== "string") return undefined;
+
+    if (message.type === "SCAN_THIS_FRAME") {
+      return scanThisFrame().catch((err) => ({ ok: false, error: err?.message || String(err) }));
+    }
+
+    if (message.type === "RUN_ACTION_IN_FRAME") {
+      if (!lastFrameScan) {
+        return Promise.resolve({
+          ok: false,
+          error: "RUN_ACTION_IN_FRAME received before this frame ever completed a SCAN_THIS_FRAME -- refusing to guess an idMap",
+        });
+      }
+      try {
+        const result = ActionExecutor.executeAction(message.action, lastFrameScan.idMap, {
+          sensitiveAgentIds: lastFrameScan.sensitiveAgentIds,
+        });
+        return Promise.resolve({ ok: true, result });
+      } catch (err) {
+        return Promise.resolve({ ok: false, error: err?.message || String(err), code: err?.code });
+      }
+    }
+
+    return undefined; // not our message type -- ignore (RUN_AGENT_LOOP included: a subframe never runs the loop)
+  });
+}
+
+// ---- TOP-FRAME-ONLY state and wiring ----
+// token -> the specific <iframe> Element that announced it (found via
+// MessageEvent.source matching -- see block comment above). Offsets are
+// re-measured fresh from this element at merge time, never cached as a
+// number, so a scroll/layout shift between steps is picked up correctly.
+const tokenToIframeElement = new Map();
+
+if (IS_TOP_FRAME) {
+  window.addEventListener("message", (event) => {
+    const data = event && event.data;
+    if (!data || data.type !== "SIH_FRAME_TOKEN" || typeof data.token !== "string") return;
+    const iframes = Array.from(document.querySelectorAll("iframe"));
+    const match = iframes.find((f) => {
+      try {
+        return f.contentWindow === event.source;
+      } catch (_err) {
+        return false; // a detached/exotic iframe's contentWindow access should never crash this listener
+      }
+    });
+    if (match) {
+      tokenToIframeElement.set(data.token, match);
+    }
+    // No match: either a stray/unrelated postMessage, or the iframe was
+    // removed between sending its token and this event -- ignored, not
+    // an error. The corresponding frame report (if one ever arrives)
+    // will simply fail to resolve an offset and get dropped + logged --
+    // see collectAndMergeSubframeReports() below.
+  });
+}
+
+/**
+ * TOP FRAME ONLY. Ask background.js for every known subframe's current
+ * scan, translate each into top-level page coordinates via
+ * frame-coords.js, and return one merged bundle ready to fold into this
+ * step's own sensitiveNodes/domSnapshot/unscannableRegions arrays.
+ *
+ * FAIL LOUD, NOT WRONG: a report whose token never resolved to a known
+ * iframe element is DROPPED from the merge and logged loudly (via the
+ * returned `droppedFrames` list, which runAgentLoop() surfaces in the
+ * instrumentation) -- never merged with a fabricated offset.
+ *
+ * @returns {Promise<{sensitiveNodes: Array, domSnapshot: Array, unscannableRegions: Array, framesReported: number, framesMerged: number, droppedFrames: Array}>}
+ */
+async function collectAndMergeSubframeReports() {
+  await loadLibModules();
+  const empty = { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [], framesReported: 0, framesMerged: 0, droppedFrames: [] };
+
+  let collectResp;
+  try {
+    collectResp = await browser.runtime.sendMessage({ type: "COLLECT_FRAME_REPORTS" });
+  } catch (err) {
+    console.error("[content] COLLECT_FRAME_REPORTS failed (non-fatal -- proceeding with top-frame-only coverage this step):", err?.message || err);
+    return empty;
+  }
+  const reports = (collectResp && collectResp.frameReports) || [];
+
+  const merged = { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [] };
+  const droppedFrames = [];
+
+  for (const report of reports) {
+    if (!report || report.ok !== true) {
+      droppedFrames.push({ frameId: report && report.frameId, reason: (report && report.error) || "unknown failure" });
+      continue;
+    }
+    const iframeEl = tokenToIframeElement.get(report.token);
+    if (!iframeEl) {
+      droppedFrames.push({ frameId: report.frameId, reason: "offset unresolved (token not yet correlated to an <iframe> element)" });
+      continue;
+    }
+    const rect = iframeEl.getBoundingClientRect();
+    const offset = { x: rect.left, y: rect.top };
+    let translated;
+    try {
+      translated = FrameCoords.translateFrameReport(report, offset);
+    } catch (err) {
+      // Should be unreachable (offset is always resolved here -- both
+      // fields are always finite numbers from getBoundingClientRect()),
+      // but frame-coords.js's FAIL LOUD design means a malformed report
+      // from a compromised/misbehaving frame throws rather than silently
+      // mis-translating -- caught here so ONE bad subframe can't take
+      // down the whole step.
+      droppedFrames.push({ frameId: report.frameId, reason: "translateFrameReport threw: " + (err?.message || err) });
+      continue;
+    }
+    merged.sensitiveNodes.push(...translated.sensitiveNodes);
+    merged.domSnapshot.push(...translated.domSnapshot);
+    merged.unscannableRegions.push(...translated.unscannableRegions);
+  }
+
+  if (droppedFrames.length > 0) {
+    console.warn(
+      `[agent-loop] ${droppedFrames.length} subframe report(s) DROPPED this step (not merged -- see frame-coords.js's FAIL LOUD policy):`,
+      droppedFrames
+    );
+  }
+
+  return { ...merged, framesReported: reports.length, framesMerged: reports.length - droppedFrames.length, droppedFrames };
 }
 
 // ---------------------------------------------------------------------
@@ -338,6 +710,53 @@ function createInstrumentation() {
 }
 
 // ---------------------------------------------------------------------
+// FRAME COORDINATION (real-site hardening pass): act on an element that
+// lives in a SUBFRAME. The top frame's own `idMap` only ever contains
+// elements from ITS OWN document -- a cross-frame live element reference
+// does not exist as a concept in the DOM, so there is no way to make
+// idMap.get("agent-f7-3") resolve locally, ever, by construction. When
+// the server's action targets such an id, the top frame's own
+// executeAction() correctly (and unavoidably) throws TARGET_NOT_FOUND
+// first; THIS function is what turns that into a relay to the frame that
+// actually owns the element, instead of a dead end.
+//
+// Only ONE relay hop is ever attempted, to the EXACT frameId encoded in
+// the prefix -- never a retry against a different frame, never a guess.
+// If the relay itself fails (the frame navigated away, timed out, or its
+// own sensitivity guard blocked the action), that failure propagates
+// exactly like any other executeAction failure: thrown, surfaced in the
+// step's outcome, loop stops. Same fail-loud posture as
+// action-executor.js's own executeAction() -- "never silently no-op,
+// never guess a different element" now also means "never guess a
+// different FRAME."
+// ---------------------------------------------------------------------
+async function executeActionAcrossFrames(action, idMap, options) {
+  try {
+    return { result: ActionExecutor.executeAction(action, idMap, options) };
+  } catch (err) {
+    if (err && err.code === "TARGET_NOT_FOUND") {
+      const targetFrameId = frameIdForAgentId(action && action.targetId);
+      if (targetFrameId !== null) {
+        const relayResp = await browser.runtime.sendMessage({
+          type: "EXECUTE_ACTION_IN_FRAME",
+          frameId: targetFrameId,
+          action,
+        });
+        if (relayResp && relayResp.ok === true) {
+          return { result: relayResp.result, relayedToFrameId: targetFrameId };
+        }
+        const relayErr = new Error(
+          (relayResp && relayResp.error) || `action relay to frame ${targetFrameId} failed with no error detail`
+        );
+        relayErr.code = (relayResp && relayResp.code) || "FRAME_ACTION_RELAY_FAILED";
+        throw relayErr;
+      }
+    }
+    throw err; // not a cross-frame case -- propagate exactly as before this pass existed
+  }
+}
+
+// ---------------------------------------------------------------------
 // The loop. Bounded to MAX_STEPS so a demo (or a misbehaving mock/VLM)
 // can never spin forever -- "repeat" per CLAUDE.md Section 4 Phase 4, but
 // repetition without a bound is an infinite loop, not a feature.
@@ -428,19 +847,50 @@ async function runAgentLoop() {
     // the two mint independent id spaces and sensitiveNodes.agentId stops
     // correlating with domSnapshot.agentId. ----
     const tScan0 = performance.now();
-    const { domSnapshot, idMap } = ActionExecutor.buildDomSnapshot(document);
+    const {
+      domSnapshot,
+      idMap,
+      unscannableRegions: actionableUnscannable,
+    } = ActionExecutor.buildDomSnapshot(document);
     const maxIndex = computeMaxAgentIndex(idMap);
     let nextFallbackIndex = maxIndex;
-    const { sensitiveNodes } = DomScanner.scanForPii(document, {
+    const {
+      sensitiveNodes,
+      unscannableRegions: scannerUnscannable,
+    } = DomScanner.scanForPii(document, {
       // CONTRACT MISMATCH #2 fix (see computeMaxAgentIndex's comment
       // above): continue action-executor's numbering instead of
       // restarting dom-scanner's own fallback counter at 1.
       getAgentId: () => `agent-${++nextFallbackIndex}`,
     });
+
+    // ---- 2.5. FRAME COORDINATION (real-site hardening pass): merge in
+    // every subframe's already-offset-translated, already-sanitized
+    // report. See the FRAME COORDINATION block comment near the top of
+    // this file for the full protocol. `idMap` stays TOP-FRAME-ONLY on
+    // purpose -- a cross-frame element reference is not a thing, so
+    // subframe-sourced sensitiveNodes/domSnapshot entries below have
+    // agentIds that simply won't resolve via idMap.get() anywhere in this
+    // step (the sensitivity-stamping loop and assertNoRawPii both already
+    // guard with `if (el) ...`/`if (!el) continue`, so this degrades
+    // gracefully rather than crashing -- see assertNoRawPii's own comment
+    // for why it cannot independently re-verify a subframe's raw values). ----
+    const subframeData = IS_TOP_FRAME
+      ? await collectAndMergeSubframeReports()
+      : { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [], framesReported: 0, framesMerged: 0, droppedFrames: [] };
+    const allSensitiveNodes = sensitiveNodes.concat(subframeData.sensitiveNodes);
+    const allUnscannableRegions = [...actionableUnscannable, ...scannerUnscannable, ...subframeData.unscannableRegions];
+
     instr.mark(step, "scan", {
       durationMs: +(performance.now() - tScan0).toFixed(1),
       actionableNodes: domSnapshot.length,
       sensitiveNodes: sensitiveNodes.length,
+      framesReported: subframeData.framesReported,
+      framesMerged: subframeData.framesMerged,
+      framesDropped: subframeData.droppedFrames.length,
+      subframeSensitiveNodes: subframeData.sensitiveNodes.length,
+      subframeActionableNodes: subframeData.domSnapshot.length,
+      unscannableRegions: allUnscannableRegions.length,
     });
 
     // ---- 3. RULING 4 -- wire the sensitive guard. Stamp
@@ -450,13 +900,14 @@ async function runAgentLoop() {
     // policy stays fail-closed. Also merge 2a's classification into the
     // domSnapshot copy that will actually be sent (2a classifies, 3
     // enumerates -- Phase 1 RESULT's ruling). ----
-    const sensitiveByAgentId = new Map(sensitiveNodes.map((n) => [n.agentId, n]));
+    const sensitiveByAgentId = new Map(allSensitiveNodes.map((n) => [n.agentId, n]));
     for (const node of sensitiveNodes) {
       const el = idMap.get(node.agentId);
       if (el) el.setAttribute(ActionExecutor.SENSITIVE_ATTR, "true");
     }
-    const sensitiveAgentIds = new Set(sensitiveNodes.map((n) => n.agentId));
+    const sensitiveAgentIds = new Set(allSensitiveNodes.map((n) => n.agentId));
     let mergedDomSnapshot = domSnapshot
+      .concat(subframeData.domSnapshot) // subframe entries are ALREADY sanitized+offset-translated -- see collectAndMergeSubframeReports()/scanThisFrame()
       .filter((node) => !actedAgentIds.has(node.agentId)) // see actedAgentIds comment above runAgentLoop's declaration
       .map((node) => {
         const s = sensitiveByAgentId.get(node.agentId);
@@ -473,7 +924,12 @@ async function runAgentLoop() {
     // CONTRACT GAP note above scaleDomSnapshotBBoxes). sensitiveNodes'
     // bboxes are NOT scaled here -- they go into redact() raw, and
     // buildRedactedRegions() scales them internally exactly once. Vision
-    // boxes are never scaled anywhere. ----
+    // boxes are never scaled anywhere. Subframe-sourced bboxes are
+    // ALREADY in top-frame CSS-pixel space by this point (frame-coords.js
+    // translated them by the iframe's own offset, which is itself in the
+    // top frame's CSS pixels) -- devicePixelRatio scaling still applies
+    // to them exactly like everything else, since DPR is a single
+    // page-wide value, not a per-frame one. ----
     const scaleFactor = window.devicePixelRatio || 1;
     mergedDomSnapshot = scaleDomSnapshotBBoxes(mergedDomSnapshot, scaleFactor);
 
@@ -481,12 +937,33 @@ async function runAgentLoop() {
     // before they ever reach redact(). ----
     const filteredBoxes = filterPrivacyRelevantBoxes(captureResp.boxes);
 
+    // ---- 5.5. DEFENSIVE REDACTION of confirmed-unscannable regions
+    // (real-site hardening pass). A closed shadow root's content is
+    // GENUINELY UNKNOWN -- it might hold a password field, it might hold
+    // nothing. Per this project's own recall-biased, "when genuinely
+    // ambiguous, flag it" policy (see dom-scanner.js's header), the safe
+    // default is to black out the WHOLE host region defensively rather
+    // than leave a known blind spot unpainted on the screenshot -- an
+    // unredacted region we KNOW we couldn't scan is exactly the kind of
+    // silent gap this whole pass exists to close. Synthesized as
+    // sensitiveNode-shaped entries (piiType:"other", no agentId) so this
+    // reuses redaction.js's EXISTING, unmodified contract (it already
+    // redacts every domNode it's handed, unconditionally) rather than
+    // needing any change to that file, which is out of scope. This is a
+    // POLICY CHOICE made here, in content.js, not silently -- flagged for
+    // the orchestrator in the report in case a different policy (e.g.
+    // "report only, don't auto-redact") is preferred. ----
+    const defensiveUnscannableNodes = allUnscannableRegions
+      .filter((r) => r && r.bbox)
+      .map((r) => ({ bbox: r.bbox, piiType: "other", selector: r.selector }));
+    const redactionInputNodes = allSensitiveNodes.concat(defensiveUnscannableNodes);
+
     // ---- 6. REDACT ----
     const tRedact0 = performance.now();
     const { redactedImage, redactedRegions } = await Redaction.redact(
       captureResp.screenshot,
       filteredBoxes,
-      sensitiveNodes, // RAW CSS-px bboxes -- buildRedactedRegions scales internally via options.scaleFactor
+      redactionInputNodes, // RAW CSS-px bboxes -- buildRedactedRegions scales internally via options.scaleFactor
       { scaleFactor }
     );
     const sanitizedDomSnapshot = Redaction.sanitizeDomSnapshot(mergedDomSnapshot);
@@ -581,19 +1058,35 @@ async function runAgentLoop() {
     }
     const action = analyzeResp.action;
 
-    // ---- 9. ACT ----
+    // ---- 9. ACT -- see executeActionAcrossFrames() above for the
+    // cross-frame relay this pass adds: if `action.targetId` names an
+    // element in a subframe ("agent-f<N>-..."), the top frame's own
+    // idMap can never contain it (no such thing as a cross-frame live
+    // element reference), so a TARGET_NOT_FOUND there is redirected to
+    // frame N via background.js instead of failing the step outright. ----
     const tAct0 = performance.now();
     let actResult;
+    let relayedToFrameId;
     try {
-      actResult = ActionExecutor.executeAction(action, idMap, { sensitiveAgentIds });
+      const actOutcome = await executeActionAcrossFrames(action, idMap, { sensitiveAgentIds });
+      actResult = actOutcome.result;
+      relayedToFrameId = actOutcome.relayedToFrameId;
     } catch (err) {
-      instr.mark(step, "act", { durationMs: +(performance.now() - tAct0).toFixed(1), error: err.message, code: err.code });
+      instr.mark(step, "act", {
+        durationMs: +(performance.now() - tAct0).toFixed(1),
+        error: err.message,
+        code: err.code,
+      });
       stepResults.push({ step, action, error: err.message, code: err.code });
       outcome = "act_failed";
       break;
     }
-    instr.mark(step, "act", { durationMs: +(performance.now() - tAct0).toFixed(1), result: actResult });
-    stepResults.push({ step, action, actResult });
+    instr.mark(step, "act", {
+      durationMs: +(performance.now() - tAct0).toFixed(1),
+      result: actResult,
+      relayedToFrameId,
+    });
+    stepResults.push({ step, action, actResult, relayedToFrameId });
 
     // Record completed click/type targets -- see actedAgentIds comment
     // above runAgentLoop's declaration. Page-level scroll/done (the
@@ -629,6 +1122,22 @@ browser.runtime.onMessage.addListener((message) => {
   if (!message || typeof message.type !== "string") return undefined;
 
   if (message.type === "RUN_AGENT_LOOP") {
+    // FRAME COORDINATION guard (real-site hardening pass): this file now
+    // runs in every frame (manifest.json's all_frames:true), so this
+    // listener exists in every subframe too. Chrome's default
+    // chrome.tabs.sendMessage routing already targets frameId 0 (the top
+    // frame) when background.js's handleRunAgentLoopFromPopup sends this
+    // without an explicit {frameId}, so a subframe should never actually
+    // receive it -- but this guard is defense in depth, not decoration:
+    // it costs nothing and turns "the loop silently ran twice, once per
+    // frame, corrupting shared state" into a clean, loud, immediate
+    // error if that routing assumption is ever wrong.
+    if (!IS_TOP_FRAME) {
+      return Promise.resolve({
+        type: "RUN_AGENT_LOOP_ERROR",
+        error: "RUN_AGENT_LOOP received in a non-top frame -- refusing to run a second agent loop instance",
+      });
+    }
     return runAgentLoop().catch((err) => ({
       type: "RUN_AGENT_LOOP_ERROR",
       // err.message here is always a static description string produced

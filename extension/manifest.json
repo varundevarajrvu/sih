@@ -15,6 +15,14 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
+      "all_frames": true,
+      "world": "MAIN",
+      "run_at": "document_start",
+      "js": ["shadow-detect.js"]
+    },
+    {
+      "matches": ["<all_urls>"],
+      "all_frames": true,
       "js": ["vendor/browser-polyfill.js", "lib/action-executor.js", "content.js"],
       "run_at": "document_idle"
     }
@@ -24,7 +32,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["ort/*", "models/*", "assets/*", "lib/dom-scanner.js", "lib/redaction.js"],
+      "resources": ["ort/*", "models/*", "assets/*", "lib/dom-scanner.js", "lib/redaction.js", "lib/frame-coords.js"],
       "matches": ["<all_urls>"]
     }
   ]

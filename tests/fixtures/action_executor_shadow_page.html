@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>action-executor shadow DOM fixture page</title>
+</head>
+<body>
+  <button id="light-btn">Ordinary light-DOM button (control)</button>
+  <my-widget id="widget"></my-widget>
+  <div id="closed-host" data-sih-closed-shadow>
+    Simulated closed-shadow host -- see dom_scanner_closed_shadow_root.html's
+    comment for why the marker attribute stands in for the browser-only
+    detection mechanism in this unit test.
+  </div>
+</body>
+</html>

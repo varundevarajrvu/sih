@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import { JSDOM } from "./dom-scanner-vendor/node_modules/jsdom/lib/api.js";
-import { scanForPii, PII_TYPES, computeSelector } from "../../extension/lib/dom-scanner.js";
+import { scanForPii, PII_TYPES, computeSelector, CLOSED_SHADOW_HOST_ATTR } from "../../extension/lib/dom-scanner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.resolve(__dirname, "../fixtures");
@@ -352,6 +352,193 @@ describe("agentId acquisition is injectable", () => {
 });
 
 // ---------------------------------------------------------------------------
+// SHADOW DOM PIERCING + IFRAME COVERAGE (real-site hardening pass).
+//
+// WHAT'S MECHANICALLY TESTABLE HERE, PLAINLY STATED:
+//   - Open shadow roots: FULLY testable. jsdom 25 (this repo's vendored
+//     version) implements attachShadow({mode:"open"}), .shadowRoot, and
+//     createTreeWalker rooted at a ShadowRoot correctly -- confirmed
+//     empirically before writing these tests, not assumed. The fixtures
+//     below exercise the REAL scanForPii() shadow-piercing code path, not
+//     a stub.
+//   - Closed shadow roots: the DETECTION half (this scanner recognizing
+//     CLOSED_SHADOW_HOST_ATTR and reporting unscannableRegions) is fully
+//     testable -- we set the marker attribute directly on a fixture
+//     element. What is NOT testable here is the browser-only mechanism
+//     that PRODUCES that marker on a real page (extension/shadow-detect.js,
+//     a MAIN-world Element.prototype.attachShadow patch registered via
+//     chrome.scripting.registerContentScripts at document_start) -- jsdom
+//     has no page-script-interception/MAIN-world concept, and there is no
+//     way to fake "the page called attachShadow with mode:closed and we
+//     genuinely couldn't tell" other than a real browser. See
+//     shadow-detect.js and content.js for that half, and the report back
+//     to the orchestrator for exact manual verification steps.
+//   - Same-origin iframes: testable AT THE SCANNER LEVEL by calling
+//     scanForPii() directly against an <iframe>'s own .contentDocument --
+//     jsdom exposes and allows writing to contentDocument without any
+//     special config (confirmed empirically). This proves the actual
+//     mechanism this project uses for iframe coverage: each frame gets
+//     its OWN content-script instance (manifest.json's all_frames:true)
+//     that calls this same pure function with ITS OWN document --
+//     dom-scanner.js has ZERO frame-specific code, by design, because it
+//     never needs any: "am I inside an iframe" is meaningless from this
+//     function's point of view. What these tests do NOT and CANNOT cover
+//     (jsdom has no real multi-frame browsing context, no
+//     window.postMessage-across-real-origins, no Same-Origin-Policy
+//     enforcement) is the CROSS-FRAME COORDINATION glue -- the offset
+//     lookup/translation/relay protocol in content.js/background.js, and
+//     especially the cross-origin case, where jsdom cannot simulate the
+//     actual browser security boundary this project has to work around.
+//     That is covered by extension/lib/frame-coords.js's own pure-math
+//     unit tests (tests/unit/test_frame_coords.test.mjs) plus the manual
+//     browser verification steps in the report to the orchestrator.
+// ---------------------------------------------------------------------------
+
+function attachOpenShadow(hostEl, innerHTML) {
+  const shadow = hostEl.attachShadow({ mode: "open" });
+  shadow.innerHTML = innerHTML;
+  return shadow;
+}
+
+describe("shadow DOM piercing: PII inside an OPEN shadow root", () => {
+  test("a password field and an email address inside an open shadow root are both found", () => {
+    const doc = loadFixtureDocument("dom_scanner_open_shadow_root.html");
+    const host = doc.getElementById("widget");
+    attachOpenShadow(
+      host,
+      `<input id="shadow-pw" type="password" value="hunter2">
+       <p id="shadow-email-p">Contact us at shadow-support@example.org.</p>`
+    );
+
+    const { sensitiveNodes, unscannableRegions } = scanForPii(doc);
+
+    assert.deepEqual(unscannableRegions, []);
+    const piiTypesFound = sensitiveNodes.map((n) => n.piiType).sort();
+    assert.deepEqual(piiTypesFound, [PII_TYPES.EMAIL, PII_TYPES.PASSWORD].sort());
+
+    // computeSelector() must produce a legible (if non-standard, see its
+    // own comments) breadcrumb across the shadow boundary -- proves the
+    // finding is actually traceable back to "inside <my-widget>", not
+    // just present in the array with a useless/empty selector.
+    const pwNode = sensitiveNodes.find((n) => n.piiType === PII_TYPES.PASSWORD);
+    // "#widget" (the host's own id, preferred per computeSelector's normal
+    // id-first rule -- which still applies to the HOST itself, since the
+    // host lives in ordinary light DOM) + the non-standard "::shadow"
+    // breadcrumb + the shadow-local selector.
+    assert.equal(pwNode.selector, "#widget ::shadow #shadow-pw");
+  });
+
+  test("nested open shadow roots (shadow-in-shadow) are pierced recursively", () => {
+    const doc = loadFixtureDocument("dom_scanner_open_shadow_root.html");
+    const host = doc.getElementById("widget");
+    const outerShadow = attachOpenShadow(host, `<div id="inner-host"></div>`);
+    const innerHost = outerShadow.getElementById("inner-host");
+    attachOpenShadow(innerHost, `<input type="password" id="deep-pw" value="hunter2">`);
+
+    const { sensitiveNodes } = scanForPii(doc);
+    assert.equal(sensitiveNodes.length, 1);
+    assert.equal(sensitiveNodes[0].piiType, PII_TYPES.PASSWORD);
+  });
+
+  test("a hidden (display:none) shadow HOST hides its whole shadow-rendered subtree from the text-node visibility gate", () => {
+    const doc = loadFixtureDocument("dom_scanner_open_shadow_root.html");
+    const host = doc.getElementById("widget");
+    host.setAttribute("style", "display: none");
+    attachOpenShadow(host, `<p>Reach us at hidden@example.org.</p>`);
+
+    const { sensitiveNodes } = scanForPii(doc);
+    assert.deepEqual(sensitiveNodes, []);
+  });
+
+  test("light-DOM control element outside the shadow root is unaffected", () => {
+    const doc = loadFixtureDocument("dom_scanner_open_shadow_root.html");
+    const host = doc.getElementById("widget");
+    attachOpenShadow(host, `<input type="password" id="shadow-pw" value="x">`);
+
+    const { sensitiveNodes } = scanForPii(doc);
+    assert.ok(!sensitiveNodes.some((n) => n.selector.includes("light-dom-marker")));
+  });
+});
+
+describe("shadow DOM piercing: CLOSED shadow root is REPORTED, never silently skipped", () => {
+  test("a closed-shadow-marked host produces an unscannableRegions entry, not a false 'nothing found'", () => {
+    const doc = loadFixtureDocument("dom_scanner_closed_shadow_root.html");
+    const { sensitiveNodes, unscannableRegions } = scanForPii(doc);
+
+    // The scanner must NOT claim clean coverage here -- this is the
+    // central assertion of this whole test: a guarantee that silently
+    // doesn't cover part of the page is worse than no guarantee.
+    assert.equal(unscannableRegions.length, 1);
+    assert.equal(unscannableRegions[0].reason, "closed-shadow-root");
+    assert.equal(unscannableRegions[0].selector, "#closed-host");
+    assert.deepEqual(Object.keys(unscannableRegions[0]).sort(), ["bbox", "reason", "selector"].sort());
+
+    // The host's own light-DOM text (not inside the closed shadow tree)
+    // has no PII pattern in this fixture, so sensitiveNodes is correctly
+    // empty -- the point is unscannableRegions is NOT empty, proving the
+    // gap is reported rather than papered over as "nothing sensitive".
+    assert.deepEqual(sensitiveNodes, []);
+  });
+
+  test("CLOSED_SHADOW_HOST_ATTR is exported so content.js and the browser-only patch script can share the exact marker name", () => {
+    assert.equal(CLOSED_SHADOW_HOST_ATTR, "data-sih-closed-shadow");
+  });
+
+  test("unscannableRegions bbox acquisition uses the same injectable getBBox as sensitiveNodes", () => {
+    const doc = loadFixtureDocument("dom_scanner_closed_shadow_root.html");
+    const stubBBox = { x: 1, y: 2, w: 3, h: 4 };
+    const { unscannableRegions } = scanForPii(doc, { getBBox: () => stubBBox });
+    assert.deepEqual(unscannableRegions[0].bbox, stubBBox);
+  });
+});
+
+describe("iframe coverage: scanForPii() run against a child frame's OWN document", () => {
+  // See the block comment above this section for exactly what this proves
+  // and what it does not. In short: this is the actual mechanism (each
+  // frame's content script calls scanForPii(document) with its own
+  // document) -- not a simulation of something else.
+  test("PII inside a same-origin iframe's contentDocument is found when scanned with its own document", () => {
+    const doc = loadFixtureDocument("dom_scanner_plain_text.html");
+    const iframe = doc.createElement("iframe");
+    doc.body.appendChild(iframe);
+    iframe.contentDocument.body.innerHTML = `
+      <input id="cc-pw" type="password" value="hunter2">
+      <p>Billing support: billing@example.org</p>
+    `;
+
+    // The TOP document's own scan must NOT see into the iframe (ordinary
+    // DOM queries never cross a frame boundary -- this is the bug being
+    // fixed: without all_frames:true + a per-frame content-script
+    // instance, nothing would ever call scanForPii on the iframe's own
+    // document at all).
+    const topScan = scanForPii(doc);
+    assert.deepEqual(topScan.sensitiveNodes, []);
+
+    // What DOES find it: the iframe's own document, scanned directly --
+    // exactly what its own content-script instance does in the real
+    // extension.
+    const frameScan = scanForPii(iframe.contentDocument);
+    const piiTypesFound = frameScan.sensitiveNodes.map((n) => n.piiType).sort();
+    assert.deepEqual(piiTypesFound, [PII_TYPES.EMAIL, PII_TYPES.PASSWORD].sort());
+  });
+
+  test("nested shadow-in-iframe: an open shadow root INSIDE an iframe's own document is still pierced", () => {
+    const doc = loadFixtureDocument("dom_scanner_plain_text.html");
+    const iframe = doc.createElement("iframe");
+    doc.body.appendChild(iframe);
+    const frameDoc = iframe.contentDocument;
+    const host = frameDoc.createElement("my-widget");
+    frameDoc.body.appendChild(host);
+    attachOpenShadow(host, `<input type="password" id="deep-frame-pw" value="hunter2">`);
+
+    const frameScan = scanForPii(frameDoc);
+    assert.equal(frameScan.sensitiveNodes.length, 1);
+    assert.equal(frameScan.sensitiveNodes[0].piiType, PII_TYPES.PASSWORD);
+    assert.ok(frameScan.sensitiveNodes[0].selector.includes("::shadow"));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // computeSelector() unit coverage (exported for direct testing).
 // ---------------------------------------------------------------------------
 describe("computeSelector", () => {
@@ -376,7 +563,15 @@ describe("output shape matches the CLAUDE.md Section 4 contract", () => {
   test("scanForPii returns { sensitiveNodes: [...] } with the exact field set per entry", () => {
     const doc = loadFixtureDocument("dom_scanner_password_field.html");
     const result = scanForPii(doc);
-    assert.deepEqual(Object.keys(result), ["sensitiveNodes"]);
+    // CONTRACT ADDITION (real-site hardening pass, shadow DOM support):
+    // `unscannableRegions` is now always present alongside `sensitiveNodes`
+    // -- see dom-scanner.js's SHADOW DOM SUPPORT block. This fixture has no
+    // shadow content at all, so it must come back empty, but the KEY itself
+    // is never omitted -- an always-present-but-empty array is the honest
+    // signal for "nothing unscannable found here," distinct from "this
+    // function doesn't even report that possibility."
+    assert.deepEqual(Object.keys(result).sort(), ["sensitiveNodes", "unscannableRegions"].sort());
+    assert.deepEqual(result.unscannableRegions, []);
     const entry = result.sensitiveNodes[0];
     assert.deepEqual(Object.keys(entry).sort(), ["agentId", "bbox", "piiType", "selector"].sort());
   });

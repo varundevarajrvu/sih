@@ -209,6 +209,146 @@ async function detectObjects(imageData) {
 }
 
 // ---------------------------------------------------------------------
+// FRAME COORDINATION (real-site hardening pass): manifest.json now sets
+// content_scripts[].all_frames = true, so EVERY frame on a matched page
+// (the top page AND every same-origin or cross-origin iframe) gets its
+// own content.js instance. Only the TOP frame runs the agent loop
+// (content.js checks window.top === window.self); every subframe instead
+// scans itself and reports up. This background service worker is the
+// coordination point for that -- it is the one privileged context every
+// frame can already reach via chrome.runtime messaging, and the one place
+// that can target a SPECIFIC frame via chrome.tabs.sendMessage's
+// {frameId} option.
+//
+// Deliberately NOT using chrome.webNavigation.getAllFrames() to build a
+// parent/child frame TREE -- that would need a new "webNavigation"
+// permission (a real, visible escalation for a privacy-focused extension)
+// and this project's actual iframe-nesting requirement, per the
+// delegation brief, is ONE level (a page's direct <iframe> children, e.g.
+// a payment provider's iframe embedded directly in the checkout page --
+// the realistic case, matching how Amazon/most real sites actually embed
+// third-party iframes). Deeper nesting (an iframe inside an iframe) is a
+// natural extension of the same mechanism -- each frame measuring and
+// reporting its own direct children -- but is NOT implemented or verified
+// in this pass; flagged explicitly rather than silently claimed. See
+// content.js's frame-coordination notes for the full protocol, including
+// why the ACTUAL PII-adjacent data (sensitiveNodes/domSnapshot) travels
+// over this privileged chrome.runtime channel rather than
+// window.postMessage: postMessage delivers to EVERY listener registered
+// on the target window, including the page's own (potentially malicious)
+// script, so it is used ONLY for a single opaque geometry-correlation
+// token that carries zero PII -- see content.js's SIH_FRAME_TOKEN
+// handling.
+// ---------------------------------------------------------------------
+
+// tabId -> Set<frameId>. Populated by FRAME_HELLO, the first message every
+// frame instance sends on load. This is how background knows which
+// frameIds exist to ask for a scan on COLLECT_FRAME_REPORTS -- there is no
+// other enumeration mechanism available without the webNavigation
+// permission (see note above). A frame that loads AFTER the top frame has
+// already started its first agent-loop step is simply not in this set yet
+// for that step; MAX_STEPS=6 gives later steps additional chances to pick
+// it up. This is a known, accepted race, not a silent gap -- documented in
+// the report to the orchestrator.
+const knownFrames = new Map();
+
+function registerFrame(tabId, frameId) {
+  if (typeof tabId !== "number" || typeof frameId !== "number") return;
+  let set = knownFrames.get(tabId);
+  if (!set) {
+    set = new Set();
+    knownFrames.set(tabId, set);
+  }
+  set.add(frameId);
+}
+
+// Housekeeping: drop a closed tab's frame registry rather than leaking it
+// for the lifetime of the service worker. A stale entry for a tab that
+// navigated (but wasn't closed) is harmless -- collectFrameReports()
+// already treats an unreachable frameId as a per-frame failure, not a
+// crash, and it self-heals as soon as that frame's content script sends a
+// fresh FRAME_HELLO after the navigation.
+if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.onRemoved) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    knownFrames.delete(tabId);
+  });
+}
+
+// Per-frame timeout for a single SCAN_THIS_FRAME/RUN_ACTION_IN_FRAME round
+// trip. Generous relative to dom-scanner/action-executor's own measured
+// scan times (1-16ms per CLAUDE.md/README) because the bottleneck here is
+// realistically cross-process messaging + a possibly-busy subframe, not
+// the scan itself -- but still bounded, so one slow/broken iframe can
+// never hang the whole agent-loop step. A frame that times out is DROPPED
+// from that step's results and logged loudly, never silently treated as
+// "found nothing" (same fail-loud posture as the coordinate-offset logic
+// in frame-coords.js).
+const FRAME_ROUND_TRIP_TIMEOUT_MS = 3000;
+
+function sendToFrameWithTimeout(tabId, frameId, message) {
+  return Promise.race([
+    browser.tabs.sendMessage(tabId, message, { frameId }),
+    new Promise((_resolve, reject) =>
+      setTimeout(() => reject(new Error(`frame ${frameId} did not respond within ${FRAME_ROUND_TRIP_TIMEOUT_MS}ms`)), FRAME_ROUND_TRIP_TIMEOUT_MS)
+    ),
+  ]);
+}
+
+/**
+ * Ask every KNOWN subframe of `tabId` (i.e. every frameId that has sent at
+ * least one FRAME_HELLO, EXCLUDING frameId 0, the top frame, which scans
+ * itself directly rather than round-tripping through here) to scan itself
+ * right now, in parallel, each independently bounded by
+ * FRAME_ROUND_TRIP_TIMEOUT_MS. Never rejects -- a per-frame failure
+ * (timeout, "receiving end does not exist" because that frame navigated
+ * away or was never a real content-script target, or a thrown error
+ * inside the frame's own scan) becomes `{ ok: false, frameId, error }` in
+ * the results array rather than failing the whole batch, so one bad frame
+ * can never take down coverage of the others.
+ *
+ * @param {number} tabId
+ * @returns {Promise<{ frameReports: Array<object> }>}
+ */
+async function collectFrameReports(tabId) {
+  const frameIds = Array.from(knownFrames.get(tabId) || []).filter((id) => id !== 0);
+  const results = await Promise.all(
+    frameIds.map(async (frameId) => {
+      try {
+        const resp = await sendToFrameWithTimeout(tabId, frameId, { type: "SCAN_THIS_FRAME" });
+        if (!resp || resp.ok !== true) {
+          return { ok: false, frameId, error: (resp && resp.error) || "frame returned no/invalid response" };
+        }
+        return { ...resp, frameId };
+      } catch (err) {
+        return { ok: false, frameId, error: err?.message || String(err) };
+      }
+    })
+  );
+  return { frameReports: results };
+}
+
+/**
+ * Relay a click/type/scroll/done action to a SPECIFIC subframe (the one
+ * that owns the targetId, identified by the frame-prefixed agentId
+ * scheme -- see action-executor.js's CROSS-FRAME UNIQUENESS note and
+ * content.js's frame-coordination block for how the top frame parses the
+ * frameId back out of "agent-f<N>-<n>"). The target frame executes it
+ * against ITS OWN cached idMap (from its most recent SCAN_THIS_FRAME call
+ * -- see content.js) and its OWN sensitivity guard, exactly mirroring how
+ * the top frame acts on its own elements. Never falls back to acting on a
+ * different frame or a different element on ANY failure -- same
+ * fail-loud posture as action-executor.js's own executeAction().
+ */
+async function executeActionInFrame(tabId, frameId, action) {
+  try {
+    const resp = await sendToFrameWithTimeout(tabId, frameId, { type: "RUN_ACTION_IN_FRAME", action });
+    return resp || { ok: false, error: "frame returned no response" };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------
 // Message router. Single listener, dispatches by message.type. Receives
 // broadcasts from BOTH the offscreen document (DETECTION_RESULT /
 // DETECTION_ERROR, sent via plain chrome.runtime.sendMessage) and the
@@ -271,6 +411,37 @@ browser.runtime.onMessage.addListener((message, sender) => {
       // above runInstallSelfTest(). Synchronous state read, no promise
       // needed, but returned as one for a consistent call pattern.
       return Promise.resolve({ type: "PREWARM_STATUS", ...prewarmState });
+
+    // ---- Real-site hardening pass (frame coordination) additions below ----
+
+    case "FRAME_HELLO": {
+      // Every frame instance (top AND every subframe) sends this once on
+      // load. sender.frameId is populated by Chrome itself for any
+      // message from a content script -- 0 always means the top frame,
+      // every other value is a stable-for-this-navigation subframe id.
+      // This is the ONLY way this extension currently learns a subframe
+      // exists at all (see the "not using webNavigation" note above).
+      const tabId = sender && sender.tab ? sender.tab.id : undefined;
+      const frameId = typeof sender?.frameId === "number" ? sender.frameId : undefined;
+      registerFrame(tabId, frameId);
+      return Promise.resolve({ type: "FRAME_HELLO_ACK", frameId });
+    }
+
+    case "COLLECT_FRAME_REPORTS":
+      // TOP frame's content.js -> background.js, once per agent-loop
+      // step. sender.tab.id identifies which tab's known subframes to
+      // poll -- see collectFrameReports().
+      return sender && sender.tab
+        ? collectFrameReports(sender.tab.id)
+        : Promise.resolve({ frameReports: [] });
+
+    case "EXECUTE_ACTION_IN_FRAME":
+      // TOP frame's content.js -> background.js -> a SPECIFIC subframe,
+      // when the server's action targets an agentId that lives in an
+      // iframe rather than the top frame itself.
+      return sender && sender.tab
+        ? executeActionInFrame(sender.tab.id, message.frameId, message.action)
+        : Promise.resolve({ ok: false, error: "no sender tab -- cannot resolve which tab's frame to target" });
 
     default:
       // Not recognized -- ignore rather than throw (matches this

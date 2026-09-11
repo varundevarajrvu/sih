@@ -132,6 +132,88 @@ export const PII_TYPES = Object.freeze({
 const ALL_PII_TYPE_VALUES = Object.freeze(Object.values(PII_TYPES));
 
 // ---------------------------------------------------------------------------
+// SHADOW DOM SUPPORT (real-site hardening pass).
+//
+// `element.shadowRoot` is non-null ONLY for an OPEN-mode shadow root. A
+// CLOSED-mode shadow root ALWAYS reads back as null through that property
+// -- by design: the whole point of "closed" mode is to hide the shadow
+// tree's existence from outside script, not merely its content. There is
+// no public DOM API -- in jsdom or in a real browser -- that lets pure JS
+// tell "this element never had a shadow root" apart from "this element
+// has a closed shadow root I structurally cannot see." The only way to
+// observe a closed attachShadow() call at all is to intercept the call
+// ITSELF before it happens, by patching Element.prototype.attachShadow in
+// the page's own JS realm ("MAIN world") ahead of any page script running
+// -- that is a content-script-injection-timing concern, not something a
+// pure, browser-independent DOM-walking function can do to itself. See
+// extension/shadow-detect.js for that half of the mechanism; this module
+// only consumes its output.
+//
+// CONTRACT: if some external mechanism has independently confirmed a
+// closed shadow root exists on an element, it marks that element with
+// CLOSED_SHADOW_HOST_ATTR. When this scanner encounters that marker, it
+// reports the element in `unscannableRegions` as CONFIRMED UNREACHABLE --
+// never silently treated as "an ordinary leaf with nothing inside," which
+// would be indistinguishable from having actually checked it and found
+// nothing. That distinction is the entire point of the "a guarantee that
+// silently doesn't cover part of the page is worse than no guarantee"
+// requirement this pass exists to satisfy. Tests exercise this by setting
+// the marker attribute directly on a fixture element (simulating what the
+// browser-only patch would have produced) -- see the "closed shadow root"
+// describe block in tests/unit/test_dom_scanner.mjs.
+// ---------------------------------------------------------------------------
+export const CLOSED_SHADOW_HOST_ATTR = "data-sih-closed-shadow";
+
+function isMarkedClosedShadowHost(el) {
+  return !!(el && el.hasAttribute && el.hasAttribute(CLOSED_SHADOW_HOST_ATTR));
+}
+
+/**
+ * BFS across `root` (a Document, or recursively, any open ShadowRoot
+ * reachable from it) collecting every "DocumentOrShadowRoot"-like node
+ * this scanner can legally query, plus every element marked as hosting a
+ * closed (unreachable) shadow root.
+ *
+ * Deliberately does NOT reach into <iframe>.contentDocument: this
+ * repo's actual iframe-coverage mechanism is "every frame gets its own
+ * content-script instance, which calls scanForPii() with ITS OWN
+ * document" (manifest.json's content_scripts[].all_frames:true, wired in
+ * content.js) -- not this function crossing a frame boundary itself.
+ * Reaching into an iframe's contentDocument from here would silently do
+ * the wrong thing for a cross-origin iframe (a same-document access that
+ * throws or returns an inert/blank document under the Same-Origin
+ * Policy) instead of the correct per-frame content-script design; see
+ * content.js's frame-coordination comments for the real mechanism.
+ *
+ * @param {Document|ShadowRoot} root
+ * @returns {{ roots: Array<Document|ShadowRoot>, closedShadowHosts: Element[] }}
+ */
+function collectShadowPiercingRoots(root) {
+  const roots = [root];
+  const closedShadowHosts = [];
+  const queue = [root];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current.querySelectorAll !== "function") continue;
+    let all;
+    try {
+      all = current.querySelectorAll("*");
+    } catch (_err) {
+      continue; // a malformed/detached root must not crash the whole scan
+    }
+    all.forEach((el) => {
+      if (el.shadowRoot) {
+        roots.push(el.shadowRoot);
+        queue.push(el.shadowRoot);
+      } else if (isMarkedClosedShadowHost(el)) {
+        closedShadowHosts.push(el);
+      }
+    });
+  }
+  return { roots, closedShadowHosts };
+}
+
+// ---------------------------------------------------------------------------
 // Field-level classification: input[type], autocomplete tokens.
 // ---------------------------------------------------------------------------
 
@@ -342,7 +424,18 @@ function isElementVisible(el) {
       if (inlineStyle && /display\s*:\s*none/i.test(inlineStyle)) return false;
       if (inlineStyle && /visibility\s*:\s*hidden/i.test(inlineStyle)) return false;
     }
-    node = node.parentElement;
+    // SHADOW DOM PIERCING: continue the ancestor walk across a shadow
+    // boundary via the host element (same disambiguation as
+    // computeSelector() above), so a hidden/display:none shadow HOST
+    // correctly hides everything inside its shadow-rendered subtree too
+    // -- matching how a real browser actually renders it.
+    const parent = node.parentElement;
+    if (parent) {
+      node = parent;
+    } else {
+      const root = typeof node.getRootNode === "function" ? node.getRootNode() : null;
+      node = (root && root.host) || null;
+    }
   }
   // Best-effort secondary check via computed style, for stylesheet-driven
   // (not inline) hidden text. Wrapped defensively: some minimal DOM shims
@@ -379,20 +472,83 @@ function cssEscapeIdent(value) {
  * scan time and redaction time could in principle invalidate it. Acceptable
  * for this module's scope; flagged here rather than silently assumed.
  */
+// SHADOW DOM PIERCING helper for computeSelector(): if `node` sits inside
+// an open shadow tree (its getRootNode() is a ShadowRoot with a `.host`,
+// rather than the real Document), prefix `localSelector` with the host's
+// own selector joined by the non-standard "::shadow" breadcrumb (see the
+// long note below for why non-standard is fine here). Used at EVERY point
+// computeSelector() is about to stop and return -- including the
+// "found an #id, stop here" cases -- because an id found partway up a
+// shadow tree is only locally unique to that shadow root, not globally,
+// and silently returning bare "#id" there would look like an ordinary,
+// resolvable top-level selector when it is not.
+function prefixWithShadowHostIfNeeded(node, localSelector) {
+  const root = typeof node.getRootNode === "function" ? node.getRootNode() : null;
+  const host = root && root.host;
+  if (host && host.nodeType === 1) {
+    const hostSelector = computeSelector(host) || host.tagName.toLowerCase();
+    return hostSelector + " ::shadow " + localSelector;
+  }
+  return localSelector;
+}
+
+/**
+ * Build a CSS selector for `el`. Prefers `#id` (matches the contract's own
+ * example, "#pw"); otherwise walks up building an nth-of-type structural
+ * path, stopping at the first ancestor with an id (or at <html>). This is a
+ * pragmatic "good enough to re-locate the element" selector, not a
+ * globally-unique-selector solver -- dynamically reordered siblings between
+ * scan time and redaction time could in principle invalidate it. Acceptable
+ * for this module's scope; flagged here rather than silently assumed.
+ *
+ * SHADOW DOM PIERCING (real-site hardening pass): when `el` (or an
+ * ancestor found during the walk) lives inside an open shadow tree, the
+ * selector is prefixed with the shadow HOST's own selector, joined by a
+ * deliberate, NON-STANDARD "::shadow" breadcrumb -- there is no standard
+ * CSS combinator to cross a shadow boundary in one selector string (the
+ * old `/deep/`/`::shadow` combinators were removed from browsers years
+ * ago), so this string is NOT something `document.querySelector()` can
+ * resolve. That is fine for this codebase: `selector` has always been an
+ * informational/debug field here, never the actual re-location mechanism
+ * -- that is `data-agent-id` + the live idMap (see action-executor.js and
+ * content.js's assertNoRawPii), which stays correct across a shadow
+ * boundary because it holds a real Element reference, never a selector
+ * string. Silently returning a bare "#id" for an element whose id is only
+ * locally unique within its shadow root (not globally) would be MORE
+ * misleading than a visibly non-standard breadcrumb -- hence this prefix
+ * is applied at every stopping point below, not just the structural-path
+ * fallback.
+ */
 export function computeSelector(el) {
   if (!el || el.nodeType !== 1) return "";
-  if (el.id) return "#" + cssEscapeIdent(el.id);
+  if (el.id) return prefixWithShadowHostIfNeeded(el, "#" + cssEscapeIdent(el.id));
 
   const parts = [];
   let node = el;
   while (node && node.nodeType === 1 && node.tagName !== "HTML") {
     if (node.id) {
       parts.unshift("#" + cssEscapeIdent(node.id));
-      break;
+      return prefixWithShadowHostIfNeeded(node, parts.join(" > "));
     }
     const tag = node.tagName.toLowerCase();
     const parent = node.parentElement;
     if (!parent) {
+      // parentElement is null both at a genuine document root (nothing
+      // more to do -- original behavior, just stop) AND at the top of an
+      // open shadow tree (node's parentNode is the ShadowRoot itself,
+      // which is a DocumentFragment, not an Element -- hence
+      // parentElement is null even though there IS more tree above it).
+      // Disambiguate via getRootNode().host, which is only truthy in the
+      // shadow-tree case; if so, CONTINUE the walk from the host instead
+      // of stopping (the host lives in the outer/light tree and may have
+      // its own further ancestors).
+      const root = typeof node.getRootNode === "function" ? node.getRootNode() : null;
+      const host = root && root.host;
+      if (host && host.nodeType === 1) {
+        parts.unshift(tag);
+        const hostSelector = computeSelector(host) || host.tagName.toLowerCase();
+        return hostSelector + " ::shadow " + parts.join(" > ");
+      }
       parts.unshift(tag);
       break;
     }
@@ -441,15 +597,26 @@ function defaultGetAgentId(_el, ordinal) {
 
 const SKIP_TEXT_ANCESTOR_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TITLE"]);
 
-function collectCandidateTextNodes(doc) {
-  const root = doc.body || doc.documentElement || doc;
-  if (!root || typeof doc.createTreeWalker !== "function") return [];
+// For a real Document, prefer .body (original behavior, unchanged). A
+// ShadowRoot has neither .body nor .documentElement -- it IS the
+// traversal root itself, so it's returned as-is (nodeType 11,
+// DOCUMENT_FRAGMENT_NODE, per the ShadowRoot spec).
+function pickTraversalRoot(root) {
+  if (root && root.nodeType === 9 /* DOCUMENT_NODE */) {
+    return root.body || root.documentElement || root;
+  }
+  return root;
+}
+
+function collectCandidateTextNodes(ownerDoc, root) {
+  const traversalRoot = pickTraversalRoot(root);
+  if (!traversalRoot || typeof ownerDoc.createTreeWalker !== "function") return [];
 
   const SHOW_TEXT = 4;
   const FILTER_ACCEPT = 1;
   const FILTER_REJECT = 2;
 
-  const walker = doc.createTreeWalker(root, SHOW_TEXT, {
+  const walker = ownerDoc.createTreeWalker(traversalRoot, SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
       if (!parent) return FILTER_REJECT;
@@ -487,7 +654,17 @@ function collectCandidateTextNodes(doc) {
  *   Injectable agentId source for elements with no existing
  *   `data-agent-id` attribute. Defaults to "agent-<ordinal>" in document
  *   order. See the CONTRACT NOTE at the top of this file.
- * @returns {{ sensitiveNodes: Array<{selector:string, bbox:{x:number,y:number,w:number,h:number}, piiType:string, agentId:string}> }}
+ * @returns {{
+ *   sensitiveNodes: Array<{selector:string, bbox:{x:number,y:number,w:number,h:number}, piiType:string, agentId:string}>,
+ *   unscannableRegions: Array<{selector:string, bbox:{x:number,y:number,w:number,h:number}, reason:string}>
+ * }}
+ *   `unscannableRegions` (CONTRACT ADDITION, real-site hardening pass):
+ *   elements confirmed to host a CLOSED shadow root -- this function
+ *   cannot see their content, and reports that fact explicitly rather
+ *   than silently returning as if they had been checked and found clean.
+ *   Always present (possibly empty), never omitted -- see
+ *   tests/unit/test_dom_scanner.mjs's "output shape" test, updated for
+ *   this addition.
  */
 export function scanForPii(doc, options = {}) {
   if (!doc || typeof doc.querySelectorAll !== "function") {
@@ -528,32 +705,64 @@ export function scanForPii(doc, options = {}) {
     });
   }
 
-  // --- 1. Form-field detection (NOT visibility-gated -- see header note).
-  const fields = doc.querySelectorAll("input, textarea, select");
-  fields.forEach((el) => {
-    const piiType = classifyField(el);
-    if (piiType) addNode(el, piiType);
+  // --- 0. Shadow DOM piercing: discover every open shadow root reachable
+  // from `doc` (recursively -- a shadow root can itself contain further
+  // shadow hosts), plus every element marked as hosting a CLOSED shadow
+  // root this function genuinely cannot see into (see the SHADOW DOM
+  // SUPPORT block above CLOSED_SHADOW_HOST_ATTR). `roots[0] === doc`
+  // always, so a document with no shadow content at all reduces to
+  // EXACTLY the original single-root behavior below -- this is what
+  // keeps every pre-existing fixture/test byte-for-byte unaffected.
+  const { roots, closedShadowHosts } = collectShadowPiercingRoots(doc);
 
-    // --- 1b. Regex battery over value/placeholder/selected-option text --
-    // see VALUE/PLACEHOLDER SCANNING note at top of file. Independent of
-    // (and additive to) the type/autocomplete classification above: a
-    // field can be flagged via both paths, or via this path alone (e.g.
-    // an autofilled Aadhaar-shaped value in a plain type=text input with
-    // no autocomplete attribute at all).
-    getFieldValueSources(el).forEach((text) => {
-      findTextRegexMatches(text).forEach((matchedPiiType) => addNode(el, matchedPiiType));
+  // --- 1. Form-field detection (NOT visibility-gated -- see header
+  // note), across every reachable root.
+  roots.forEach((root) => {
+    let fields;
+    try {
+      fields = root.querySelectorAll("input, textarea, select");
+    } catch (_err) {
+      return; // a malformed/detached root must not crash the whole scan
+    }
+    fields.forEach((el) => {
+      const piiType = classifyField(el);
+      if (piiType) addNode(el, piiType);
+
+      // --- 1b. Regex battery over value/placeholder/selected-option text
+      // -- see VALUE/PLACEHOLDER SCANNING note at top of file. Independent
+      // of (and additive to) the type/autocomplete classification above: a
+      // field can be flagged via both paths, or via this path alone (e.g.
+      // an autofilled Aadhaar-shaped value in a plain type=text input with
+      // no autocomplete attribute at all).
+      getFieldValueSources(el).forEach((text) => {
+        findTextRegexMatches(text).forEach((matchedPiiType) => addNode(el, matchedPiiType));
+      });
     });
   });
 
-  // --- 2. Visible-text-node regex detection.
-  const textNodes = collectCandidateTextNodes(doc);
-  textNodes.forEach((textNode) => {
-    const parent = textNode.parentElement;
-    if (!parent) return;
-    if (!isElementVisible(parent)) return;
-    const matches = findTextRegexMatches(textNode.textContent);
-    matches.forEach((piiType) => addNode(parent, piiType));
+  // --- 2. Visible-text-node regex detection, across every reachable root.
+  roots.forEach((root) => {
+    const ownerDoc = root.ownerDocument || doc;
+    const textNodes = collectCandidateTextNodes(ownerDoc, root);
+    textNodes.forEach((textNode) => {
+      const parent = textNode.parentElement;
+      if (!parent) return;
+      if (!isElementVisible(parent)) return;
+      const matches = findTextRegexMatches(textNode.textContent);
+      matches.forEach((piiType) => addNode(parent, piiType));
+    });
   });
 
-  return { sensitiveNodes: results };
+  // --- 3. Closed shadow roots: CONFIRMED unreachable, reported -- never
+  // silently skipped. See the SHADOW DOM SUPPORT block above for why a
+  // pure function cannot detect these on its own without an external
+  // (browser-only) signal, and content.js for how that signal is
+  // produced and how these regions get defensively redacted anyway.
+  const unscannableRegions = closedShadowHosts.map((el) => ({
+    selector: computeSelector(el),
+    bbox: getBBox(el),
+    reason: "closed-shadow-root",
+  }));
+
+  return { sensitiveNodes: results, unscannableRegions };
 }
