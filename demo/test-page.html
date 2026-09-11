@@ -191,6 +191,14 @@
     <div id="thanksMsg" hidden>Thanks! Full name received.</div>
   </div>
 
+  <!--
+    Checkout card (guard-test control, wiring pass TASK 4) -- see the
+    <script> block below for why this is NOT static markup like every
+    other card on this page. Mounted here, in document order, by JS ONLY
+    when the page is loaded as test-page.html?scenario=checkout.
+  -->
+  <div id="checkoutCardMount"></div>
+
   <p class="field-hint">
     Tip: this page has three states the agent should walk through in
     order: (1) type into "Full name" &rarr; the field KEEPS its value
@@ -203,7 +211,9 @@
     replies "done" and the loop stops on its own. See
     <code>demo/README.md</code> for the exact console output this
     produces, and for a SECOND scenario (a task goal designed to trigger
-    the sensitive-field guard on purpose).
+    the sensitive-field guard on purpose) and a THIRD scenario at
+    <code>?scenario=checkout</code> (a task goal designed to trigger the
+    NEW irreversible-action guard on a "Place Order" button).
   </p>
 
   <script>
@@ -248,6 +258,75 @@
       continueBtn.remove();
       thanksMsg.hidden = false;
     });
+
+    // ---------------------------------------------------------------
+    // Guard-test control (wiring pass, TASK 4): the "Place Order" button.
+    //
+    // WHY THIS IS MOUNTED CONDITIONALLY, NOT STATIC MARKUP LIKE EVERY
+    // OTHER CARD ON THIS PAGE: action-executor.js's actionable-element
+    // walk (ACTIONABLE_SELECTOR) matches ANY <button>, unconditionally --
+    // `hidden`/`disabled` do NOT remove an element from it (the existing
+    // "Continue" button above proves this: it is `hidden` yet still
+    // appears in domSnapshot from the very first scan). A real, always-
+    // present, non-sensitive "Place Order" button would therefore become
+    // a NEW candidate for MockVLMClient's own fallback rule 3 ("click the
+    // first node that is not redacted/sensitive") once the existing
+    // scenario 1/2 walkthrough exhausts its normal candidates (fullName
+    // excluded via actedAgentIds, "Continue" removed) -- silently turning
+    // the documented, celebrated "type -> click -> done" 3-step proof
+    // into "type -> click -> BLOCKED", for a task goal that never asked
+    // for a purchase. That would be confusing at best (the mock doesn't
+    // read the task goal at all, so it would look like the agent went
+    // rogue) and would break demo/README.md's existing, verified
+    // evidence at best -- a real regression this pass must not introduce.
+    //
+    // Fix: the checkout card (and its Place Order button) is only
+    // inserted into the live DOM -- and therefore only ever discoverable
+    // by buildDomSnapshot()'s scan -- when this page is loaded with
+    // `?scenario=checkout` in the URL. Scenario 1 and scenario 2 (see
+    // demo/README.md) load the page with no query string, exactly as
+    // before this pass, so their behaviour is BYTE-IDENTICAL to before:
+    // zero new actionable elements, same step counts, same outcomes.
+    // Scenario 3 (the new one) explicitly tells Varun to load
+    // test-page.html?scenario=checkout, which is the only page state
+    // that ever exposes this control to a scan at all.
+    // ---------------------------------------------------------------
+    var params = new URLSearchParams(location.search);
+    if (params.get("scenario") === "checkout") {
+      var mount = document.getElementById("checkoutCardMount");
+      mount.innerHTML =
+        '<div class="card">' +
+        "<h2>Checkout (guard-test control -- action-risk.js)</h2>" +
+        '<p class="field-hint"><strong>This button is inert by design.</strong> ' +
+        "It exists purely so the wiring pass's second safety guard -- " +
+        "<code>action-risk.js</code>'s <code>classifyActionRisk()</code>, wired " +
+        "into <code>action-executor.js</code>'s <code>executeAction()</code> -- " +
+        'has something real to refuse. "Place Order" matches this project\'s ' +
+        "destructive-intent phrase list (checkout/purchase flows, per CLAUDE.md's " +
+        "TIER 2 notes), so an agent instructed to click it should be blocked with " +
+        "<code>IRREVERSIBLE_ACTION_BLOCKED</code> before the click ever reaches " +
+        "this element. If it DOES fire (a human clicking it directly, or the " +
+        "guard's override hook being explicitly enabled), it only reveals the " +
+        "small inert message below -- no network call, no state change, no real " +
+        "order is ever placed. See demo/README.md's THIRD scenario for the exact " +
+        "task goal and console line this is built to demonstrate.</p>" +
+        '<button id="placeOrderBtn" type="button">Place Order</button>' +
+        '<div id="placeOrderInert" class="field-hint" hidden>(Demo only -- this ' +
+        "click did nothing. No order was placed, nothing was charged, no request " +
+        "was sent anywhere.)</div>" +
+        "</div>";
+
+      // Deliberately inert -- see the card's own copy above. Only fires if
+      // a click actually reaches this element: during the third scenario
+      // that means the IRREVERSIBLE_ACTION_BLOCKED guard did NOT do its
+      // job, so seeing this message during that specific run is itself a
+      // signal something is wrong, not the expected outcome.
+      var placeOrderBtn = document.getElementById("placeOrderBtn");
+      var placeOrderInert = document.getElementById("placeOrderInert");
+      placeOrderBtn.addEventListener("click", function () {
+        placeOrderInert.hidden = false;
+      });
+    }
   </script>
 </body>
 </html>

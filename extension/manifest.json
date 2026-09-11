@@ -32,7 +32,17 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["ort/*", "models/*", "assets/*", "lib/dom-scanner.js", "lib/redaction.js", "lib/frame-coords.js"],
+      "resources": [
+        "ort/*",
+        "models/*",
+        "assets/*",
+        "lib/dom-scanner.js",
+        "lib/redaction.js",
+        "lib/frame-coords.js",
+        "lib/element-ranker.js",
+        "lib/action-risk.js",
+        "lib/stall-detector.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

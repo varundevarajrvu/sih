@@ -120,18 +120,21 @@ All three sit behind one interface. Swapping models touches exactly one file —
 
 ---
 
-## Two demos
+## Demos
 
 **1. The agent is useful**
 Task goal: `fill the name as Simon` → types **Simon** into the name field.
 
-**2. The agent is safe**
+**2. The agent is safe (PII)**
 Task goal: `Fill in the password field with the value hunter2` → **`SENSITIVE_TARGET_BLOCKED`**.
 
 **3. Both at once**
 Task goal: `Fill the name as River Jane and email id as riverjane33@demo.com` → fills the name, refuses the email. The policy discriminates; it doesn't just say no to everything.
 
-> **"But what if I want it to fill my email?"** The guard is fail-closed *by policy, not by limitation*. `action-executor.js` exposes an `onSensitiveTarget(el, action)` hook so a real product can prompt for consent and authorize the write. It's deliberately disabled here — a demo that silently auto-approves sensitive writes proves nothing.
+**4. The agent is safe (destructive actions, not just PII)**
+On `test-page.html?scenario=checkout`, task goal: `Complete the checkout by clicking Place Order` → **`IRREVERSIBLE_ACTION_BLOCKED`**, a distinct code from #2/#3 above. `action-risk.js` classifies "Buy Now"/"Place Order"/"Delete Account"-style controls by their own text/value/aria-label/name/id — no PII involved at all — so an autonomous agent can't complete a purchase or delete an account just because nothing on that button is a password or an email. See `demo/README.md` §9 for the exact console line.
+
+> **"But what if I want it to fill my email / complete the purchase?"** Both guards are fail-closed *by policy, not by limitation*. `action-executor.js` exposes `onSensitiveTarget(el, action)` and `onIrreversibleAction(el, action, riskResult)` hooks so a real product can prompt for consent and authorize the write. Both are deliberately disabled here — a demo that silently auto-approves sensitive/destructive writes proves nothing.
 
 ---
 
@@ -149,11 +152,13 @@ Vision boxes are filtered to privacy-relevant COCO classes (`person`, `tv`, `lap
 
 ```
 extension/        MV3 extension — background SW, offscreen inference, content script, popup
-  lib/            dom-scanner.js · redaction.js · action-executor.js (pure, unit-tested)
+  lib/            dom-scanner.js · redaction.js · action-executor.js · frame-coords.js ·
+                   element-ranker.js · action-risk.js · stall-detector.js (all pure, unit-tested)
 server/           FastAPI /analyze — Pydantic schemas, swappable VLM clients
-demo/             test-page.html with password, email, Aadhaar-shaped ID, and an ID card
+demo/             test-page.html with password, email, Aadhaar-shaped ID, an ID card, and a
+                   guard-test "Place Order" button (?scenario=checkout)
 spike/            Phase 0 research — the WebGPU/offscreen viability investigation
-tests/            238 tests
+tests/            393 tests
 CLAUDE.md         full decision record: every ruling, measurement, and correction
 ```
 
@@ -161,10 +166,19 @@ CLAUDE.md         full decision record: every ruling, measurement, and correctio
 
 ```bash
 server/.venv/Scripts/python -m pytest tests/          # 148
-node --test tests/unit/test_dom_scanner.mjs           #  28
+node --test tests/unit/test_dom_scanner.mjs           #  37
 node --test tests/unit/test_redaction.test.mjs        #  32
-node --test tests/unit/test_action_executor.test.mjs  #  30
+node --test tests/unit/test_action_executor.test.mjs  #  40
+node --test tests/unit/test_frame_coords.test.mjs     #  19
+node --test tests/unit/test_element_ranker.mjs        #  44
+node --test tests/unit/test_action_risk.mjs           #  47
+node --test tests/unit/test_wiring.mjs                #  26
 ```
+
+245 Node `node:test` + 148 pytest = **393 tests, all green** (this figure
+supersedes the "238"/"367" counts that appear in older commentary
+elsewhere in this repo — see `CLAUDE.md`'s wiring-pass entry for the
+before/after breakdown).
 
 Redaction is verified by **sampling actual pixels** inside and outside each rect — including a test asserting the *unscaled* coordinate is NOT painted, which proves the HiDPI scaling is load-bearing rather than merely present.
 
@@ -184,7 +198,7 @@ Redaction is verified by **sampling actual pixels** inside and outside each rect
 | Criterion | Weight | Evidence |
 |---|---|---|
 | Visual context accuracy | 25% | On-device WebGPU detection, real boxes on the demo page |
-| PII recall / precision | 20% | 28 fixture tests, recall-biased, `value`/`placeholder` scanning |
+| PII recall / precision | 20% | 37 fixture tests, recall-biased, `value`/`placeholder` scanning |
 | Redaction precision | 20% | 32 tests with pixel-level verification; DOM + vision regions merged |
 | Client resource utilization | 20% | 30–35 MB peak heap, instrumented per stage |
 | End-to-end latency | 15% | ~780–880 ms detection (4 samples); per-stage timings in every run summary |

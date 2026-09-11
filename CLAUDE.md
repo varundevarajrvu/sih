@@ -320,7 +320,19 @@ Rationale: an agent typing into a password field is the exact failure this proje
 - ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
-### TIER 2 — `element-ranker.js` + `action-risk.js`. Recorded 2026-09-11. Built, tested, **NOT YET WIRED**.
+### TIER 2 — `element-ranker.js` + `action-risk.js`. Recorded 2026-09-11. ✅ **BUILT, TESTED, AND WIRED.**
+
+#### WIRING RESULT — 2026-09-11. 393 tests green (245 JS across 7 suites + 148 server).
+
+**`element-ranker` → `content.js`**, new step 3.5: AFTER the sensitive-flag merge, BEFORE `scaleDomSnapshotBBoxes()`. Fed real `window.innerWidth/Height` (CSS px, matching the still-unscaled bboxes at that point). `dropped` is logged into a new `rank` instrumentation stage on EVERY step, even at zero — silent truncation reads as "covered everything" when it didn't.
+
+**`action-risk` → `action-executor.js`**, inside `executeAction()`'s click/type branch: `guardSensitive()` then `guardIrreversible()`. The classifier is **injected via `options` from `content.js`** at both the top-frame and subframe-relay call sites — never hardcoded into `action-executor.js`, which has no import/export by design. When an element trips both guards, the `SENSITIVE_TARGET_BLOCKED` message absorbs the irreversible reasons; when it doesn't, the message is byte-for-byte identical to before, regression-tested.
+
+**`MAX_STEPS = 6 → 25`** with a new pure `lib/stall-detector.js`. A realistic Indian-checkout flow (7 form fields + scroll + proceed-to-pay + 3 payment fields + place order + done) is ~14 steps, so 25 gives ~1.5× headroom without being unbounded. `detectStall()` catches a repeating unit of period 1 (3× back-to-back) or period 2–3 (2 full laps) — both "same action on same target" and "cycle with no progress". Records `outcome: "stalled"`, never confusable with `"done"`, and breaks immediately rather than skipping a step and continuing.
+
+**🏆 A trap caught BEFORE shipping, for once.** The new "Place Order" button is mounted only under `?scenario=checkout`, not added to the static page. An always-present button would have become `MockVLMClient`'s fallback click target once scenario 1's normal candidates ran out — silently converting demo 1's documented `done` outcome into a blocked click. Verified the default page still exposes exactly 5 actionable elements, byte-identical. This is the same shape as the demo page deleting its own evidence, spotted in advance this time.
+
+**Demo scenario 4** (works on the MOCK backend, no key needed): `test-page.html?scenario=checkout`, goal `Complete the checkout by clicking Place Order` → `IRREVERSIBLE_ACTION_BLOCKED`. Proves the guard is not merely a PII guard: nothing about that button is a password or an email, and it is refused anyway.
 
 Real pages have hundreds of actionable elements; the demo page has five. And the existing guard only blocks PII fields — it would happily let an autonomous agent click "Buy Now", because a purchase button is not PII.
 

@@ -123,7 +123,8 @@
    *
    * Codes in use: UNKNOWN_ACTION, MISSING_TARGET_ID,
    * INVALID_TARGET_FOR_ACTION, TARGET_NOT_FOUND, TARGET_DETACHED,
-   * SENSITIVE_TARGET_BLOCKED, NO_WINDOW_AVAILABLE, INVALID_ACTION_JSON.
+   * SENSITIVE_TARGET_BLOCKED, IRREVERSIBLE_ACTION_BLOCKED,
+   * NO_WINDOW_AVAILABLE, INVALID_ACTION_JSON.
    */
   function ActionExecutionError(code, message, details) {
     var err = new Error(message);
@@ -532,6 +533,21 @@
    * trigger a page) -- `scroll`/`done` are not gated, since bringing a
    * sensitive element into view or marking task completion doesn't
    * itself read or transmit its contents.
+   *
+   * WIRING PASS ADDITION (CLAUDE.md TIER 2 ORCHESTRATOR RULING #3):
+   * "guardSensitive() runs FIRST, then classifyActionRisk(). When an
+   * element trips BOTH, report SENSITIVE_TARGET_BLOCKED but INCLUDE the
+   * reasons from both." This function still runs, checks, and throws
+   * first -- untouched in shape -- but when it is ABOUT to throw, it now
+   * also asks classifyIrreversible() (a no-op returning risk:"safe" if
+   * options.classifyActionRisk was never wired in by the caller -- see
+   * that function) whether this SAME element+action also matches a
+   * destructive-intent signal, and folds those reasons into the thrown
+   * error's message/details if so. When nothing irreversible-flagged is
+   * found (the overwhelming common case, and every pre-existing call site
+   * that never passes options.classifyActionRisk), the thrown message is
+   * byte-for-byte identical to before this pass -- see
+   * buildSensitiveBlockedError() below.
    */
   function guardSensitive(el, actionJson, options) {
     var opts = options || {};
@@ -541,21 +557,141 @@
     if (typeof opts.onSensitiveTarget === "function") {
       var decision = opts.onSensitiveTarget(el, actionJson);
       if (decision === true) return;
-      throw new ActionExecutionError(
-        "SENSITIVE_TARGET_BLOCKED",
-        "action blocked: target element is flagged sensitive; onSensitiveTarget hook declined to override",
-        { targetId: actionJson.targetId }
+      throw buildSensitiveBlockedError(
+        el,
+        actionJson,
+        opts,
+        "action blocked: target element is flagged sensitive; onSensitiveTarget hook declined to override"
       );
     }
     if (opts.allowSensitiveTargets === true) return;
 
-    throw new ActionExecutionError(
-      "SENSITIVE_TARGET_BLOCKED",
+    throw buildSensitiveBlockedError(
+      el,
+      actionJson,
+      opts,
       "action blocked: target element is flagged sensitive (data-agent-sensitive or sensitiveAgentIds). " +
         "Acting on it is a policy decision this module will not make silently -- pass " +
         "options.allowSensitiveTargets=true or an options.onSensitiveTarget(el, actionJson) hook that " +
-        "returns true to explicitly authorize it.",
-      { targetId: actionJson.targetId }
+        "returns true to explicitly authorize it."
+    );
+  }
+
+  /**
+   * Builds the SENSITIVE_TARGET_BLOCKED error guardSensitive() throws,
+   * merging in classifyActionRisk() reasons when the SAME element+action
+   * also trips the irreversible-action classifier (RULING #3 -- see
+   * guardSensitive()'s doc comment). `baseMessage` is returned completely
+   * unchanged when there is nothing to merge (classifyActionRisk not
+   * wired at this call site, or it returned risk:"safe") -- this is what
+   * keeps every pre-existing SENSITIVE_TARGET_BLOCKED assertion (tests,
+   * demo/README.md's documented console line) byte-for-byte intact.
+   */
+  function buildSensitiveBlockedError(el, actionJson, opts, baseMessage) {
+    var risk = classifyIrreversible(el, actionJson, opts);
+    var alsoIrreversible = risk.risk === "irreversible" && risk.reasons.length > 0;
+    var message = alsoIrreversible
+      ? baseMessage + " ALSO matches irreversible-action signal(s): " + risk.reasons.join("; ") + "."
+      : baseMessage;
+    return new ActionExecutionError("SENSITIVE_TARGET_BLOCKED", message, {
+      targetId: actionJson.targetId,
+      reasons: ["target flagged sensitive"].concat(alsoIrreversible ? risk.reasons : []),
+    });
+  }
+
+  /**
+   * Default field extraction for classifyActionRisk(), read off the LIVE
+   * DOM element right before dispatch -- see action-risk.js's file-header
+   * "WHY domNode ISN'T STRICTLY server/schemas.py::DomNode" note and its
+   * "HOW TO CONSUME" block: the live element carries text/attributes
+   * (value, aria-label, name, id) the already-lossy domSnapshot may have
+   * dropped, and recall matters here (a false negative lets an
+   * autonomous agent complete a destructive action; a false positive is
+   * a recoverable, explained refusal).
+   */
+  function collectDomNodeFieldsForRisk(el) {
+    return {
+      tag: el.tagName.toLowerCase(),
+      type: el.getAttribute("type"),
+      text: getAccessibleText(el),
+      value: el.value,
+      ariaLabel: el.getAttribute("aria-label"),
+      name: el.getAttribute("name"),
+      id: el.id,
+    };
+  }
+
+  /**
+   * Runs action-risk.js's classifyActionRisk() against the live element,
+   * if (and only if) the caller wired it in via `options.classifyActionRisk`
+   * -- this file has ZERO import/export statements by design (see file
+   * header), so it cannot itself `import` an ES module; action-risk.js is
+   * an ES module (see that file's own header), so it can only ever be
+   * INJECTED here by whichever caller loaded it (content.js dynamically
+   * imports it exactly like dom-scanner.js/redaction.js -- see that
+   * file's loadLibModules()). When it hasn't been wired in, this degrades
+   * to risk:"safe" rather than throwing or skipping the action guard
+   * entirely -- mirrors defaultIsSensitive()'s own posture toward an
+   * absent signal, and is what keeps every pre-existing call site (none
+   * of which know this classifier exists yet) behaviourally unchanged.
+   *
+   * @returns {{risk: "safe"|"irreversible", reasons: string[]}}
+   */
+  function classifyIrreversible(el, actionJson, opts) {
+    var classify = opts.classifyActionRisk;
+    if (typeof classify !== "function") {
+      return { risk: "safe", reasons: [] };
+    }
+    var getFields = opts.getRiskFields || collectDomNodeFieldsForRisk;
+    var fields = getFields(el);
+    var result = classify(fields, actionJson, opts.classifyActionRiskOptions);
+    if (result && result.risk === "irreversible") {
+      return { risk: "irreversible", reasons: Array.isArray(result.reasons) ? result.reasons : [] };
+    }
+    return { risk: "safe", reasons: [] };
+  }
+
+  /**
+   * SECOND SAFETY GUARD (CLAUDE.md TIER 2 ORCHESTRATOR RULINGS, wiring
+   * pass): blocks click/type against an element classifyActionRisk()
+   * flags as "irreversible" (a "Buy Now"/"Place Order"/"Delete Account"
+   * -style destructive control -- not PII, so guardSensitive() above has
+   * nothing to say about it). Deliberately mirrors guardSensitive()'s own
+   * shape: FAIL-CLOSED by default, with an `options.allowIrreversibleActions
+   * === true` escape hatch and an `options.onIrreversibleAction(el,
+   * actionJson, riskResult)` override hook that returns `true` to
+   * authorize -- both DISABLED unless a caller explicitly wires them in,
+   * same reasoning as the sensitive guard's own hooks: a real product
+   * needs a consent path, a demo that silently auto-approves proves
+   * nothing.
+   *
+   * Runs AFTER guardSensitive() (RULING #3 -- see that function and
+   * executeAction()'s click/type branch for the call order) and is a
+   * complete no-op (never throws) when options.classifyActionRisk was
+   * never wired in -- see classifyIrreversible() above.
+   */
+  function guardIrreversible(el, actionJson, options) {
+    var opts = options || {};
+    var risk = classifyIrreversible(el, actionJson, opts);
+    if (risk.risk !== "irreversible") return;
+
+    if (typeof opts.onIrreversibleAction === "function") {
+      var decision = opts.onIrreversibleAction(el, actionJson, risk);
+      if (decision === true) return;
+      throw new ActionExecutionError(
+        "IRREVERSIBLE_ACTION_BLOCKED",
+        "action blocked: " + risk.reasons.join("; ") + "; onIrreversibleAction hook declined to override",
+        { targetId: actionJson.targetId, reasons: risk.reasons }
+      );
+    }
+    if (opts.allowIrreversibleActions === true) return;
+
+    throw new ActionExecutionError(
+      "IRREVERSIBLE_ACTION_BLOCKED",
+      "action blocked: " + risk.reasons.join("; ") + ". Acting on it is a policy decision this module will not " +
+        "make silently -- pass options.allowIrreversibleActions=true or an options.onIrreversibleAction(el, " +
+        "actionJson, riskResult) hook that returns true to explicitly authorize it.",
+      { targetId: actionJson.targetId, reasons: risk.reasons }
     );
   }
 
@@ -713,10 +849,24 @@
    *   allowSensitiveTargets?: boolean,
    *   onSensitiveTarget?: function(Element, object): boolean,
    *   sensitiveAgentIds?: Set<string>,
+   *   classifyActionRisk?: function(object, object, object=): {risk: string, reasons: string[]},
+   *   getRiskFields?: function(Element): object,
+   *   classifyActionRiskOptions?: object,
+   *   allowIrreversibleActions?: boolean,
+   *   onIrreversibleAction?: function(Element, object, {risk:string,reasons:string[]}): boolean,
    *   window?: Window,
    *   scrollWindowBy?: function(Window, number): void,
    *   scrollElementIntoView?: function(Element): void,
    * }} [options]
+   *   `classifyActionRisk` (wiring-pass addition): action-risk.js's
+   *   exported `classifyActionRisk` function, injected by the caller --
+   *   this file has zero import/export statements by design and cannot
+   *   import that ES module itself (see classifyIrreversible()'s doc
+   *   comment). Omitted entirely, the irreversible-action guard below is
+   *   a no-op, matching every pre-existing call site's behaviour exactly.
+   *   `allowIrreversibleActions`/`onIrreversibleAction` mirror
+   *   `allowSensitiveTargets`/`onSensitiveTarget` and are DISABLED unless
+   *   explicitly set, same fail-closed-by-default posture.
    * @returns {object} a small result-description object (never the raw
    *   value being typed, for consistency with Section 5's "an error path
    *   is a data egress path" lesson -- results here are for local
@@ -765,7 +915,18 @@
         );
       }
       var el = resolveElement(idMap, targetId);
+      // RULING #3: guardSensitive() (the project's core, more specific
+      // invariant) runs FIRST and, if it blocks, has already folded in
+      // classifyActionRisk()'s reasons for this same element (see
+      // buildSensitiveBlockedError()). guardIrreversible() only ever
+      // gets a turn when guardSensitive() did NOT throw -- i.e. the
+      // element isn't sensitive at all, or a sensitive-target override
+      // explicitly authorized acting on it anyway -- so a "Confirm
+      // Payment" button next to card fields is reported as
+      // SENSITIVE_TARGET_BLOCKED (with both sets of reasons), never as
+      // two separate errors.
       guardSensitive(el, actionJson, options);
+      guardIrreversible(el, actionJson, options);
       return action === "click" ? dispatchClick(el) : dispatchType(el, value);
     }
 
@@ -804,6 +965,7 @@
     // Exposed for advanced callers / tests; not required for normal use.
     defaultGetBBox: defaultGetBBox,
     defaultIsSensitive: defaultIsSensitive,
+    defaultGetRiskFields: collectDomNodeFieldsForRisk,
     getAccessibleText: getAccessibleText,
     getImplicitRole: getImplicitRole,
     getSemanticType: getSemanticType,

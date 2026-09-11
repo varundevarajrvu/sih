@@ -247,9 +247,9 @@ async function detectObjects(imageData) {
 // other enumeration mechanism available without the webNavigation
 // permission (see note above). A frame that loads AFTER the top frame has
 // already started its first agent-loop step is simply not in this set yet
-// for that step; MAX_STEPS=6 gives later steps additional chances to pick
-// it up. This is a known, accepted race, not a silent gap -- documented in
-// the report to the orchestrator.
+// for that step; content.js's MAX_STEPS budget gives later steps
+// additional chances to pick it up. This is a known, accepted race, not a
+// silent gap -- documented in the report to the orchestrator.
 const knownFrames = new Map();
 
 function registerFrame(tabId, frameId) {

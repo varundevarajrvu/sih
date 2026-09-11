@@ -46,6 +46,17 @@ console.log("[content] Phase 4 agent-loop content script loaded on", location.hr
 let DomScanner = null;
 let Redaction = null;
 let FrameCoords = null;
+// WIRING PASS additions (CLAUDE.md TIER 1/TIER 2): ElementRanker and
+// ActionRisk are BOTH ES modules (top-level `export`, see their own file
+// headers) exactly like DomScanner/Redaction/FrameCoords above -- same
+// classic-script-cannot-`import` constraint, same dynamic-import fix. See
+// each file's own "HOW TO CONSUME THIS MODULE" block for the call-site
+// contract this file implements below. StallDetector is this pass's own
+// new pure module (TASK 3, not a pre-existing Tier module) but follows
+// the identical loading pattern for consistency.
+let ElementRanker = null;
+let ActionRisk = null;
+let StallDetector = null;
 
 async function loadLibModules() {
   if (!DomScanner) {
@@ -56,6 +67,15 @@ async function loadLibModules() {
   }
   if (!FrameCoords) {
     FrameCoords = await import(browser.runtime.getURL("lib/frame-coords.js"));
+  }
+  if (!ElementRanker) {
+    ElementRanker = await import(browser.runtime.getURL("lib/element-ranker.js"));
+  }
+  if (!ActionRisk) {
+    ActionRisk = await import(browser.runtime.getURL("lib/action-risk.js"));
+  }
+  if (!StallDetector) {
+    StallDetector = await import(browser.runtime.getURL("lib/stall-detector.js"));
   }
 }
 
@@ -317,6 +337,16 @@ if (!IS_TOP_FRAME) {
       try {
         const result = ActionExecutor.executeAction(message.action, lastFrameScan.idMap, {
           sensitiveAgentIds: lastFrameScan.sensitiveAgentIds,
+          // WIRING PASS TASK 2: same classifyActionRisk injection as the
+          // top frame's own executeActionAcrossFrames() call below --
+          // action-risk.js is loaded by this frame's own loadLibModules()
+          // call inside scanThisFrame(), which always runs (and sets
+          // lastFrameScan) before RUN_ACTION_IN_FRAME can ever be relayed
+          // here (see the `if (!lastFrameScan)` guard above). The `&&`
+          // guard is defensive only -- if that invariant is ever wrong,
+          // this degrades to "guard not wired" (classifyIrreversible's own
+          // no-op default), never a crash.
+          classifyActionRisk: ActionRisk && ActionRisk.classifyActionRisk,
         });
         return Promise.resolve({ ok: true, result });
       } catch (err) {
@@ -760,8 +790,29 @@ async function executeActionAcrossFrames(action, idMap, options) {
 // The loop. Bounded to MAX_STEPS so a demo (or a misbehaving mock/VLM)
 // can never spin forever -- "repeat" per CLAUDE.md Section 4 Phase 4, but
 // repetition without a bound is an infinite loop, not a feature.
+//
+// WIRING PASS TASK 3 -- raised from 6. 6 was enough for the demo page's
+// own 3-step (type -> click -> done) walkthrough with headroom, but
+// cannot complete anything real: a single realistic checkout/registration
+// flow alone commonly runs longer than that before ever reaching "done" --
+// e.g. an Indian e-commerce checkout (CLAUDE.md's own IRCTC/BookMyShow/
+// Paytm framing): type name, address line 1, address line 2, city, state,
+// PIN code, phone (7 types) -> scroll to payment section (1) -> click
+// "Proceed to Pay" (1) -> type card number, expiry, CVV (3) -> click
+// "Place Order" (1, likely IRREVERSIBLE_ACTION_BLOCKED and correctly so)
+// -> done (1) is already 14 steps on a SINGLE well-behaved pass, before
+// counting any scroll-to-find-the-next-field steps a real page forces
+// between form sections. 25 gives that realistic flow roughly 1.5x
+// headroom (room for a couple of extra scrolls or a corrected "type") while
+// staying well short of "unbounded" -- at the retry-loop's own worst case
+// (~1s+2s backoff on a transient failure, ANALYZE_MAX_ATTEMPTS above) a
+// full 25-step run is still bounded to low-single-digit minutes, not
+// indefinite. Raising the ceiling ALONE would just mean a misbehaving
+// VLM loops longer before hitting it -- see the stall-detection block
+// below (TASK 3's other half) for what actually catches that case, sooner
+// and more legibly than waiting for MAX_STEPS to run out.
 // ---------------------------------------------------------------------
-const MAX_STEPS = 6;
+const MAX_STEPS = 25;
 
 async function runAgentLoop() {
   await loadLibModules();
@@ -789,6 +840,11 @@ async function runAgentLoop() {
   // backend-agnostic (filters what ANY backend, mock or real, is shown),
   // not a MockVLMClient-specific hack.
   const actedAgentIds = new Set();
+
+  // WIRING PASS TASK 3: oldest-first action-signature history, fed to
+  // stall-detector.js after every successfully executed non-"done" step.
+  // See the stall-detection block near the end of the step loop, below.
+  const actionHistory = [];
 
   let taskGoal = "(no task goal set)";
   try {
@@ -918,6 +974,69 @@ async function runAgentLoop() {
         // sensitive:true alone still triggers sanitizeDomSnapshot()'s strip.
         return s ? { ...node, sensitive: true } : node;
       });
+
+    // ---- 3.5. WIRING PASS TASK 1 -- element-ranker.js. Budget-aware
+    // relevance filter. MUST run AFTER the sensitive-flag merge directly
+    // above and BEFORE the /analyze POST -- this ordering is load-bearing
+    // (CLAUDE.md TIER 2, orchestrator's binding ruling), not a style
+    // preference:
+    //
+    //   rankElements() partitions `sensitive:true` nodes out BEFORE
+    //   applying the element budget and unions them back in
+    //   UNCONDITIONALLY afterward, regardless of score (see that file's
+    //   "THE ONE RULE THIS FILE MUST NEVER BREAK"). It can only do that
+    //   if `sensitive` already carries its REAL, merged value when this
+    //   runs. action-executor.buildDomSnapshot() always emits
+    //   `sensitive: false` on every node by design (that module doesn't
+    //   classify PII -- see its own doc comment) -- ranking on THAT raw
+    //   snapshot would see every node, including what should be a
+    //   protected password/email/ID field, as an ordinary low-scoring
+    //   candidate indistinguishable from page clutter, and a tight
+    //   budget could silently drop it from what's sent to /analyze. That
+    //   breaks two things downstream: the server's find_pii_leaks()
+    //   agentId correlation (CLAUDE.md's Phase 1 RESULT contract) has
+    //   nothing to correlate against for a node that was never in the
+    //   payload, and the redactedRegions the VLM is told to ignore no
+    //   longer line up with a domSnapshot entry it can reason about.
+    //   Every existing test would still pass if this ran before the
+    //   merge instead -- which is exactly why the orchestrator called
+    //   the order out explicitly rather than leaving it to be discovered
+    //   the hard way. See tests/unit/test_wiring.mjs's "ranking order"
+    //   suite for a fixture proving both directions.
+    //
+    // Fed REAL viewport dimensions (window.innerWidth/innerHeight) in the
+    // SAME CSS-pixel unit space mergedDomSnapshot's bboxes are STILL in
+    // at this point -- RULING 2's devicePixelRatio scaling (step 4,
+    // directly below) hasn't run yet. element-ranker.js's own contract
+    // only requires bbox/viewport units to match each other, not any
+    // particular absolute space (see its "HOW TO CONSUME" block), so
+    // ranking before that scaling step keeps both sides in the same,
+    // already-natural CSS-pixel space with no extra conversion needed
+    // here.
+    //
+    // `dropped` is logged into the RUN SUMMARY UNCONDITIONALLY (even when
+    // 0, so its absence is never itself a signal) -- a silently truncated
+    // payload would read as "the agent covered the whole page" when it
+    // didn't; see element-ranker.js's own HOW TO CONSUME note making the
+    // identical point. ----
+    const tRank0 = performance.now();
+    const rankResult = ElementRanker.rankElements(mergedDomSnapshot, taskGoal, {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    });
+    const rankedTotal = rankResult.selected.length + rankResult.dropped;
+    mergedDomSnapshot = rankResult.selected;
+    instr.mark(step, "rank", {
+      durationMs: +(performance.now() - tRank0).toFixed(1),
+      totalCandidates: rankedTotal,
+      selected: rankResult.selected.length,
+      dropped: rankResult.dropped,
+    });
+    if (rankResult.dropped > 0) {
+      console.log(
+        `[element-ranker] step ${step}: dropped ${rankResult.dropped} of ${rankedTotal} element(s) over budget (sensitive nodes are never among them)`,
+        rankResult.scores
+      );
+    }
 
     // ---- 4. RULING 2 -- bbox normalization, ONE point. domSnapshot's
     // own bboxes are scaled here, explicitly, exactly once (see the
@@ -1068,7 +1187,19 @@ async function runAgentLoop() {
     let actResult;
     let relayedToFrameId;
     try {
-      const actOutcome = await executeActionAcrossFrames(action, idMap, { sensitiveAgentIds });
+      const actOutcome = await executeActionAcrossFrames(action, idMap, {
+        sensitiveAgentIds,
+        // WIRING PASS TASK 2 -- injects action-risk.js's classifier into
+        // action-executor.js's executeAction(), at the exact call point
+        // guardSensitive() already runs (see that file's guardIrreversible()
+        // and RULING #3 comments). Loaded once by loadLibModules() at the
+        // top of runAgentLoop(), so it's guaranteed populated here.
+        // allowIrreversibleActions/onIrreversibleAction are deliberately
+        // NEVER passed -- the override hook stays DISABLED by default,
+        // same policy as the pre-existing sensitive-target guard (Phase 3
+        // ruling: "Phase 4 must NOT enable them for the demo").
+        classifyActionRisk: ActionRisk.classifyActionRisk,
+      });
       actResult = actOutcome.result;
       relayedToFrameId = actOutcome.relayedToFrameId;
     } catch (err) {
@@ -1099,6 +1230,41 @@ async function runAgentLoop() {
       actResult.targetId !== ActionExecutor.PAGE_TARGET_ID
     ) {
       actedAgentIds.add(actResult.targetId);
+    }
+
+    // ---- 9.5. WIRING PASS TASK 3 -- stall detection. Runs after a
+    // SUCCESSFUL act (a failed act already broke out of the loop above,
+    // via the catch block, with its own distinct "act_failed" outcome --
+    // a stall check has nothing to add there). Skipped for "done" itself:
+    // it ends the loop on the very next check below regardless, and a
+    // repeated "done" signature isn't a meaningful concept (the loop can
+    // only ever execute one).
+    //
+    // A raised MAX_STEPS (see its declaration above) is only safe with a
+    // detector like this one in front of it -- otherwise "the same ceiling
+    // problem, just later" is all a bigger number buys. Per the task
+    // brief: a detected stall STOPS the loop immediately, right here --
+    // it does not skip this step and let the loop continue hoping the
+    // next one recovers.
+    if (action.action !== "done") {
+      actionHistory.push(StallDetector.actionSignature(action));
+      const stall = StallDetector.detectStall(actionHistory);
+      if (stall) {
+        instr.mark(step, "stall", {
+          period: stall.period,
+          pattern: stall.pattern,
+          repeats: stall.repeats,
+          recentHistory: actionHistory.slice(-stall.windowSize),
+        });
+        console.warn(
+          `[agent-loop] STALL DETECTED at step ${step} -- a period-${stall.period} action pattern repeated ` +
+            `${stall.repeats}x with no progress (pattern: ${JSON.stringify(stall.pattern)}). Stopping the loop ` +
+            `cleanly (outcome: "stalled") instead of continuing toward MAX_STEPS.`,
+          stall
+        );
+        outcome = "stalled";
+        break;
+      }
     }
 
     if (action.action === "done") {

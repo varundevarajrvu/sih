@@ -1,5 +1,35 @@
 # demo/ — Phase 4 (`integration-loop`) end-to-end walkthrough
 
+## WIRING PASS UPDATE (2026-09-11) — read this first
+
+Two previously-built-but-unwired modules are now live in the loop:
+
+- **`element-ranker.js`** now runs in `content.js`, AFTER the sensitive-
+  flag merge and BEFORE the `/analyze` POST (CLAUDE.md TIER 2's binding
+  ruling on ordering), trimming the `domSnapshot` sent to the server to
+  the most task-relevant ~40 elements on a real-world-sized page.
+  Sensitive nodes are exempt from the budget by that module's own design
+  and always survive. `dropped` is logged every step (a new `rank` stage
+  in the RUN SUMMARY) even when 0.
+- **`action-risk.js`** now runs in `action-executor.js`'s `executeAction()`,
+  at the same point the pre-existing sensitive-target guard runs, gated
+  on the LIVE DOM element's own attributes for best recall. A `click`/
+  `type` against a destructive-looking control ("Buy Now", "Place Order",
+  "Delete Account", …) is now blocked with a NEW, distinct error code —
+  **`IRREVERSIBLE_ACTION_BLOCKED`** — separate from `SENSITIVE_TARGET_BLOCKED`
+  so the two are countable independently. See **§9 (new)** below for the
+  third demo scenario this unlocks.
+- **`MAX_STEPS` raised from 6 to 25**, with a new **stall detector**
+  (`extension/lib/stall-detector.js`) in front of it so a higher ceiling
+  never means a silent runaway loop — see §5a below.
+- **Test count: 367** (148 pytest + 219 Node `node:test`), all green,
+  including the new wiring's own tests (`tests/unit/test_wiring.mjs`).
+
+Everything below this point that predates the wiring pass is otherwise
+unchanged and still accurate — read on for the original walkthrough.
+
+---
+
 **STATUS: the full loop has already been run successfully in a real
 Chrome browser against a real Gemini backend** — Section 5 verified
 against the real serialized payload, vision + DOM redaction both
@@ -32,10 +62,13 @@ responses to prove the Section 5 check re-runs on every attempt and that
 4xx never retries; the new 3-step page sequence (type → click → done)
 was independently re-verified by calling the REAL `MockVLMClient` Python
 class directly with the exact `domSnapshot` sequence `content.js` now
-produces (not a re-implementation of its logic); and all 238 tests
-(148 pytest + 90 Node `node:test`) still pass unchanged. **The actual
-in-browser re-run needs Varun** — see §7 and §8 for exact steps, and
-paste back the console lines requested there.
+produces (not a re-implementation of its logic); and all tests passed at
+the time (238 = 148 pytest + 90 Node `node:test`; see the WIRING PASS
+UPDATE at the top of this file for the current, larger count — 367 —
+after `element-ranker.js`/`action-risk.js` were wired in and
+`frame-coords.js` was added). **The actual in-browser re-run needs
+Varun** — see §7, §8, and the new §9 for exact steps, and paste back the
+console lines requested there.
 
 ---
 
@@ -155,8 +188,11 @@ menu if hidden) → scroll to **"Phase 4: full agent loop"** → click
 **Run Agent Loop**.
 
 This message-relays through `background.js` to `test-page.html`'s content
-script and runs up to 6 iterations of capture → detect → scan → redact →
-send → act, stopping early once the backend replies `"done"`.
+script and runs up to 25 iterations (`MAX_STEPS`, raised from 6 in the
+wiring pass — see the WIRING PASS UPDATE at the top of this file) of
+capture → detect → scan → redact → send → act, stopping early once the
+backend replies `"done"`, or if the new stall detector (§5a) decides the
+loop is stuck.
 
 ### What should happen on this specific page, and why
 
@@ -200,6 +236,48 @@ click+type cycle, end to end, through capture, on-device detection, DOM
 PII scanning, client-side redaction, the network send, and real DOM
 action execution — with visible proof of what the agent did, not just a
 console line.**
+
+### 5a. Stall detection (wiring pass, TASK 3) — what it is and how to see it
+
+`MAX_STEPS` alone going from 6 → 25 would just mean a misbehaving VLM (or
+a page with a genuine UI loop) spins for longer before hitting the
+ceiling — same failure, later. `extension/lib/stall-detector.js` (a new,
+pure, unit-tested module — `tests/unit/test_wiring.mjs`) closes that gap:
+after every successfully executed non-`done` step, `content.js` appends a
+signature of that action (`action:targetId:value`) to a per-run history
+and asks `detectStall()` whether the TAIL of that history is a short
+repeating pattern:
+
+- **Period 1** (the exact same `action`+`targetId`+`value` 3 times in a
+  row) — "the same action on the same target repeatedly."
+- **Period 2 or 3** (an A→B→A→B, or A→B→C→A→B→C pattern, each lap
+  identical) — "a cycle of states with no progress," e.g. two elements
+  that each undo what the other one just did.
+
+If either fires, the loop **stops immediately, at that step** — it does
+not attempt one more step hoping the model recovers. The RUN SUMMARY's
+`outcome` is set to the distinct string **`"stalled"`** (never `"done"`,
+never `"max_steps_reached"` — a stall is never silently indistinguishable
+from success), and a new `stall` entry appears in the `stages` array with
+the detected `period`/`pattern`/`repeats`. Look for this console line:
+
+```
+[agent-loop] STALL DETECTED at step N -- a period-P action pattern repeated Rx with no progress (pattern: [...]). Stopping the loop cleanly (outcome: "stalled") instead of continuing toward MAX_STEPS.
+```
+
+This page's own three scenarios never trigger it by design: a
+`SENSITIVE_TARGET_BLOCKED`/`IRREVERSIBLE_ACTION_BLOCKED` refusal already
+stops the loop on its own (`outcome: "act_failed"`, see §8/§9) before a
+repeat could even be attempted, and the mock backend's deterministic rule
+always converges to `"done"` once nothing unblocked remains. A stall is
+what you'd see instead against a real, imperfect VLM on a MORE
+complicated real-world page — e.g. one that keeps re-selecting the same
+already-filled field because it doesn't register a prior `type` as having
+"taken" the field off the table, or two controls that each toggle a
+state the other one just set. `tests/unit/test_wiring.mjs`'s "stall
+detector" suite is the reliable, deterministic place to see the exact
+period-1/period-2/period-3 behaviour without depending on a specific
+model's quirks to reproduce it live.
 
 ## 6. What to paste back
 
@@ -382,6 +460,85 @@ client-side guard) and worth noting which one happened, but it's not a
 failure of this scenario; try a more direct phrasing of the task goal if
 you want to specifically exercise the guard rather than the model's own
 reluctance.
+
+---
+
+## 9. Scenario 3 (NEW, wiring pass): prove the irreversible-action guard refuses a purchase-shaped click
+
+Scenarios 1 and 2 cover PII (a useful action, then a blocked one). This
+scenario is the third safety layer the wiring pass adds: `action-risk.js`
+classifies a `click`/`type` target as **irreversible** by its own text/
+value/aria-label/name/id — no PII involved at all — and
+`action-executor.js` now blocks it with a distinct code,
+**`IRREVERSIBLE_ACTION_BLOCKED`**, before the click ever reaches the
+element.
+
+**Unlike scenario 2, this one does NOT require the real Gemini backend.**
+The "Place Order" button (see below) is deliberately the ONLY remaining
+non-sensitive, non-redacted actionable element once the page's other two
+candidates ("Full name", "Continue") are used up, so `MockVLMClient`'s
+own deterministic fallback rule ("click the first node that is not
+redacted/sensitive") reaches it structurally — no task-goal
+understanding needed. Gemini works too (and, given the task goal below,
+should reach the same button, likely sooner).
+
+**Steps:**
+1. Load the page at **`http://localhost:5500/test-page.html?scenario=checkout`**
+   — note the query string. Without it, the page is byte-identical to
+   scenarios 1/2 (see the code comment above the `<script>` block's
+   `checkoutCardMount` logic for why this is gated behind a query param
+   rather than always present: an always-present extra button would have
+   silently changed scenario 1's documented 3-step outcome). With it, a
+   fourth card appears: **"Checkout (guard-test control -- action-risk.js)"**
+   with a **Place Order** button. Clicking it directly (as a human) does
+   nothing harmful — it only reveals a small "(Demo only...)" message; no
+   network call, no state change, no real order.
+2. Open the extension popup. In the **Task Goal** box, type exactly:
+   ```
+   Complete the checkout by clicking Place Order
+   ```
+   Click **Save Task**.
+3. Click **Run Agent Loop** as in §5.
+
+**What you're likely to see** (mock backend, the default — no API key
+needed): step 1 types into "Full name" (mock's rule 2, same as scenario
+1); step 2 clicks "Continue" (same as scenario 1); step 3 — with
+"Full name" excluded via `actedAgentIds` and "Continue" removed from the
+DOM — the only remaining non-sensitive candidate is "Place Order", so the
+mock returns `{"action":"click","targetId":"agent-<N>","value":null}`
+targeting it. `action-executor.js`'s `executeAction()` runs
+`guardSensitive()` first (this element isn't sensitive — passes), then
+the new `guardIrreversible()`, which calls `classifyActionRisk()` against
+the LIVE button's own `text`/`id` ("Place Order" / `placeOrderBtn`, both
+matching this project's "place order" destructive-intent phrase) and
+throws **before** the click ever dispatches.
+
+**Exact console line that proves the refusal** (page console, per §4):
+```
+[agent-loop] step 3 :: act :: +Xms (t=Yms) { durationMs: X, error: 'action blocked: text matches destructive-intent keyword "place order"; id matches destructive-intent keyword "place order". Acting on it is a policy decision this module will not make silently -- pass options.allowIrreversibleActions=true or an options.onIrreversibleAction(el, actionJson, riskResult) hook that returns true to explicitly authorize it.', code: 'IRREVERSIBLE_ACTION_BLOCKED' }
+```
+and in the final RUN SUMMARY's `steps` array:
+```json
+{ "step": 3, "action": { "action": "click", "targetId": "agent-6", "value": null }, "error": "...", "code": "IRREVERSIBLE_ACTION_BLOCKED" }
+```
+`outcome` will be `"act_failed"` — the loop stops there, on purpose,
+exactly the same fail-closed posture as scenario 2. (The exact step
+number and `agent-<N>` id depend on how many actionable elements exist
+above the checkout card at run time — 3 and `agent-6` are what the
+traced mock sequence above produces; what matters is the `code`.)
+
+**If you never see this** (the mock click succeeds instead): confirm the
+URL actually has `?scenario=checkout` — without it, the button was never
+inserted into the DOM at all, and the loop should instead end in the
+normal scenario-1 `"done"` outcome at step 3, not a blocked click.
+
+**The override hook, for completeness (NOT enabled in this demo):**
+`action-executor.js` exposes `options.allowIrreversibleActions` and
+`options.onIrreversibleAction(el, actionJson, riskResult)`, mirroring
+`allowSensitiveTargets`/`onSensitiveTarget` exactly. `content.js`
+deliberately never sets either — same reasoning as the sensitive guard:
+a real product needs a consent path; a demo that silently auto-approves
+a purchase proves nothing.
 
 ---
 
