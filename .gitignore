@@ -37,6 +37,10 @@ spike/chrome-harness/offscreen.bundle.js
 extension/models/
 extension/ort/
 extension/offscreen.bundle.js
+spike-ui-detector/models/
+spike-ui-detector/chrome-harness/models/
+spike-ui-detector/chrome-harness/ort/
+spike-ui-detector/chrome-harness/offscreen.bundle.js
 
 # Python venv
 .venv/

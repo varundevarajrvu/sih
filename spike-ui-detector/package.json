@@ -1,0 +1,20 @@
+{
+  "name": "spike-ui-detector",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Research spike (follow-up to Phase 0 webgpu-spike): does a UI-element detector (buttons/inputs/links, not COCO classes) run via onnxruntime on WebGPU at usable latency, and does it add anything the DOM doesn't already give us? Node-first verification, browser harness only for survivors.",
+  "scripts": {
+    "test-omniparser": "node node-test-omniparser.js",
+    "test-webpage-detect": "node node-test-webpage-detect.js",
+    "build-chrome-harness": "esbuild chrome-harness/src/offscreen.entry.js --bundle --format=esm --platform=browser --outfile=chrome-harness/offscreen.bundle.js"
+  },
+  "dependencies": {
+    "onnxruntime-node": "^1.20.1",
+    "onnxruntime-web": "^1.22.0-dev.20250409-89f8206ba4",
+    "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

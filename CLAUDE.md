@@ -320,6 +320,28 @@ Rationale: an agent typing into a password field is the exact failure this proje
 - ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
+### UI-DETECTOR SPIKE — recorded 2026-09-11. **NEGATIVE RESULT. Do not ship UI detection for grounding.**
+
+Chief asked whether a UI-trained detector could replace `yolos-tiny`'s COCO classes for grounding on real websites. Investigated properly; the answer is no.
+
+| Candidate | Size | Verdict |
+|---|---|---|
+| `onnx-community/OmniParser-icon_detect` | 12.1 MB | `nc=1` — single class `"icon"`. No semantic distinction at all. |
+| `OpenDILabCommunity/webpage_element_detection` | 103.5 MB | `nc=8` real classes. The only genuine candidate. |
+| ScreenSpot | — | A dataset, not a model. |
+| Ferret-UI / SeeClick | multi-GB | VLMs, not detectors. Disqualified on size. |
+
+**Verified visually on our own demo page** (annotated images in `spike-ui-detector/assets/`). OpenDILab produces tight boxes on `field` and `image` — but **misclassifies plain `<label>` elements as `link`** (0.33, 0.40 confidence). Confirmed by inspection, not taken on report.
+
+**🔴 THE DECIDING ARGUMENT — vision cannot beat the DOM at grounding, even in principle.**
+The DOM already yields `{agentId, tag, type, role, text, bbox}` for every actionable element — exact, complete, free. A detector's best possible output is an *approximation* of that same information, with confidence scores and misclassifications. Feeding vision boxes into the action loop would also reintroduce precisely the bbox-correlation fragility Phase 4 already hit and fixed.
+
+**DECISION: vision stays scoped to REDACTION** — finding rendered content the DOM cannot describe: faces in photos, document-like imagery. That is the job it is irreplaceable for. Grounding stays with the DOM.
+
+*Side finding, noted not acted on:* OpenDILab's `image` class boxed the ID-card face at 0.93, tighter than `yolos-tiny`'s `person`. It would arguably be a better redaction primitive — at 4× the size. Not worth it now; revisit only if redaction recall becomes a measured problem.
+
+*Process note:* both candidates were verified against the live HF API for real repo/file/byte-size, tested in Node BEFORE any browser harness was built, and a real bug was found and fixed along the way (OmniParser's published `size_divisor: 16` crashes ONNX Runtime; 32 is correct). Neither model contains the `AveragePool ceil()` op that killed RT-DETR/D-FINE — a real but non-conclusive signal, since the harness was never run in a browser.
+
 ### Phase 4 — `integration-loop`
 
 #### Phase 4 RESULT — recorded 2026-09-10. Wired and mechanically verified; 151/151 tests green. Browser run PENDING.

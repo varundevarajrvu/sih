@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "SIH 26171 - UI-detector follow-up spike",
+  "version": "0.0.1",
+  "description": "Research spike, not a feature. Benchmarks two UI/webpage-element detectors (onnx-community/OmniParser-icon_detect, OpenDILabCommunity/webpage_element_detection) via raw onnxruntime-web on WebGPU inside a Chrome MV3 offscreen document, following the exact harness pattern verified working in Phase 0 (spike/chrome-harness/). Neither model is transformers.js pipeline()-compatible (both are raw YOLOv8 exports), so this uses onnxruntime-web directly with hand-written pre/post-processing. No popup, no content script, no redaction logic.",
+  "permissions": ["offscreen"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["ort/*", "models/*", "assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
