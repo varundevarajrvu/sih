@@ -349,6 +349,28 @@ async function runAgentLoop() {
   const instr = createInstrumentation();
   const stepResults = [];
 
+  // Demo-design fix (coordinator, 2026-09-11): a live Gemini run showed
+  // the ORIGINAL demo page removing "Full name" from the DOM the instant
+  // it was typed into -- the typed value vanished in the same tick it
+  // appeared, so a judge watching the screen would see nothing happen,
+  // and the NEXT step's VLM call, no longer seeing that field at all,
+  // went looking for somewhere else to put the value and picked a
+  // sensitive field (correctly blocked by the guard, but an accident,
+  // not a designed scenario). Fix: demo/test-page.html now KEEPS the
+  // field in the DOM with its value visible. That means the field is
+  // still a legitimate "type"-eligible candidate on every subsequent
+  // scan (same type=text, same non-sensitive status) -- MockVLMClient's
+  // rule 2 has no "already has a value" check, so without this tracking
+  // it would be re-selected and re-typed into forever, never advancing
+  // to click "Continue". `actedAgentIds` records every agentId this RUN
+  // has already successfully clicked/typed into, and the domSnapshot
+  // actually sent to the server (below) excludes them on later steps --
+  // the field stays visible in the live DOM for the judge to see, but is
+  // no longer offered to the VLM as something left to do. This is
+  // backend-agnostic (filters what ANY backend, mock or real, is shown),
+  // not a MockVLMClient-specific hack.
+  const actedAgentIds = new Set();
+
   let taskGoal = "(no task goal set)";
   try {
     const stored = await browser.storage.local.get("taskGoal");
@@ -434,15 +456,17 @@ async function runAgentLoop() {
       if (el) el.setAttribute(ActionExecutor.SENSITIVE_ATTR, "true");
     }
     const sensitiveAgentIds = new Set(sensitiveNodes.map((n) => n.agentId));
-    let mergedDomSnapshot = domSnapshot.map((node) => {
-      const s = sensitiveByAgentId.get(node.agentId);
-      // NOTE: do NOT merge piiType here. server/schemas.py's DomNode is
-      // extra="forbid" and has no piiType field, so sending it is a hard 422.
-      // The PII type already reaches the server via redactedRegions
-      // ({type, bbox, agentId}) — putting it on DomNode too is redundant.
-      // sensitive:true alone still triggers sanitizeDomSnapshot()'s strip.
-      return s ? { ...node, sensitive: true } : node;
-    });
+    let mergedDomSnapshot = domSnapshot
+      .filter((node) => !actedAgentIds.has(node.agentId)) // see actedAgentIds comment above runAgentLoop's declaration
+      .map((node) => {
+        const s = sensitiveByAgentId.get(node.agentId);
+        // NOTE: do NOT merge piiType here. server/schemas.py's DomNode is
+        // extra="forbid" and has no piiType field, so sending it is a hard 422.
+        // The PII type already reaches the server via redactedRegions
+        // ({type, bbox, agentId}) — putting it on DomNode too is redundant.
+        // sensitive:true alone still triggers sanitizeDomSnapshot()'s strip.
+        return s ? { ...node, sensitive: true } : node;
+      });
 
     // ---- 4. RULING 2 -- bbox normalization, ONE point. domSnapshot's
     // own bboxes are scaled here, explicitly, exactly once (see the
@@ -570,6 +594,19 @@ async function runAgentLoop() {
     }
     instr.mark(step, "act", { durationMs: +(performance.now() - tAct0).toFixed(1), result: actResult });
     stepResults.push({ step, action, actResult });
+
+    // Record completed click/type targets -- see actedAgentIds comment
+    // above runAgentLoop's declaration. Page-level scroll/done (the
+    // PAGE_TARGET_ID sentinel) never refers to a real element and is
+    // deliberately not tracked here.
+    if (
+      (action.action === "type" || action.action === "click") &&
+      actResult &&
+      actResult.targetId &&
+      actResult.targetId !== ActionExecutor.PAGE_TARGET_ID
+    ) {
+      actedAgentIds.add(actResult.targetId);
+    }
 
     if (action.action === "done") {
       outcome = "done";

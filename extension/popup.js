@@ -18,6 +18,64 @@ const testDetectBtn = document.getElementById("testDetect");
 const detectResultEl = document.getElementById("detectResult");
 const runAgentLoopBtn = document.getElementById("runAgentLoop");
 const agentLoopResultEl = document.getElementById("agentLoopResult");
+const prewarmStatusEl = document.getElementById("prewarmStatus");
+
+// ---------------------------------------------------------------------
+// Pre-warm legibility (coordinator finding, 2026-09-11): the model's
+// first real inference after the offscreen document is created costs
+// ~20s (WebGPU shader/kernel compilation happening lazily on first
+// execution -- see demo/README.md for the full data and how confirmed
+// vs. inferred that explanation is); every inference after that costs
+// well under a second. background.js's install/startup self-test already
+// pays that first cost once, before any user-visible detection needs to
+// -- the only gap was that nothing told anyone whether it had actually
+// finished, so clicking "Run Agent Loop" too early silently ate the same
+// ~20s on step 1 with no explanation. This renders background.js's
+// GET_PREWARM_STATUS so that's a fact on screen, not folklore.
+// ---------------------------------------------------------------------
+function renderPrewarmStatus(state) {
+  if (!state) {
+    prewarmStatusEl.className = "status-pending";
+    prewarmStatusEl.textContent = "Model warm-up status unknown (no response from background).";
+    return;
+  }
+  prewarmStatusEl.className = `status-${state.status}`;
+  if (state.status === "running" || state.status === "pending") {
+    prewarmStatusEl.textContent =
+      "⏳ Model warming up (first run only, ~20s)—wait for this before Run Agent Loop, " +
+      "or step 1 will silently eat the same ~20s.";
+  } else if (state.status === "warm") {
+    const secs = typeof state.elapsedMs === "number" ? (state.elapsedMs / 1000).toFixed(1) : "?";
+    prewarmStatusEl.textContent = `✓ Model warm and ready (pre-warm took ${secs}s). Run Agent Loop will run at full speed.`;
+  } else if (state.status === "failed") {
+    prewarmStatusEl.textContent = `✗ Pre-warm FAILED: ${state.error || "unknown error"}. Check the background service worker console.`;
+  } else {
+    prewarmStatusEl.textContent = `Model status: ${state.status}`;
+  }
+}
+
+let prewarmPollTimer = null;
+
+async function refreshPrewarmStatus() {
+  try {
+    const state = await browser.runtime.sendMessage({ type: "GET_PREWARM_STATUS" });
+    renderPrewarmStatus(state);
+    // Keep polling every second while warming up, so the popup updates
+    // live if left open -- stop once it settles (warm or failed), or if
+    // the popup is closed (its own JS just stops, nothing to clean up).
+    const stillWarming = state && (state.status === "running" || state.status === "pending");
+    if (stillWarming && !prewarmPollTimer) {
+      prewarmPollTimer = setInterval(refreshPrewarmStatus, 1000);
+    } else if (!stillWarming && prewarmPollTimer) {
+      clearInterval(prewarmPollTimer);
+      prewarmPollTimer = null;
+    }
+  } catch (err) {
+    renderPrewarmStatus(null);
+  }
+}
+
+refreshPrewarmStatus();
 
 // Restore the last-saved task goal whenever the popup is opened.
 browser.storage.local.get("taskGoal").then((stored) => {

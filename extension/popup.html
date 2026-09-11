@@ -68,9 +68,43 @@
       border-top: 1px solid #ddd;
       margin: 14px 0;
     }
+    #prewarmStatus {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 8px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      border: 1px solid transparent;
+    }
+    #prewarmStatus.status-pending,
+    #prewarmStatus.status-running {
+      background: #fff6e0;
+      border-color: #e0c060;
+      color: #8a6400;
+    }
+    #prewarmStatus.status-warm {
+      background: #eefbf0;
+      border-color: #b7e0bf;
+      color: #256d34;
+    }
+    #prewarmStatus.status-failed {
+      background: #fdecea;
+      border-color: #f0b4ae;
+      color: #a3312a;
+    }
   </style>
 </head>
 <body>
+  <!-- Pre-warm legibility (coordinator finding, 2026-09-11): the model's
+       first real inference after the offscreen document is created costs
+       ~20s; runInstallSelfTest() in background.js already pays that cost
+       once at install/startup so "Run Agent Loop" doesn't have to -- but
+       nothing previously told anyone whether that had actually finished.
+       This banner (and a matching chrome.action badge, visible even
+       without opening this popup) makes "is it warm yet" a fact you can
+       see, not something you have to guess or get burned by. -->
+  <div id="prewarmStatus" class="status-pending">Checking model warm-up status...</div>
+
   <h1>Task Goal</h1>
   <p class="hint">Plain-text description of what the agent should do. Saved to this extension's local storage; Phase 2a/2b/3/4 will read it once they exist.</p>
   <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form"></textarea>

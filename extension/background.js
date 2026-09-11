@@ -44,6 +44,49 @@ function log(...args) {
 }
 
 // ---------------------------------------------------------------------
+// Pre-warm status tracking + legibility (coordinator finding, 2026-09-11):
+// live data showed the pipeline was ALREADY loaded on both measured steps
+// (pipelineWasAlreadyLoaded: true), yet the FIRST real inference after the
+// offscreen document is created still cost ~20s, with every inference
+// after that costing under a second -- consistent with WebGPU shader/
+// kernel compilation happening lazily on first EXECUTION, not at
+// pipeline() load time (this is a plausible, well-reasoned explanation of
+// the observed pattern, not something this codebase directly instruments
+// or can independently confirm -- flagged as such, not overclaimed).
+//
+// runInstallSelfTest() (below) already runs a REAL inference, not just a
+// pipeline load -- so it already pays the ~20s first-execution cost once,
+// at install/startup, before any user-visible detection needs to. The gap
+// this section closes is PURELY legibility: nothing previously told
+// Varun (or a judge) whether that self-test had actually finished, so
+// clicking "Run Agent Loop" before it completed would silently eat the
+// full ~20s on step 1 with no visible explanation -- "an avoidable
+// embarrassment," not a functional bug (the underlying detectorPromise
+// singleton makes it safe either way, just slow and unexplained).
+// ---------------------------------------------------------------------
+let prewarmState = { status: "pending", startedAt: null, finishedAt: null, elapsedMs: null, error: null };
+
+function setPrewarmBadge(status) {
+  // chrome.action badge -- visible without opening the popup at all, so
+  // "is it warm yet" doesn't require Varun to remember to check anything.
+  try {
+    if (status === "running") {
+      chrome.action.setBadgeText({ text: "..." });
+      chrome.action.setBadgeBackgroundColor({ color: "#d9a300" }); // amber: warming up
+    } else if (status === "warm") {
+      chrome.action.setBadgeText({ text: "" }); // clear -- no badge = ready
+    } else if (status === "failed") {
+      chrome.action.setBadgeText({ text: "ERR" });
+      chrome.action.setBadgeBackgroundColor({ color: "#d9534f" }); // red: pre-warm failed
+    }
+  } catch (err) {
+    // Badge API failure must never take down the actual pre-warm -- this
+    // is a UX nicety, not load-bearing.
+    log("setPrewarmBadge failed (non-fatal):", err?.message || err);
+  }
+}
+
+// ---------------------------------------------------------------------
 // Offscreen document lifecycle -- idempotent by construction.
 // ---------------------------------------------------------------------
 
@@ -221,6 +264,13 @@ browser.runtime.onMessage.addListener((message, sender) => {
       // through the background service worker, which knows which tab is
       // active.
       return handleRunAgentLoopFromPopup();
+
+    case "GET_PREWARM_STATUS":
+      // popup.js queries this on open so "is the model warm yet" is
+      // visible instead of folklore -- see the pre-warm legibility block
+      // above runInstallSelfTest(). Synchronous state read, no promise
+      // needed, but returned as one for a consistent call pattern.
+      return Promise.resolve({ type: "PREWARM_STATUS", ...prewarmState });
 
     default:
       // Not recognized -- ignore rather than throw (matches this
@@ -407,6 +457,8 @@ async function blobToBase64(blob) {
 // ---------------------------------------------------------------------
 
 async function runInstallSelfTest() {
+  prewarmState = { status: "running", startedAt: Date.now(), finishedAt: null, elapsedMs: null, error: null };
+  setPrewarmBadge("running");
   log("self-test: ensuring offscreen document...");
   try {
     await ensureOffscreenDocument();
@@ -418,8 +470,9 @@ async function runInstallSelfTest() {
 
     log(
       "self-test: bundled test image loaded, requesting detection " +
-        "(first run loads the model -- can take noticeably longer than a warm run; " +
-        "Phase 0 measured median warm WebGPU inference at 8,432ms, cold load was 14,097ms -- see CLAUDE.md 'PHASE 0 CLOSED')...",
+        "(first run loads the model AND pays the first-execution WebGPU shader-compile " +
+        "cost -- can take noticeably longer than a warm run; Phase 0 measured median warm " +
+        "WebGPU inference at 8,432ms, cold load was 14,097ms -- see CLAUDE.md 'PHASE 0 CLOSED')...",
     );
     const t0 = performance.now();
     const result = await detectObjects(imageData);
@@ -430,9 +483,15 @@ async function runInstallSelfTest() {
         `pipelineWasAlreadyLoaded=${result.pipelineWasAlreadyLoaded}, device=${result.device}):`,
     );
     log(JSON.stringify(result.boxes, null, 2));
+    prewarmState = { status: "warm", startedAt: prewarmState.startedAt, finishedAt: Date.now(), elapsedMs, error: null };
+    setPrewarmBadge("warm");
+    log(`PRE-WARM STATUS: warm (ready) after ${elapsedMs.toFixed(0)}ms. Run Agent Loop will no longer pay this cost.`);
   } catch (err) {
-    console.error("[background] SELF-TEST FAILED:", err?.message || err);
+    const message = err?.message || String(err);
+    console.error("[background] SELF-TEST FAILED:", message);
     console.error(err);
+    prewarmState = { status: "failed", startedAt: prewarmState.startedAt, finishedAt: Date.now(), elapsedMs: null, error: message };
+    setPrewarmBadge("failed");
   }
 }
 

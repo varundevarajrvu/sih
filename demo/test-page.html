@@ -76,6 +76,38 @@
     font-size: 14px;
   }
   code { background: #eee; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+
+  /* Visual proof the agent acted -- see the inline script below. The
+     field is deliberately kept in the DOM with its value visible (it
+     used to remove itself the instant it was filled, which meant the
+     agent's typed value was never actually visible to anyone watching
+     the screen -- see demo/README.md). */
+  input.field-filled {
+    border-color: #2a9d4a;
+    background: #eefbf0;
+  }
+  .field-confirm {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #256d34;
+  }
+  .field-confirm.visible { display: inline-flex; }
+  .field-confirm .check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #2a9d4a;
+    color: #fff;
+    font-size: 11px;
+    line-height: 1;
+  }
 </style>
 </head>
 <body>
@@ -145,11 +177,15 @@
     <h2>Something safe to act on</h2>
     <label for="fullName">Full name</label>
     <input type="text" id="fullName" name="full_name" placeholder="Enter your full name" />
+    <span id="fullNameConfirm" class="field-confirm"><span class="check">&#10003;</span> Agent filled this field</span>
     <p class="field-hint">
       Genuinely benign -- empty, no PII-shaped placeholder, not flagged by
       dom-scanner. This is the only field on the page the agent is allowed
       to type into; the guard (Ruling 4) fail-closed-blocks click/type on
-      every field above.
+      every field above. <strong>The field stays visible with its typed
+      value after the agent fills it</strong> -- it does not disappear --
+      so the agent's action is actually visible on screen, not just in
+      the console.
     </p>
     <button id="continueBtn" type="button" hidden>Continue</button>
     <div id="thanksMsg" hidden>Thanks! Full name received.</div>
@@ -157,12 +193,17 @@
 
   <p class="field-hint">
     Tip: this page has three states the agent should walk through in
-    order: (1) type into "Full name" &rarr; the field removes itself and
-    reveals "Continue"; (2) click "Continue" &rarr; it removes itself and
-    shows the thank-you message; (3) nothing safe/actionable remains, so
-    the mock backend replies "done" and the loop stops on its own. See
+    order: (1) type into "Full name" &rarr; the field KEEPS its value
+    visible (green highlight + checkmark), and "Continue" is revealed;
+    (2) click "Continue" &rarr; it removes itself and shows the
+    thank-you message; (3) nothing safe/actionable remains for a fresh
+    scan to offer (the already-filled name field is deliberately excluded
+    from what the extension sends on later steps -- see
+    <code>content.js</code>'s <code>actedAgentIds</code>), so the backend
+    replies "done" and the loop stops on its own. See
     <code>demo/README.md</code> for the exact console output this
-    produces.
+    produces, and for a SECOND scenario (a task goal designed to trigger
+    the sensitive-field guard on purpose).
   </p>
 
   <script>
@@ -171,18 +212,34 @@
     // dispatchClick fire REAL DOM events (native value-setter + input/
     // change events; a real click event), not synthetic no-ops: this
     // page reacts to them exactly as it would to a human typing and
-    // clicking. See demo/README.md for why the page is structured this
-    // way (it's what makes a mock VLM backend -- which has no real visual
-    // reasoning, just a simple deterministic rule -- produce one type
-    // action, then one click action, then a clean "done", instead of
-    // looping on the same field forever).
+    // clicking.
+    //
+    // IMPORTANT (fixed 2026-09-11, coordinator finding): this field used
+    // to remove itself from the DOM the instant it received a value --
+    // built that way to walk the deterministic mock backend through
+    // type->click->done without it re-selecting the same field forever.
+    // Against a REAL VLM, that was actively harmful: the agent's typed
+    // value vanished in the same tick it appeared (Varun's live report
+    // was "it is not filling the name" -- it filled it perfectly, and
+    // the proof disappeared before anyone could see it), and step 2's
+    // model, no longer seeing that field, went looking for somewhere
+    // else to put the value and picked a sensitive field instead (the
+    // guard correctly blocked it, but that was an accident, not a
+    // designed scenario). The field now stays in the DOM with its value
+    // intact; content.js is what prevents it from being re-offered as a
+    // target on later steps (see actedAgentIds there) -- see
+    // demo/README.md for why this split (page keeps the evidence
+    // visible; content.js keeps the flow sane) is the right one.
     var fullNameInput = document.getElementById("fullName");
+    var fullNameConfirm = document.getElementById("fullNameConfirm");
     var continueBtn = document.getElementById("continueBtn");
     var thanksMsg = document.getElementById("thanksMsg");
 
     fullNameInput.addEventListener("input", function () {
       if (fullNameInput.value && fullNameInput.value.trim().length > 0) {
-        fullNameInput.remove();
+        fullNameInput.classList.add("field-filled");
+        fullNameInput.readOnly = true; // cosmetic "done" state only -- does not remove it from the DOM or from actionable elements
+        fullNameConfirm.classList.add("visible");
         continueBtn.hidden = false;
       }
     });
