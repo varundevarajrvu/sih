@@ -334,6 +334,18 @@ Content-script side of the loop: assigns `data-agent-id` to actionable elements 
 
 **Demo scenario 4** (works on the MOCK backend, no key needed): `test-page.html?scenario=checkout`, goal `Complete the checkout by clicking Place Order` → `IRREVERSIBLE_ACTION_BLOCKED`. Proves the guard is not merely a PII guard: nothing about that button is a password or an email, and it is refused anyway.
 
+**✅ VERIFIED IN-BROWSER 2026-09-11:**
+```
+step 2: click agent-6 → IRREVERSIBLE_ACTION_BLOCKED
+"text matches destructive-intent keyword "place order";
+ id matches destructive-intent keyword "place order""
+```
+`actionableNodes: 6` confirmed the button mounted only under the query param; `rank` went 6→5 candidates on the following step, confirming `actedAgentIds` exclusion works alongside ranking. Ran on the mock backend — no API key involved.
+
+**ALL FOUR DEMO SCENARIOS ARE NOW BROWSER-VERIFIED:** (1) fills a name, (2) refuses a password, (3) fills a name AND refuses an email in one task, (4) refuses to place an order. The policy visibly discriminates rather than blanket-refusing — which is the difference between a safety feature and a broken agent.
+
+*Minor known cosmetic bug:* the summary reported `totalSteps: 3` while the `steps` array held 2 entries — an off-by-one in the counter when a run ends on a blocked action. Reporting only; no behavioural impact.
+
 Real pages have hundreds of actionable elements; the demo page has five. And the existing guard only blocks PII fields — it would happily let an autonomous agent click "Buy Now", because a purchase button is not PII.
 
 **`rankElements(domSnapshot, taskGoal, options?) → {selected, dropped}`** — weights: text-relevance 0.40 > kind 0.25 > viewport 0.15 > size 0.10 + proximity 0.10. Off-screen scores 0.1 rather than 0, because the agent may scroll to it next step. Deterministic; reports `dropped` so truncation is never silent.
