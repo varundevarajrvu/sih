@@ -73,7 +73,7 @@ Real numbers from browser runs, not estimates.
 
 | Stage | Measured |
 |---|---|
-| Object detection (warm) | **860–881 ms** |
+| Object detection (warm) | **~780–880 ms** (4 samples: 784 / 817 / 860 / 881) |
 | Object detection (first call) | ~16–20 s ¹ |
 | DOM PII scan | 1–16 ms |
 | Redaction (canvas + JSON) | 22–158 ms |
@@ -187,4 +187,4 @@ Redaction is verified by **sampling actual pixels** inside and outside each rect
 | PII recall / precision | 20% | 28 fixture tests, recall-biased, `value`/`placeholder` scanning |
 | Redaction precision | 20% | 32 tests with pixel-level verification; DOM + vision regions merged |
 | Client resource utilization | 20% | 30–35 MB peak heap, instrumented per stage |
-| End-to-end latency | 15% | 860–881 ms detection; per-stage timings in every run summary |
+| End-to-end latency | 15% | ~780–880 ms detection (4 samples); per-stage timings in every run summary |

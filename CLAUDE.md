@@ -151,7 +151,7 @@ onnxruntime-web's WebGPU/JSEP execution provider has no `AveragePool` kernel wit
 
 **Key signal:** D-FINE produced NO node-assignment warnings — its graph maps cleanly to WebGPU and it failed on exactly one unsupported op. It is the strongest candidate *if* that op is worked around (graph patch, newer ORT build, or WASM).
 
-**STATE OF PLAY: `Xenova/yolos-tiny` @ 8,432 ms on WebGPU is the only configuration proven to run end-to-end in the browser.** Its weights were removed from the spike harness; Phase 1 re-fetches them. The contract, the local-ORT setup, and the offscreen architecture are all model-independent and remain valid.
+**STATE OF PLAY: `Xenova/yolos-tiny` on WebGPU is the only configuration proven to run end-to-end in the browser.** (Its 8,432 ms spike figure is SUPERSEDED — production measures ~780–880 ms. See the correction under "PHASE 0 CLOSED" below.) Its weights were removed from the spike harness; Phase 1 re-fetches them. The contract, the local-ORT setup, and the offscreen architecture are all model-independent and remain valid.
 
 **Rubric note driving the next decision:** latency is 15% of the score. Visual accuracy (25%), PII recall (20%), redaction precision (20%), and resource utilization (20%) — 85% combined — all require a *working end-to-end pipeline*, which does not yet exist. A fast detector with no pipeline around it scores nothing.
 
@@ -159,7 +159,22 @@ onnxruntime-web's WebGPU/JSEP execution provider has no `AveragePool` kernel wit
 
 ### ✅ PHASE 0 CLOSED — 2026-09-10, by Chief's decision
 
-**Architecturally PASSED. Latency gate formally RE-SCOPED from ~1s to the measured 8,432 ms floor.**
+**Architecturally PASSED.** ~~Latency gate formally RE-SCOPED from ~1s to the measured 8,432 ms floor.~~
+
+> ### ⚠️ THIS RE-SCOPE WAS WRONG — SUPERSEDED 2026-09-11
+>
+> **The original ~1s gate is MET.** Production measurements from the shipping extension, WebGPU, real viewport captures with real detections:
+>
+> | Source | Warm inference |
+> |---|---|
+> | Phase 0 spike harness | 8,432 ms |
+> | **Shipping extension** | **784 / 817 / 860 / 881 ms** (4 samples, ~780–880 ms) |
+>
+> The spike number is ~10× the production number and the gap is **not fully explained**. Stated plainly rather than rationalised: the spike harness loaded four model configurations sequentially in one page, creating and disposing ONNX sessions between each, while the extension holds a single pipeline alive. That is a plausible contributor, not a confirmed cause.
+>
+> **The production number is the one that counts** — it is measured in the configuration that actually ships. Every downstream decision made under the 8,432 ms assumption (deferring the detector swap, treating latency as the weak rubric dimension) was made on a pessimistic figure.
+>
+> **Separately, and do not conflate the two:** the *first* inference after the offscreen document is created costs ~16–20 s, with `pipelineWasAlreadyLoaded: true` and `model-load: 0 ms`. That is neither teardown nor model loading — both hypotheses were tested and refuted. Best explanation is WebGPU compiling shaders lazily on first execution; the timing pattern is confirmed, the mechanism is inferred. A pre-warm inference at install/startup pays it once, and the popup surfaces warm state so nobody pays it accidentally.
 
 Every structural question Phase 0 existed to answer is resolved: WebGPU runs in an MV3 offscreen document, ORT and weights load locally with zero network calls under an unrelaxed CSP, and the inference contract is confirmed in-browser. The remaining problem is detector performance, which is an optimization, not an architectural unknown.
 
