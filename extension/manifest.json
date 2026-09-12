@@ -5,12 +5,24 @@
   "description": "Phase 4: full on-device privacy-preserving browser agent loop. Captures the visible tab, runs local WebGPU object detection (Xenova/yolos-tiny), scans the DOM for PII, redacts both the screenshot and the DOM snapshot client-side, and only then sends the redacted result to a local FastAPI server for the next action -- zero raw PII ever leaves the client.",
   "permissions": ["offscreen", "activeTab", "scripting", "storage"],
   "host_permissions": ["http://localhost/*", "http://127.0.0.1/*"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "SIH 26171 Agent"
+    "default_title": "SIH 26171 Agent",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "content_scripts": [
     {

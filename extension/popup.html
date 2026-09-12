@@ -1,240 +1,553 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>SIH 26171 Agent</title>
-  <style>
-    body {
-      width: 360px;
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      font-size: 13px;
-      padding: 12px;
-      margin: 0;
-    }
-    h1 {
-      font-size: 14px;
-      margin: 0 0 6px;
-    }
-    h2 {
-      font-size: 12px;
-      margin: 14px 0 4px;
-      color: #555;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-    }
-    textarea,
-    input[type="text"] {
-      width: 100%;
-      box-sizing: border-box;
-      font-family: inherit;
-      font-size: 13px;
-      resize: vertical;
-      padding: 6px;
-    }
-    button {
-      margin-top: 6px;
-      margin-right: 6px;
-      padding: 6px 10px;
-      font-size: 12px;
-      cursor: pointer;
-    }
-    button:disabled {
-      cursor: default;
-      opacity: 0.6;
-    }
-    #stopAgentLoop {
-      background: #fdecea;
-      border: 1px solid #e0847c;
-      color: #a3312a;
-      font-weight: 600;
-    }
-    #stopAgentLoop:disabled {
-      background: none;
-      border-color: #ccc;
-      color: inherit;
-      font-weight: normal;
-    }
-    p.hint {
-      color: #666;
-      margin: 4px 0 6px;
-      line-height: 1.4;
-    }
-    #saveStatus,
-    #serverUrlStatus {
-      min-height: 1em;
-      margin: 4px 0 0;
-    }
-    #detectResult,
-    #agentLoopResult {
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: #f4f4f4;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      padding: 6px;
-      max-height: 220px;
-      overflow: auto;
-      margin-top: 6px;
-      font-family: inherit;
-    }
-    hr {
-      border: none;
-      border-top: 1px solid #ddd;
-      margin: 14px 0;
-    }
-    #prewarmStatus {
-      font-size: 12px;
-      font-weight: 600;
-      padding: 6px 8px;
-      border-radius: 4px;
-      margin-bottom: 10px;
-      border: 1px solid transparent;
-    }
-    #prewarmStatus.status-pending,
-    #prewarmStatus.status-running {
-      background: #fff6e0;
-      border-color: #e0c060;
-      color: #8a6400;
-    }
-    #prewarmStatus.status-warm {
-      background: #eefbf0;
-      border-color: #b7e0bf;
-      color: #256d34;
-    }
-    #prewarmStatus.status-failed {
-      background: #fdecea;
-      border-color: #f0b4ae;
-      color: #a3312a;
-    }
+<meta charset="utf-8" />
+<meta name="color-scheme" content="dark" />
+<title>SIH 26171 Agent</title>
+<style>
+  /* ==========================================================================
+     SIH 26171 -- extension popup
+     Same design language as site/index.html: dark "redacted briefing" —
+     serif display against monospace data, the black redaction bar as a
+     recurring motif, three semantic accents used sparingly (coral =
+     BLOCKED, mint = PASS, amber = active/warming). Inline <style> rather
+     than a separate popup.css: this file is small, self-contained, and an
+     inline block was already proven to work under this manifest's
+     extension_pages CSP -- no new web_accessible_resources entry needed
+     for one more file, no risk of an untested style-src surprise.
+     ========================================================================== */
 
-    /* Tier 4 (usable-extension pass), TASK 2: live run status panel. */
-    #runStatus {
-      margin-top: 8px;
-      font-size: 12px;
-    }
-    #runStatus:empty {
-      margin-top: 0;
-    }
-    .run-status-line {
-      margin: 4px 0;
-    }
-    .run-status-goal {
-      color: #666;
-      font-style: italic;
-    }
-    /* TASK 2's explicit requirement: a guard refusal must be UNMISSABLE,
-       not just another line of text -- distinct color from the generic
-       error banner below, so "the safety feature fired" is visually
-       distinguishable from "something broke". */
-    .blocked-banner {
-      margin: 6px 0;
-      padding: 8px;
-      border-radius: 4px;
-      background: #fff2d6;
-      border: 1px solid #e0a83c;
-      color: #7a5300;
-    }
-    .error-banner {
-      margin: 6px 0;
-      padding: 8px;
-      border-radius: 4px;
-      background: #fdecea;
-      border: 1px solid #e0847c;
-      color: #a3312a;
-    }
-    .outcome-banner {
-      margin: 6px 0;
-      padding: 8px;
-      border-radius: 4px;
-      border: 1px solid transparent;
-    }
-    .outcome-success {
-      background: #eefbf0;
-      border-color: #b7e0bf;
-      color: #256d34;
-    }
-    .outcome-warning {
-      background: #fff6e0;
-      border-color: #e0c060;
-      color: #8a6400;
-    }
-    .outcome-error {
-      background: #fdecea;
-      border-color: #f0b4ae;
-      color: #a3312a;
-    }
-    .outcome-neutral {
-      background: #eef1f4;
-      border-color: #c7d0d8;
-      color: #3a4650;
-    }
-  </style>
+  :root {
+    --ink:          #0a0c0d;
+    --panel:        #14181a;
+    --panel-alt:    #171c1e;
+    --terminal:     #0d1012;
+    --hairline:     #262c2f;
+    --hairline-dim: #1b2022;
+    --paper:        #eae6dc;
+    --paper-dim:    #cfcabf;
+    --muted:        #8b9199;
+    --muted-dim:    #5d6469;
+
+    --redact:       #ff5a3c; /* BLOCKED / danger -- stamp-ink coral */
+    --redact-dim:   #7a2e21;
+    --redact-bright:#ffcfc2;
+    --pass:         #5fd9a4; /* PASS / safe -- mint */
+    --pass-dim:     #234a3a;
+    --pass-bright:  #cdf5e3;
+    --detect:       #eab308; /* active / warming -- amber */
+    --detect-dim:   #4a3b0c;
+    --detect-bright:#ffe9a8;
+
+    --font-display: Iowan Old Style, Palatino Linotype, Palatino, "URW Palladio",
+                    Georgia, "Book Antiqua", serif;
+    --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto,
+                    "Helvetica Neue", Arial, sans-serif;
+    --font-mono:    ui-monospace, "Cascadia Code", "Segoe UI Mono", "SFMono-Regular",
+                    Consolas, "Liberation Mono", Menlo, monospace;
+
+    --radius: 3px;
+    --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    width: 380px;
+    max-height: 600px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2 { margin: 0; font-weight: 700; }
+  p { margin: 0; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--panel-alt);
+    border: 1px solid var(--hairline);
+    border-radius: 2px;
+    padding: 0.05em 0.35em;
+  }
+
+  button { font: inherit; color: inherit; }
+
+  :focus-visible {
+    outline: 2px solid var(--detect);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.001ms !important; }
+  }
+
+  .eyebrow {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .hint {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin-top: 6px;
+  }
+  .hint strong { color: var(--paper-dim); font-weight: 600; }
+
+  /* -- redaction-bar motif, reused from the site's signature device -- */
+  .redaction-swatch {
+    display: inline-block;
+    width: 15px;
+    height: 8px;
+    background: repeating-linear-gradient(115deg, #050607, #050607 2px, #000 2px, #000 4px);
+    border-radius: 1px;
+    vertical-align: middle;
+    margin-right: 6px;
+    flex-shrink: 0;
+  }
+
+  /* ==========================================================================
+     Header
+     ========================================================================== */
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--paper);
+    white-space: nowrap;
+  }
+  .brand .cursor { color: var(--detect); }
+
+  /* Prewarm status -- demoted to a slim, color-coded strip rather than a
+     full banner: it's diagnostic context ("will the loop start slow?"),
+     not the primary action. Base layout lives on the #id selector because
+     popup.js replaces this element's className wholesale on every update
+     (renderPrewarmStatus() in popup.js) -- any class I added here besides
+     the status-* ones it already writes would be wiped on the next
+     refresh, so all persistent styling has to hang off the ID. */
+  #prewarmStatus {
+    margin: 0 14px 10px;
+    padding: 6px 9px;
+    border-radius: var(--radius);
+    border-left: 3px solid var(--muted);
+    background: var(--panel);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  #prewarmStatus.status-pending,
+  #prewarmStatus.status-running {
+    border-left-color: var(--detect);
+    color: var(--detect-bright);
+  }
+  #prewarmStatus.status-warm {
+    border-left-color: var(--pass);
+    color: var(--pass-bright);
+  }
+  #prewarmStatus.status-failed {
+    border-left-color: var(--redact);
+    color: var(--redact-bright);
+  }
+
+  main { padding: 0 14px 14px; }
+
+  section, .disclosure { margin-top: 14px; }
+
+  /* ==========================================================================
+     Task -- the primary surface: goal, then Run/Stop
+     ========================================================================== */
+
+  textarea#taskGoal {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--terminal);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    color: var(--paper);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 8px;
+    resize: vertical;
+    transition: border-color 0.15s var(--ease);
+  }
+  textarea#taskGoal:hover { border-color: var(--hairline-dim); }
+  textarea#taskGoal::placeholder { color: var(--muted-dim); }
+
+  .task-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  #saveStatus {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    min-height: 1.4em;
+  }
+
+  /* -- buttons -- */
+  .btn {
+    border-radius: var(--radius);
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--hairline);
+    background: var(--panel);
+    color: var(--paper);
+    transition: border-color 0.15s var(--ease), color 0.15s var(--ease),
+                background 0.15s var(--ease), opacity 0.15s var(--ease);
+  }
+  .btn:hover:not(:disabled) { border-color: var(--detect); color: var(--detect); }
+  .btn:disabled { cursor: default; opacity: 0.5; }
+
+  .run-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  /* Run Agent Loop: the single most important control in the popup --
+     solid fill, not just an outline, so it reads as THE action. */
+  .btn-primary {
+    flex: 2 1 auto;
+    background: var(--detect);
+    border-color: var(--detect);
+    color: #14120a;
+    font-size: 12.5px;
+    padding: 9px 12px;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #ffc93a;
+    border-color: #ffc93a;
+    color: #14120a;
+  }
+  .btn-primary:disabled { background: var(--panel); border-color: var(--hairline); color: var(--muted); opacity: 1; }
+
+  /* Stop: quiet and out of the way when there's nothing to stop, but
+     switches to a solid, impossible-to-miss coral fill the instant a run
+     is active -- "obvious and reachable at all times during a run." */
+  .btn-stop {
+    flex: 1 1 auto;
+    min-width: 76px;
+    border-color: var(--hairline);
+    color: var(--muted);
+    background: transparent;
+  }
+  .btn-stop:not(:disabled) {
+    background: var(--redact);
+    border-color: var(--redact);
+    color: #2a0c06;
+    font-weight: 700;
+  }
+  .btn-stop:not(:disabled):hover {
+    background: #ff7457;
+    border-color: #ff7457;
+    color: #2a0c06;
+  }
+  .btn-stop:disabled { opacity: 1; }
+
+  .btn-ghost { font-size: 11.5px; padding: 6px 10px; }
+
+  /* ==========================================================================
+     Live run status -- step/stage, last action, and (the hero) the
+     BLOCKED banner, all rendered by popup.js into #runStatus.
+     ========================================================================== */
+
+  .hint-note {
+    padding: 7px 9px;
+    background: var(--panel);
+    border-left: 2px solid var(--hairline-dim);
+    border-radius: 2px;
+    margin-top: 0;
+  }
+
+  #runStatus { margin-top: 8px; }
+  #runStatus:empty { margin-top: 0; }
+
+  .run-status-line {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--paper-dim);
+    margin: 6px 0;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+  }
+  .run-status-line strong { color: var(--paper); font-weight: 700; }
+
+  .run-status-goal {
+    font-family: var(--font-mono);
+    font-style: italic;
+    color: var(--muted);
+    font-size: 11px;
+    border-left: 2px solid var(--detect-dim);
+    padding-left: 8px;
+  }
+
+  /* -- BLOCKED: the hero element. A refusal is the product working, not
+     a failure -- unmissable, and deliberately NOT the same treatment as
+     .error-banner below. The top striped bar is the site's own
+     redaction-rule motif, reused here as "this is the mechanism firing,"
+     not a generic warning stripe. -- */
+  .blocked-banner {
+    position: relative;
+    margin: 10px 0;
+    padding: 12px 12px 11px;
+    padding-top: 16px;
+    border: 2px solid var(--redact);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--redact-dim) 0%, #401810 100%);
+    overflow: hidden;
+  }
+  .blocked-banner::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 6px;
+    background: repeating-linear-gradient(115deg, #050607, #050607 4px, #000 4px, #000 8px);
+  }
+  .blocked-banner strong {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--redact-bright);
+  }
+  .blocked-banner > div {
+    margin-top: 7px;
+    padding-left: 9px;
+    border-left: 2px solid var(--redact);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--paper-dim);
+    overflow-wrap: break-word;
+  }
+
+  /* -- ERROR: something actually broke. Deliberately quieter than
+     BLOCKED -- thin left rule, no fill, no top stripe -- so the two never
+     read as the same kind of event at a glance. -- */
+  .error-banner {
+    margin: 10px 0;
+    padding: 8px 10px;
+    border-left: 3px solid var(--redact);
+    border-radius: 2px;
+    background: var(--panel-alt);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: var(--paper-dim);
+    overflow-wrap: break-word;
+  }
+  .error-banner strong {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--redact);
+  }
+
+  /* -- final outcome, once a run stops -- */
+  .outcome-banner {
+    margin: 10px 0 0;
+    padding: 7px 10px;
+    border-radius: 2px;
+    border: 1px solid transparent;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+  .outcome-success { background: var(--pass-dim); border-color: var(--pass); color: var(--pass-bright); }
+  .outcome-warning { background: var(--detect-dim); border-color: var(--detect); color: var(--detect-bright); }
+  .outcome-error   { background: var(--redact-dim); border-color: var(--redact); color: var(--redact-bright); }
+  .outcome-neutral { background: var(--panel-alt); border-color: var(--hairline); color: var(--paper-dim); }
+
+  /* -- raw log output (agentLoopResult / detectResult): demoted,
+     terminal-styled, capped height so it can never push Run/Stop or the
+     rest of the layout out of easy reach. -- */
+  .log-pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--terminal);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    line-height: 1.5;
+    padding: 8px;
+    max-height: 140px;
+    overflow: auto;
+    margin: 10px 0 0;
+  }
+  .log-pre:empty { display: none; }
+
+  /* ==========================================================================
+     Settings / Advanced diagnostics -- demoted, collapsed by default via
+     native <details>, no JS required.
+     ========================================================================== */
+
+  .disclosure {
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    background: var(--panel);
+  }
+  .disclosure summary {
+    cursor: pointer;
+    padding: 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    list-style: none;
+  }
+  .disclosure summary::-webkit-details-marker { display: none; }
+  .disclosure summary::before {
+    content: "+";
+    display: inline-block;
+    width: 1em;
+    color: var(--detect);
+    font-weight: 700;
+  }
+  .disclosure[open] summary::before { content: "\2212"; }
+  .disclosure summary:hover { color: var(--paper-dim); }
+  .disclosure-body {
+    padding: 2px 10px 12px;
+    border-top: 1px solid var(--hairline);
+  }
+
+  input#serverUrlInput {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--terminal);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    color: var(--paper);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 8px;
+    margin-top: 8px;
+  }
+  input#serverUrlInput::placeholder { color: var(--muted-dim); }
+
+  #serverUrlInput + .btn { margin-top: 8px; }
+
+  #serverUrlStatus {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    margin-top: 6px;
+    min-height: 1.4em;
+    overflow-wrap: break-word;
+  }
+</style>
 </head>
 <body>
-  <!-- Pre-warm legibility (coordinator finding, 2026-09-11): the model's
-       first real inference after the offscreen document is created costs
-       ~20s; runInstallSelfTest() in background.js already pays that cost
-       once at install/startup so "Run Agent Loop" doesn't have to -- but
-       nothing previously told anyone whether that had actually finished.
-       This banner (and a matching chrome.action badge, visible even
-       without opening this popup) makes "is it warm yet" a fact you can
-       see, not something you have to guess or get burned by. -->
-  <div id="prewarmStatus" class="status-pending">Checking model warm-up status...</div>
 
-  <h1>Task Goal</h1>
-  <p class="hint">Plain-text description of what the agent should do. Saved to this extension's local storage; Phase 2a/2b/3/4 will read it once they exist.</p>
-  <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form"></textarea>
-  <button id="saveGoal" type="button">Save Task</button>
-  <p id="saveStatus"></p>
+  <header class="topbar">
+    <h1 class="brand"><span class="redaction-swatch" aria-hidden="true"></span>SIH 26171<span class="cursor">_</span></h1>
+  </header>
 
-  <hr />
+  <div id="prewarmStatus" class="status-pending" aria-live="polite">Checking model warm-up status&hellip;</div>
 
-  <h2>Phase 1 diagnostic</h2>
-  <p class="hint">
-    Captures the current tab and runs the on-device object detector
-    end-to-end through background.js and the offscreen document. This is
-    the interactive way to exercise the round trip described in
-    <code>extension/README.md</code>. First run loads the model
-    (Phase 0 measured warm WebGPU inference at ~8.4s -- this can take
-    noticeably longer, be patient).
-  </p>
-  <button id="testDetect" type="button">Run Test Detection on Current Tab</button>
-  <pre id="detectResult"></pre>
+  <main>
 
-  <hr />
+    <!-- ================= TASK: the primary surface ================= -->
+    <section aria-label="Task">
+      <label class="eyebrow" for="taskGoal">Task goal</label>
+      <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form"></textarea>
 
-  <h2>Full agent loop</h2>
-  <p class="hint">
-    Runs the complete capture &rarr; detect &rarr; scan &rarr; redact &rarr;
-    send &rarr; act loop against the CURRENT tab, up to 25 steps or until the
-    agent reports "done". Requires the FastAPI server running and reachable
-    at the Server URL configured under Settings below. Live progress
-    (step, stage, last action, any blocked/refused action, and any error)
-    is shown here as the loop runs -- the page's own DevTools console still
-    has the full per-stage instrumentation and the Section 5 payload check,
-    for anyone who wants that level of detail.
-  </p>
-  <button id="runAgentLoop" type="button">Run Agent Loop</button>
-  <button id="stopAgentLoop" type="button" disabled>Stop</button>
-  <div id="runStatus"></div>
-  <pre id="agentLoopResult"></pre>
+      <div class="task-actions">
+        <button id="saveGoal" type="button" class="btn btn-ghost">Save goal</button>
+        <p id="saveStatus" aria-live="polite"></p>
+      </div>
 
-  <hr />
+      <div class="run-row">
+        <button id="runAgentLoop" type="button" class="btn btn-primary">Run agent loop</button>
+        <button id="stopAgentLoop" type="button" class="btn btn-stop" disabled>Stop</button>
+      </div>
+      <p class="hint">
+        Runs capture &rarr; detect &rarr; scan &rarr; redact &rarr; send &rarr; act on the
+        current tab, up to 25 steps or until the agent reports done. Uses the last
+        <strong>saved</strong> goal above, and needs the server from Settings reachable.
+      </p>
+    </section>
 
-  <h2>Settings</h2>
-  <p class="hint">
-    Server URL for the FastAPI backend (default <code>http://localhost:8000</code>).
-    Must be within this extension's permitted hosts
-    (<code>http://localhost/*</code>, <code>http://127.0.0.1/*</code>) --
-    Chrome blocks anything else at the network layer regardless of what is
-    typed here. Using a different host requires widening
-    <code>manifest.json</code>'s <code>host_permissions</code> and
-    reloading the extension; that is a separate, deliberate decision, not
-    something this field can do on its own.
-  </p>
-  <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" />
-  <button id="saveServerUrl" type="button">Save Server URL</button>
-  <p id="serverUrlStatus"></p>
+    <!-- ================= LIVE STATUS + BLOCKED/ERROR/OUTCOME ================= -->
+    <section aria-label="Run status">
+      <p class="hint hint-note">
+        A <strong>BLOCKED</strong> banner below means a guard refused an unsafe action on
+        its own &mdash; that's the safeguard working, not something gone wrong.
+      </p>
+      <div id="runStatus" aria-live="polite"></div>
+      <pre id="agentLoopResult" class="log-pre"></pre>
+    </section>
+
+    <!-- ================= DEMOTED: settings + dev diagnostics ================= -->
+    <details class="disclosure">
+      <summary>Settings</summary>
+      <div class="disclosure-body">
+        <p class="hint">
+          Server URL for the FastAPI backend (default <code>http://localhost:8000</code>).
+          Must be within this extension's permitted hosts (<code>http://localhost/*</code>,
+          <code>http://127.0.0.1/*</code>) &mdash; Chrome blocks anything else at the
+          network layer regardless of what's typed here.
+        </p>
+        <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" />
+        <button id="saveServerUrl" type="button" class="btn btn-ghost">Save server URL</button>
+        <p id="serverUrlStatus" aria-live="polite"></p>
+      </div>
+    </details>
+
+    <details class="disclosure">
+      <summary>Advanced diagnostics</summary>
+      <div class="disclosure-body">
+        <p class="hint">
+          Captures the current tab and runs the on-device object detector end-to-end
+          through background.js and the offscreen document &mdash; a developer diagnostic,
+          not something normal use needs. First run loads the model and can take much
+          longer than later runs; be patient.
+        </p>
+        <button id="testDetect" type="button" class="btn btn-ghost">Run test detection on current tab</button>
+        <pre id="detectResult" class="log-pre"></pre>
+      </div>
+    </details>
+
+  </main>
 
   <script src="vendor/browser-polyfill.js"></script>
   <script type="module" src="popup.js"></script>

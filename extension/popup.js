@@ -151,13 +151,21 @@ saveServerUrlBtn.addEventListener("click", async () => {
   const result = validateServerUrl(serverUrlInput.value);
   if (!result.ok) {
     serverUrlStatusEl.textContent = result.message;
-    serverUrlStatusEl.style.color = "#a3312a";
+    // DESIGN PASS (2026-09-12): these two literals were "#a3312a"/"#2a7d2a"
+    // -- dark red/green tuned for a light popup background. Against the
+    // new dark "redacted briefing" theme (popup.html) they fail contrast
+    // (dark-on-dark). Swapped for the theme's own --redact/--pass custom
+    // properties, which resolve through the cascade exactly like a
+    // stylesheet color would; the success/error branching itself is
+    // unchanged. Flagged per the design brief: the only popup.js edit in
+    // this pass, and it's a color value, not logic.
+    serverUrlStatusEl.style.color = "var(--redact)";
     return;
   }
   await browser.storage.local.set({ serverUrl: result.value });
   serverUrlInput.value = result.value;
   serverUrlStatusEl.textContent = `Saved: ${result.value} (background.js picks this up immediately, no reload needed).`;
-  serverUrlStatusEl.style.color = "#2a7d2a";
+  serverUrlStatusEl.style.color = "var(--pass)";
 });
 
 // =======================================================================
