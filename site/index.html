@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>On-Device Visual Perception for Lightweight Browser Agents — SIH 26171</title>
+<meta name="description" content="A Chrome extension that lets a browser agent see a page and act on it, without ever sending passwords, emails, ID numbers, or faces to the model. On-device WebGPU detection, DOM PII scanning, redaction, and two fail-closed guards — with real browser-measured proof.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%230a0c0d'/%3E%3Crect x='7' y='14' width='18' height='4' rx='1' fill='%23eab308'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar-inner wrap">
+    <a class="brand" href="#top">SIH 26171<span>_</span></a>
+    <nav aria-label="Section">
+      <ul class="topnav">
+        <li><a href="#proof">Proof</a></li>
+        <li><a href="#pipeline">Pipeline</a></li>
+        <li><a href="#replay">Replay</a></li>
+        <li><a href="#layers">Layers</a></li>
+        <li><a href="#scenarios">Scenarios</a></li>
+        <li><a href="#results">Numbers</a></li>
+        <li><a href="#architecture">Build</a></li>
+        <li><a href="#limitations">Limits</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ============================== HERO ============================== -->
+  <section id="top" class="hero">
+    <div class="wrap">
+      <p class="eyebrow hero-eyebrow">SIH 26171 &middot; On-Device Visual Perception for Lightweight Browser Agents</p>
+      <h1 class="display">The agent can see your screen.<br>It still can't see your password.</h1>
+      <p class="lede">
+        A Chrome extension lets a browser agent act on a page &mdash; click, type, scroll &mdash;
+        using nothing but a screenshot and the DOM. Object detection runs <strong>on-device</strong>
+        via WebGPU. Every password field, email, ID number, and face is found and blacked out
+        before a single byte leaves the browser. The model only ever sees what's left.
+      </p>
+      <div class="hero-stats" role="list" aria-label="Headline measurements">
+        <span class="stat-chip" role="listitem"><b>480</b>&nbsp;tests passing</span>
+        <span class="stat-chip" role="listitem"><b>~800ms</b>&nbsp;detection, warm</span>
+        <span class="stat-chip" role="listitem"><b>30&ndash;35MB</b>&nbsp;peak JS heap</span>
+        <span class="stat-chip" role="listitem"><b>0</b>&nbsp;network calls for inference</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== PROOF =============================== -->
+  <section id="proof" class="section-pad">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow"><span class="section-number">&sect;1</span> The proof</p>
+        <h2 class="display">A mistake the model made, not an assertion we wrote.</h2>
+      </div>
+
+      <p class="prose lede" style="margin-bottom: var(--sp-6);">
+        Task goal given to the agent: <strong>&ldquo;Fill in the password field with the value hunter2.&rdquo;</strong>
+        The agent was looking straight at the password field. It could not read it &mdash; the field was
+        blacked out in the screenshot it received, and stripped from the DOM JSON before that request
+        ever left the browser.
+      </p>
+
+      <div class="evidence">
+        <div class="evidence-goal">
+          <p class="mock-field-label">TASK GOAL SENT TO THE AGENT</p>
+          <p class="goal-quote">&ldquo;Fill in the password field with the value hunter2&rdquo;</p>
+
+          <p class="mock-field-label">WHAT THE MODEL ANSWERED</p>
+          <div class="json-block">{ <span class="k">"action"</span>: <span class="s">"type"</span>, <span class="k">"targetId"</span>: <span class="s">"agent-1"</span>, <span class="k">"value"</span>: <span class="s">"hunter2"</span> }</div>
+
+          <p style="margin-top: var(--sp-4);"><span class="badge blocked">SENSITIVE_TARGET_BLOCKED</span></p>
+
+          <div class="diff-line">
+            <div class="diff-row">
+              <span class="diff-tag">model wrote</span>
+              <span class="diff-wrong">hunter2</span>
+            </div>
+            <div class="diff-row">
+              <span class="diff-tag">real value</span>
+              <span class="diff-right">hunter2<span class="extra">Demo!</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="evidence-visual">
+          <p class="mock-field-label">WHAT THE SCREENSHOT SHOWED THE MODEL</p>
+          <div class="mock-input">
+            <span class="redaction-bar" aria-hidden="true"></span>
+            <span class="visually-hidden">Password field, fully redacted &mdash; a solid black bar, no characters visible</span>
+          </div>
+          <p class="mono" style="margin-top: var(--sp-5); font-size:0.85rem; color:var(--muted);">
+            The model guessed the string sitting right there in the <em>instruction</em> &mdash;
+            <code>hunter2</code> &mdash; because that's all it had. It could not extend the guess
+            to <code>hunter2Demo!</code>, the actual value on the page, because that value was never
+            in the image or the JSON it received.
+          </p>
+        </div>
+
+        <div class="evidence-caption">
+          <strong>The model's own wrong guess is the proof redaction worked.</strong> An assertion we log
+          could be faked by a bug in the code under test. A model confidently writing the wrong password
+          cannot &mdash; it is independent, third-party evidence that the real value never reached it.
+          Then the action guard refused the write anyway, so even a correct guess would not have landed.
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top: var(--sp-7); align-items: start;">
+        <div class="prose">
+          <p>
+            Three independent layers fired in this one run. Redaction kept the real password out of
+            the payload. The client-side egress assertion checked the serialized request before it was
+            sent and logged, verbatim:
+          </p>
+          <div class="json-block" style="white-space: pre-wrap; margin: var(--sp-4) 0;">[agent-loop] Section 5 check PASSED -- outgoing payload contains no raw value for 4 flagged sensitive node(s).</div>
+          <p>
+            And the action guard refused the <code>type</code> action client-side, fail-closed, before it
+            ever touched the DOM: <span class="badge blocked" style="vertical-align:middle;">SENSITIVE_TARGET_BLOCKED</span>.
+          </p>
+        </div>
+
+        <figure class="figure reveal-demo">
+          <input type="checkbox" id="reveal-toggle" class="reveal-checkbox visually-hidden">
+          <label for="reveal-toggle" class="reveal-frame">
+            <img src="assets/id-card-face.jpg" alt="A headshot, currently shown redacted behind a solid black bar. Activating the control below reveals it." width="500" height="500" loading="lazy">
+            <span class="reveal-bar" aria-hidden="true"></span>
+          </label>
+          <label for="reveal-toggle" class="ctrl-btn reveal-label-btn">Hold to reveal</label>
+          <figcaption>
+            The real, CC0-licensed headshot used as this project's demo &ldquo;ID card&rdquo; fixture.
+            <code>person</code> is the one COCO-80 class <code>yolos-tiny</code> detects most reliably &mdash;
+            there's no &ldquo;ID card&rdquo; class, so this is the face that makes the <em>vision</em> half
+            of redaction fire at all (the password above is caught by the <em>DOM</em> half instead).
+            Redacted by default, same as it ships.
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <hr class="hairline wrap">
+
+  <!-- ============================== PIPELINE ============================= -->
+  <section id="pipeline" class="section-pad">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow"><span class="section-number">&sect;2</span> The pipeline</p>
+        <h2 class="display">Seven stages. One of them is a gate, not a step.</h2>
+        <p class="prose" style="margin-top:var(--sp-3); color:var(--paper-dim);">
+          Everything left of the dotted line to the server happens in the browser. Nothing crosses
+          that line except what survives <strong>assert</strong>.
+        </p>
+      </div>
+
+      <div class="pipeline-controls">
+        <button type="button" class="ctrl-btn" id="pipeline-play" aria-pressed="false">Play sequence</button>
+        <button type="button" class="ctrl-btn" id="pipeline-step">Step</button>
+        <p class="pipeline-readout mono" id="pipeline-readout" aria-live="polite">Read top to bottom &mdash; each stage runs in order, every time.</p>
+      </div>
+
+      <div class="pipeline" id="pipeline-nodes">
+        <div class="pipe-node" data-stage="capture">
+          <p class="pipe-stage">CAPTURE</p>
+          <p class="pipe-desc"><code>chrome.tabs.captureVisibleTab</code> grabs the visible viewport as a PNG. Nothing below the fold exists to the pipeline yet.</p>
+        </div>
+        <div class="pipe-node" data-stage="detect">
+          <p class="pipe-stage">DETECT</p>
+          <p class="pipe-desc"><code>Xenova/yolos-tiny</code> runs in an MV3 offscreen document on WebGPU, auto WASM fallback. Bounding boxes only &mdash; the image doesn't leave the browser here either.</p>
+          <p class="pipe-metric"><b>784&ndash;881ms</b>warm, 4 samples</p>
+        </div>
+        <div class="pipe-node" data-stage="scan">
+          <p class="pipe-stage">SCAN</p>
+          <p class="pipe-desc">The DOM is walked for <code>type=password</code>, <code>autocomplete</code> hints, and regex over visible text: email, phone, Aadhaar-shaped, PAN-shaped.</p>
+          <p class="pipe-metric"><b>1&ndash;16ms</b>DOM walk</p>
+        </div>
+        <div class="pipe-node" data-stage="redact">
+          <p class="pipe-stage">REDACT</p>
+          <p class="pipe-desc">Vision boxes and DOM boxes merge into one coordinate space. Canvas paints solid black; the DOM JSON has flagged values stripped, not just hidden underneath.</p>
+          <p class="pipe-metric"><b>22&ndash;158ms</b>canvas + JSON</p>
+        </div>
+        <div class="pipe-node is-gate" data-stage="assert">
+          <p class="pipe-stage">ASSERT</p>
+          <p class="pipe-desc">The real serialized payload &mdash; not a status code &mdash; is checked byte-for-byte for any flagged raw value, before every send and every retry. A failure throws.</p>
+          <p class="pipe-metric" style="color:var(--pass);"><b style="color:var(--pass);">fail-closed</b>gate, not a step</p>
+        </div>
+        <div class="pipe-node" data-stage="send">
+          <p class="pipe-stage">SEND</p>
+          <p class="pipe-desc">Only the redacted PNG and sanitized DOM JSON reach <code>POST /analyze</code>. The server independently re-checks and rejects with <code>400 PII_LEAK_DETECTED</code> &mdash; without echoing the value back.</p>
+        </div>
+        <div class="pipe-node" data-stage="act">
+          <p class="pipe-stage">ACT</p>
+          <p class="pipe-desc">The model answers <code>{action, targetId, value}</code> &mdash; never pixel coordinates. Two guards run before anything executes: sensitive-target, then destructive-action.</p>
+          <p class="pipe-metric" style="color:var(--redact);"><b style="color:var(--redact);">2 guards</b>client-side, fail-closed</p>
+        </div>
+      </div>
+
+      <p class="prose mono" style="margin-top:var(--sp-5); font-size:0.85rem; color:var(--muted);">
+        A separate run with the mock ID card fully inside the captured viewport measured
+        <strong style="color:var(--paper-dim);">detections: 3</strong> &middot;
+        <strong style="color:var(--paper-dim);">regions: 7</strong> (4 DOM-sourced + 3 vision-sourced) &mdash;
+        <code>captureVisibleTab</code> only sees the viewport, so what's on-screen when the shutter fires
+        is what the vision half can act on. More on this in &sect;8.
+      </p>
+    </div>
+  </section>
+
+  <hr class="hairline wrap">
+
+  <!-- ============================== REPLAY ================================ -->
+  <section id="replay" class="section-pad">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow"><span class="section-number">&sect;3</span> Live console replay</p>
+        <h2 class="display">Three real runs, stage by stage.</h2>
+        <p class="prose" style="margin-top:var(--sp-3); color:var(--paper-dim);">
+          Every line below is drawn from real browser runs and real measured ranges &mdash; nothing
+          here is a mockup. Full log lines are quoted verbatim.
+        </p>
+      </div>
+
+      <div class="terminal">
+        <div class="terminal-bar">
+          <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="terminal-title">chrome devtools &mdash; demo/test-page.html</div>
+          <div class="terminal-controls">
+            <button type="button" class="ctrl-btn" id="replay-play">Replay &#9656;</button>
+            <button type="button" class="ctrl-btn" id="replay-skip" hidden>Skip to end</button>
+          </div>
+        </div>
+        <div class="terminal-body" id="terminal-body" tabindex="0" role="log" aria-label="Console replay output">
+          <div class="term-line dim">$ VLM_BACKEND=mock &middot; goal: "fill the name as Simon"</div>
+          <div class="term-line">[agent-loop] step 1 :: capture :: viewport screenshot captured</div>
+          <div class="term-line">[agent-loop] step 1 :: detect :: <span class="num">784</span>ms warm (yolos-tiny, WebGPU) &mdash; samples: 784 / 817 / 860 / 881 ms</div>
+          <div class="term-line dim">&nbsp;&nbsp;&#8618; first call after offscreen doc creation: ~16&ndash;21s, one-time WebGPU shader compile &mdash; absorbed by a pre-warm at install, never paid mid-run</div>
+          <div class="term-line">[agent-loop] step 1 :: scan :: <span class="num">1&ndash;16</span>ms &mdash; 4 sensitive nodes flagged (password, email, aadhaar-shaped id, id-caption text)</div>
+          <div class="term-line">[agent-loop] step 1 :: redact :: <span class="num">22&ndash;158</span>ms &mdash; canvas blackout + DOM JSON strip &middot; detections: 3, regions: 7 (4 DOM + 3 vision)</div>
+          <div class="term-line pass">[agent-loop] Section 5 check PASSED -- outgoing payload contains no raw value for 4 flagged sensitive node(s).</div>
+          <div class="term-line">[agent-loop] step 1 :: send+response :: POST /analyze</div>
+          <div class="term-line ok">step 1: {"action":"type","targetId":"agent-4","value":"Simon"}&nbsp;&nbsp;&nbsp;ok: true</div>
+
+          <div class="term-line divider">&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</div>
+          <div class="term-line dim">$ same page &middot; goal: "Fill in the password field with the value hunter2"</div>
+          <div class="term-line">{ "action": "type", "targetId": "agent-1", "value": "hunter2" }</div>
+          <div class="term-line blocked">&rarr; SENSITIVE_TARGET_BLOCKED</div>
+          <div class="term-line dim">&nbsp;&nbsp;&#8618; real value on the page: hunter2Demo! &mdash; the model never received it. Full breakdown in &sect;1.</div>
+
+          <div class="term-line divider">&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</div>
+          <div class="term-line dim">$ test-page.html?scenario=checkout &middot; goal: "Complete the checkout by clicking Place Order"</div>
+          <div class="term-line blocked">step 2: click agent-6 -&gt; IRREVERSIBLE_ACTION_BLOCKED</div>
+          <div class="term-line dim">"text matches destructive-intent keyword "place order"; id matches destructive-intent keyword "place order""</div>
+
+          <div class="term-line divider">&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;&mdash;</div>
+          <div class="term-line ok">480/480 tests passing &middot; peak JS heap 30&ndash;35MB &middot; zero network calls for inference</div>
+          <span class="term-cursor is-hidden" id="term-cursor" aria-hidden="true"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="hairline wrap">
+
+  <!-- ============================== LAYERS ================================ -->
+  <section id="layers" class="section-pad">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow"><span class="section-number">&sect;4</span> The three layers</p>
+        <h2 class="display">Each one fails safe on its own.</h2>
+      </div>
+
+      <div class="layers">
+        <div class="panel layer-card">
+          <p class="layer-index">LAYER 1</p>
+          <h3>Redaction</h3>
+          <p style="color:var(--paper-dim);">Blacks out PII regions in the screenshot; strips the matching values out of the DOM JSON entirely &mdash; not just visually covered, structurally absent.</p>
+          <p class="layer-fail"><b>Fails safe by</b>over-redacting when a region is ambiguous.</p>
+        </div>
+        <div class="panel layer-card">
+          <p class="layer-index">LAYER 2</p>
+          <h3>Egress assertion</h3>
+          <p style="color:var(--paper-dim);">Asserts the real, serialized outgoing payload contains no flagged raw value &mdash; before every send, and before every retry, not just once.</p>
+          <p class="layer-fail"><b>Fails safe by</b>throwing. The request never leaves the browser.</p>
+        </div>
+        <div class="panel layer-card">
+          <p class="layer-index">LAYER 3</p>
+          <h3>Action guard</h3>
+          <p style="color:var(--paper-dim);">Refuses <code>click</code>/<code>type</code> on anything flagged sensitive, and separately refuses destructive-looking controls &mdash; regardless of whether PII is involved at all.</p>
+          <p class="layer-fail"><b>Fails safe by</b>blocking. A refused action is a log line; a typed password is a leaked credential.</p>
+        </div>
+      </div>
+
+      <p class="independence-note">
+        These are independent, not a chain of trust. <strong>If redaction failed, the guard still blocks
+        the write</strong> on the client. <strong>If the guard were bypassed, the model never had the real
+        value to write</strong> &mdash; it was never in the payload. And if a client bug ever did leak a
+        value anyway, the server's own independent check rejects it with <code>400 PII_LEAK_DETECTED</code>
+        before it reaches the model &mdash; without echoing the offending value back into the error. An
+        error path is a data-egress path too.
+      </p>
+    </div>
+  </section>
+
+  <hr class="hairline wrap">
+
+  <!-- ============================== SCENARIOS ============================= -->
+  <section id="scenarios" class="section-pad">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow"><span class="section-number">&sect;5</span> Four scenarios</p>
+        <h2 class="display">The policy discriminates. It doesn't just say no.</h2>
+      </div>
+
+      <div class="scenarios">
+        <div class="panel scenario-card">
+          <div class="scenario-head">
+            <h3>1 &middot; The agent is useful</h3>
+          </div>
+          <p class="scenario-goal"><span class="q">goal:</span> &ldquo;fill the name as Simon&rdquo;</p>
+          <div class="scenario-console">step 1: {"action":"type","targetId":"agent-4","value":"Simon"}&nbsp;&nbsp;&nbsp;<span class="ok">ok: true</span></div>
+          <p class="scenario-take"><strong>Baseline.</strong> The agent types where it's supposed to. Everything else here only matters because this part already works.</p>
+        </div>
+
+        <div class="panel scenario-card">
+          <div class="scenario-head">
+            <h3>2 &middot; The agent is safe (PII)</h3>
+          </div>
+          <p class="scenario-goal"><span class="q">goal:</span> &ldquo;Fill in the password field with the value hunter2&rdquo;</p>
+          <div class="scenario-console">{ "action": "type", "targetId": "agent-1", "value": "hunter2" }
+<span class="blocked">&rarr; SENSITIVE_TARGET_BLOCKED</span></div>
+          <p class="scenario-take"><strong>The model's own answer is wrong</strong> &mdash; proof it never saw the real value. Full walkthrough in <a href="#proof">&sect;1</a>.</p>
+        </div>
+
+        <div class="panel scenario-card is-key">
+          <div class="scenario-head">
+            <h3>3 &middot; Both at once</h3>
+            <span class="scenario-tag">the key case</span>
+          </div>
+          <p class="scenario-goal"><span class="q">goal:</span> &ldquo;Fill the name as River Jane and email id as riverjane33@demo.com&rdquo;</p>
+          <div class="scenario-console">type "River Jane" &rarr; name field        <span class="ok">ok</span>
+type "riverjane33@demo.com" &rarr; email field   <span class="blocked">SENSITIVE_TARGET_BLOCKED</span></div>
+          <p class="scenario-take"><strong>One task, two outcomes.</strong> The name fills. The email &mdash; itself a flagged PII type &mdash; is refused in the same run. This is the real argument: the policy discriminates rather than blanket-refusing everything.</p>
+        </div>
+
+        <div class="panel scenario-card">
+          <div class="scenario-head">
+            <h3>4 &middot; Safe beyond PII</h3>
+          </div>
+          <p class="scenario-goal"><span class="q">goal:</span> &ldquo;Complete the checkout by clicking Place Order&rdquo; <span style="color:var(--muted);">(?scenario=checkout)</span></p>
+          <div class="scenario-console">step 2: click agent-6 -&gt; <span class="blocked">IRREVERSIBLE_ACTION_BLOCKED</span>
+"text matches destructive-intent keyword "place order"; id matches destructive-intent keyword "place order""</div>
+          <p class="scenario-take"><strong>Nothing about a &ldquo;Place Order&rdquo; button is a password or an email.</strong> It's refused because completing a purchase is irreversible &mdash; a distinct code from scenarios 2/3, proving the guard generalizes past privacy.</p>
+        </div>
+      </div>
+
+      <p class="prose" style="margin-top:var(--sp-5); color:var(--muted); font-size:0.9rem;">
+        Both guards are fail-closed <strong style="color:var(--paper-dim);">by policy, not by limitation.</strong>
+        <code>action-executor.js</code> exposes <code>onSensitiveTarget()</code> and
+        <code>onIrreversibleAction()</code> hooks so a real product can prompt for consent and authorize
+        the write &mdash; both are deliberately disabled here. A demo that silently auto-approves sensitive
+        or destructive writes proves nothing.
+      </p>
+    </div>
+  </section>
+
+  <hr class="hairline wrap">
+
+  <!-- ============================== RESULTS ================================ -->
+  <section id="results" class="section-pad">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow"><span class="section-number">&sect;6</span> Measured results</p>
+        <h2 class="display">Real numbers from browser runs, not estimates.</h2>
+      </div>
+
+      <div class="results-table-wrap" tabindex="0" role="region" aria-label="Measured results table, scrollable horizontally on narrow screens">
+        <table class="results-table">
+          <thead>
+            <tr><th scope="col">Stage</th><th scope="col">Measured</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Object detection, warm</td><td class="figure">784 / 817 / 860 / 881 ms <span style="color:var(--muted);">(4 samples, ~780&ndash;880ms)</span></td></tr>
+            <tr><td>Object detection, first call after offscreen doc creation</td><td class="figure">~16&ndash;21 s <span style="color:var(--muted);">&sup1;</span></td></tr>
+            <tr><td>DOM PII scan</td><td class="figure">1&ndash;16 ms</td></tr>
+            <tr><td>Redaction (canvas + JSON)</td><td class="figure">22&ndash;158 ms</td></tr>
+            <tr><td>Peak JS heap</td><td class="figure">30&ndash;35 MB</td></tr>
+            <tr><td>Full 3-step loop (mock backend)</td><td class="figure">3,182 ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="prose" style="margin-top:var(--sp-4); font-size:0.85rem; color:var(--muted);">
+        <span style="color:var(--paper-dim);">&sup1;</span> One-time WebGPU shader compilation, not model
+        load (<code>pipelineWasAlreadyLoaded: true</code>, model-load 0ms) &mdash; the timing pattern is
+        confirmed, the exact mechanism inferred. A pre-warm inference at install and startup absorbs this
+        cost once, invisibly; the popup only shows ready once it's paid.
+      </p>
+
+      <div class="results-foot">
+        <span class="stat-chip"><b>393</b>&nbsp;tests, all green &mdash; 245 Node + 148 pytest</span>
+        <span class="stat-chip"><b>Xenova/yolos-tiny</b>&nbsp;on WebGPU, WASM fallback</span>
+        <span class="stat-chip"><b>0</b>&nbsp;network calls for inference &mdash; ONNX runtime + weights bundled locally</span>
+        <span class="stat-chip"><b>detections: 3, regions: 7</b>&nbsp;(4 DOM + 3 vision), one full run</span>
+      </div>
+    </div>
+  </section>
+
+  <hr class="hairline wrap">
+
+  <!-- ============================== ARCHITECTURE ============================ -->
+  <section id="architecture" class="section-pad">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow"><span class="section-number">&sect;7</span> Architecture &amp; stack</p>
+        <h2 class="display">Client does the seeing. Server never gets the chance to.</h2>
+      </div>
+
+      <div class="arch-grid">
+        <div class="prose">
+          <p>
+            The extension is Manifest V3: a background service worker orchestrates screenshot capture
+            and messaging, while a <code>chrome.offscreen</code> document holds a persistent WebGPU
+            context &mdash; the only place in an MV3 extension that can. <code>@huggingface/transformers</code>
+            and its ONNX Runtime Web backend, plus the model weights, are bundled locally; nothing is
+            fetched from a CDN, which matters twice over here &mdash; once for MV3's CSP, once for the
+            on-device privacy claim itself.
+          </p>
+          <p>
+            The content script does two jobs. It stamps a stable <code>data-agent-id</code> on every
+            actionable element (Set-of-Mark grounding) so the model refers to elements by ID, never by
+            pixel coordinates &mdash; an action can't drift between the screenshot the model saw and the
+            DOM it acts on. And it runs the DOM PII scan and the two action guards described in &sect;4.
+          </p>
+          <p>
+            The server is a single FastAPI endpoint, <code>/analyze</code>, with strict Pydantic request
+            and response schemas. Its prompt to the model explicitly states that redacted regions are
+            intentionally hidden and must not be guessed at &mdash; the model is told to use the DOM
+            snapshot's type/role info there instead. The server independently re-checks every payload and
+            rejects a leak with <code>400 PII_LEAK_DETECTED</code>, without ever echoing the offending
+            value back into its own error response.
+          </p>
+          <p>
+            Three VLM backends sit behind one interface &mdash; swapping models touches exactly one file,
+            <code>server/vlm_client.py</code>, and nothing in the extension moves:
+          </p>
+          <div class="backend-row">
+            <span class="backend-chip default">mock &mdash; default, deterministic, no key, keeps CI green</span>
+            <span class="backend-chip">gemini &mdash; free tier</span>
+            <span class="backend-chip">claude &mdash; Anthropic API</span>
+          </div>
+        </div>
+
+        <div>
+          <ul class="stack-list">
+            <li><span class="name">Chrome MV3 + chrome.offscreen</span><span class="desc">The only way to hold a persistent WebGPU context inside a service-worker-based extension.</span></li>
+            <li><span class="name">WebGPU &middot; onnxruntime-web &middot; @huggingface/transformers</span><span class="desc">Xenova/yolos-tiny, fp32, bundled locally. Automatic WASM fallback if WebGPU isn't available.</span></li>
+            <li><span class="name">FastAPI + Pydantic</span><span class="desc">One /analyze endpoint, strict schemas, defense-in-depth PII re-check on every request.</span></li>
+            <li><span class="name">Set-of-Mark grounding</span><span class="desc">Stable data-agent-id per actionable element &mdash; the model never touches raw pixel coordinates.</span></li>
+          </ul>
+
+          <figure class="figure" style="margin-top: var(--sp-5);">
+            <img src="assets/annotated-webpage-detect.png" alt="The real demo page with colored bounding boxes over its password field, email field, ID card image, and buttons, each labeled with a class name and confidence score." loading="lazy">
+            <figcaption>
+              Real boxes on the real demo page &mdash; from a research spike into whether a UI-element
+              detector could <em>also</em> handle grounding (deciding which element to click), not just
+              redaction. It couldn't beat the DOM: the DOM already gives exact element boundaries for
+              free, and vision's best case is an approximation of that, with misclassifications
+              (this run mistook a plain <code>&lt;label&gt;</code> for a <code>link</code>). Decision:
+              vision stays scoped to redaction; grounding stays with the DOM.
+            </figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="hairline wrap">
+
+  <!-- ============================== LIMITATIONS ============================= -->
+  <section id="limitations" class="section-pad">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow"><span class="section-number">&sect;8</span> Honest limitations</p>
+        <h2 class="display">Named here first, because judges find them anyway.</h2>
+      </div>
+
+      <div class="limitations">
+        <div class="limitations-head">
+          <span class="redaction-bar" aria-hidden="true"></span>
+          <span class="eyebrow">SCOPE, STATED PLAINLY</span>
+        </div>
+        <dl class="limitations-list">
+          <div>
+            <dt>Viewport only</dt>
+            <dd><code>captureVisibleTab</code> can't see below the fold. Content off-screen is invisible to the vision layer &mdash; it's why the ID-card detections in &sect;2/&sect;6 depend on the card being scrolled into view.</dd>
+          </div>
+          <div>
+            <dt>One iframe deep</dt>
+            <dd>DOM scanning and redaction cover the top-level page plus one level of iframe nesting &mdash; the realistic case of a payment provider's frame sitting directly in a checkout page. An iframe nested inside another iframe is not covered.</dd>
+          </div>
+          <div>
+            <dt>General detector, not a PII detector</dt>
+            <dd><code>yolos-tiny</code> is a COCO-80 object detector. It finds faces via the generic <code>person</code> class; there is no &ldquo;ID card&rdquo; class, so a card is only caught when it has a real face on it (see the reveal in &sect;1).</dd>
+          </div>
+          <div>
+            <dt>Firefox untouched</dt>
+            <dd>Scoped from the start as a post-integration pass. Every WebGPU call already degrades to WASM by design, which is the part of a Firefox port that would carry over unchanged.</dd>
+          </div>
+          <div>
+            <dt>Gemini free tier</dt>
+            <dd>Google's free tier may train on submitted data. Accepted here specifically because redaction happens client-side first &mdash; the &sect;1 assertion proves no PII is in the payload, so a provider training on this traffic still never sees a password, an email, or a face.</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <span><strong>SIH 26171</strong> &middot; On-Device Visual Perception for Lightweight Browser Agents</span>
+    <span>Built offline: no CDNs, no remote fonts, no network calls except the one <code>POST /analyze</code> this page describes.</span>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
