@@ -31,16 +31,74 @@ const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 // offscreen document crashes or never replies.
 const DETECTION_TIMEOUT_MS = 60000;
 
-// Phase 4 (integration-loop): local FastAPI server, per CLAUDE.md Section
-// 4 Phase 2c. Fixed dev default (uvicorn's own default bind). Not made
-// configurable via storage/UI -- this is a hackathon demo against a
-// server Varun starts himself on his own machine, and a fixed constant
-// keeps the demo/README.md steps unambiguous. Change this one line (and
-// restart the extension) if the server is run on a different port.
-const SERVER_URL = "http://localhost:8000";
+// Tier 4 (usable-extension pass), TASK 4: the local FastAPI server URL is
+// now a SETTING (extension/lib/server-url.js validates it, popup.js saves
+// it to chrome.storage.local under "serverUrl"), not a hardcoded constant.
+// This was Phase 4's original fixed-default design (see git history) --
+// fine for a hackathon demo, not something a real extension can ship.
+// DEFAULT_SERVER_URL is what a fresh install uses until the user saves a
+// different value; it is also what validateServerUrl()'s own
+// host_permissions check is guaranteed to accept, so a never-configured
+// install behaves EXACTLY as before this pass.
+const DEFAULT_SERVER_URL = "http://localhost:8000";
+let serverUrl = DEFAULT_SERVER_URL;
 
 function log(...args) {
   console.log("[background]", ...args);
+}
+
+// ---------------------------------------------------------------------
+// Dynamic-import loader for this pass's new lib/*.js modules. Same
+// pattern content.js already established for dom-scanner.js/redaction.js/
+// etc. (see that file's CONTRACT MISMATCH #1 comment): MV3's declarative
+// content_scripts array has no `type:"module"` option, but this file is a
+// CLASSIC (non-module) service worker for the SAME reason content.js is a
+// classic content script -- importScripts() (used above for the
+// webextension-polyfill) is only available to classic scripts, and
+// dynamic import() works from inside a classic script/service worker
+// regardless, so there is no need to convert this whole file to
+// `"type":"module"` (which would also break importScripts() outright).
+// Unlike content.js, this is a privileged extension context (not a
+// content script running inside a foreign page), so loading its own
+// bundled files this way does not depend on web_accessible_resources --
+// they're listed there anyway (manifest.json), for uniformity with every
+// other lib/*.js module, not because this call site strictly requires it.
+// ---------------------------------------------------------------------
+let RunRegistry = null;
+let ActionDescribe = null;
+let ErrorMessages = null;
+let ServerUrlLib = null;
+
+async function loadHelperLibs() {
+  if (!RunRegistry) RunRegistry = await import(chrome.runtime.getURL("lib/run-registry.js"));
+  if (!ActionDescribe) ActionDescribe = await import(chrome.runtime.getURL("lib/action-describe.js"));
+  if (!ErrorMessages) ErrorMessages = await import(chrome.runtime.getURL("lib/error-messages.js"));
+  if (!ServerUrlLib) ServerUrlLib = await import(chrome.runtime.getURL("lib/server-url.js"));
+}
+
+// Loaded once at SW startup, refreshed live on every chrome.storage.local
+// change so a setting saved from the popup takes effect immediately,
+// without requiring a service-worker restart or extension reload.
+async function loadServerUrlSetting() {
+  try {
+    const stored = await browser.storage.local.get("serverUrl");
+    if (typeof stored.serverUrl === "string" && stored.serverUrl.trim()) {
+      serverUrl = stored.serverUrl.trim();
+    }
+  } catch (err) {
+    log("loadServerUrlSetting failed (non-fatal -- keeping default):", err?.message || err);
+  }
+}
+loadServerUrlSetting();
+
+if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.serverUrl) {
+      const next = changes.serverUrl.newValue;
+      serverUrl = typeof next === "string" && next.trim() ? next.trim() : DEFAULT_SERVER_URL;
+      log("serverUrl setting updated ->", serverUrl);
+    }
+  });
 }
 
 // ---------------------------------------------------------------------
@@ -349,6 +407,158 @@ async function executeActionInFrame(tabId, frameId, action) {
 }
 
 // ---------------------------------------------------------------------
+// Tier 4 (usable-extension pass), TASK 1 + TASK 2: the live run-state
+// registry. content.js (running in the page, not the service worker) is
+// where the agent loop actually executes -- this block is background.js's
+// half of making that legible/controllable from a popup that can be
+// destroyed and re-created at any moment (see run-registry.js's own file
+// header for the full reasoning on why background.js, not content.js or
+// the popup, is the durable holder of this state).
+//
+// `runState` starts null (no run has happened yet this SW lifetime) and
+// is only ever produced by run-registry.js's pure transition functions --
+// this file never hand-builds or mutates a run-state object directly.
+// ---------------------------------------------------------------------
+
+let runState = null;
+
+// Chrome-only API (no stable Firefox equivalent at the time of writing --
+// same "branch point for the future Firefox retrofit pass" as
+// chrome.offscreen/chrome.runtime.onInstalled above), feature-detected so
+// a Chrome version without it degrades to in-memory-only run state (Stop/
+// progress still work within one SW lifetime; only the "survives an SW
+// restart mid-run" guarantee is lost) rather than throwing.
+const HAS_SESSION_STORAGE = typeof chrome !== "undefined" && !!(chrome.storage && chrome.storage.session);
+
+async function persistRunState() {
+  if (!HAS_SESSION_STORAGE) return;
+  try {
+    await chrome.storage.session.set({ runState });
+  } catch (err) {
+    log("persistRunState failed (non-fatal -- in-memory state is still correct for this SW lifetime):", err?.message || err);
+  }
+}
+
+// Called on demand (GET_RUN_STATE) rather than unconditionally at every SW
+// startup, so a fresh SW that has never been asked about run state yet
+// doesn't pay a storage read it may never need.
+async function loadPersistedRunStateIfMissing() {
+  if (runState || !HAS_SESSION_STORAGE) return;
+  try {
+    const stored = await chrome.storage.session.get("runState");
+    if (stored && stored.runState) runState = stored.runState;
+  } catch (err) {
+    log("loadPersistedRunStateIfMissing failed (non-fatal):", err?.message || err);
+  }
+}
+
+/**
+ * popup.js -> background.js, on popup open AND while polling during an
+ * active run (popups have no persistent memory of their own -- see
+ * run-registry.js's header). Returns the best currently-known state (SW
+ * memory, falling back to chrome.storage.session if this SW instance
+ * hasn't seen a run yet) plus a precomputed `canStop` so the popup never
+ * has to import run-registry.js just to render one boolean correctly.
+ */
+async function handleGetRunState() {
+  await loadHelperLibs();
+  await loadPersistedRunStateIfMissing();
+  const state = runState || RunRegistry.createRunState();
+  return { type: "RUN_STATE", state, canStop: RunRegistry.canStop(state) };
+}
+
+/**
+ * content.js -> background.js, sent (fire-and-forget on content.js's side)
+ * at every meaningful stage transition of a running loop -- see
+ * content.js's reportProgress(). Merges `patch` into the tracked state via
+ * run-registry.js's pure applyProgress(), then persists.
+ *
+ * Defensive bootstrap: if no run is currently tracked as active but this
+ * patch is the loop's own "starting" marker, initialize one here rather
+ * than dropping it -- covers the (narrow, but real) race between
+ * handleRunAgentLoopFromPopup()'s own RunRegistry.startRun() call and
+ * content.js's first progress report arriving first. Any OTHER patch
+ * arriving with no active run tracked (e.g. a stray late update after the
+ * run already finished) is acknowledged but not applied -- it must never
+ * fabricate a new "active" run out of nothing.
+ */
+async function handleRunProgressUpdate(patch, sender) {
+  await loadHelperLibs();
+  const tabId = sender && sender.tab ? sender.tab.id : undefined;
+
+  if (!runState || runState.active !== true) {
+    if (patch && patch.stage === "starting") {
+      runState = RunRegistry.startRun(patch.taskGoal, { tabId, maxSteps: patch.maxSteps });
+    } else {
+      return { ok: false, reason: "no active run to update" };
+    }
+  }
+
+  runState = RunRegistry.applyProgress(runState, patch);
+  await persistRunState();
+  return { ok: true };
+}
+
+// Per-tab AbortController for whichever /analyze fetch is CURRENTLY in
+// flight (handleAnalyze below adds/removes its own entry) -- this is what
+// lets Stop interrupt a pending network request immediately rather than
+// waiting for it to resolve or time out. Deliberately keyed by tabId, not
+// a single module-level slot: harmless even though this codebase only
+// ever runs one agent loop at a time in practice, and correct if that ever
+// changes.
+const activeAnalyzeAborters = new Map();
+
+/**
+ * popup.js -> background.js -> (abort any in-flight /analyze fetch for the
+ * tracked tab) + relay to that tab's content script. TASK 1's Stop button.
+ *
+ * Ordering is deliberate and load-bearing: the fetch is aborted FIRST,
+ * synchronously, before the (asynchronous, round-trip) relay to
+ * content.js even begins -- this is what makes Stop interrupt a pending
+ * fetch/backoff immediately rather than waiting out however many seconds
+ * are left on the current attempt or its retry delay (see content.js's
+ * isRetryableAnalyzeFailure()/sleep() for the other half: recognizing the
+ * resulting AbortError and not retrying it, and an interruptible backoff
+ * wait for the case where the abort lands between attempts rather than
+ * during one).
+ */
+async function handleStopAgentLoop() {
+  await loadHelperLibs();
+
+  if (!runState || !RunRegistry.canStop(runState)) {
+    return { type: "STOP_AGENT_LOOP_RESULT", ok: false, error: "no agent loop is currently running" };
+  }
+
+  const tabId = runState.tabId;
+  runState = RunRegistry.requestStop(runState);
+  await persistRunState();
+
+  const controller = tabId != null ? activeAnalyzeAborters.get(tabId) : null;
+  if (controller) {
+    try {
+      controller.abort();
+    } catch (_err) {
+      /* AbortController.abort() cannot meaningfully throw -- defensive only */
+    }
+  }
+
+  if (tabId == null) {
+    return { type: "STOP_AGENT_LOOP_RESULT", ok: true, note: "stop flag set; no tracked tab to relay to" };
+  }
+
+  try {
+    const resp = await browser.tabs.sendMessage(tabId, { type: "STOP_AGENT_LOOP" });
+    return { type: "STOP_AGENT_LOOP_RESULT", ok: true, contentAck: resp };
+  } catch (err) {
+    // Content script unreachable (tab closed/navigated away). The abort()
+    // above already happened regardless -- the loop's own next capture/
+    // analyze round trip will fail naturally if the tab is genuinely gone.
+    // Report, don't crash.
+    return { type: "STOP_AGENT_LOOP_RESULT", ok: false, error: err?.message || String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------
 // Message router. Single listener, dispatches by message.type. Receives
 // broadcasts from BOTH the offscreen document (DETECTION_RESULT /
 // DETECTION_ERROR, sent via plain chrome.runtime.sendMessage) and the
@@ -395,8 +605,10 @@ browser.runtime.onMessage.addListener((message, sender) => {
       // directly from the content script, for the same reason
       // captureVisibleTab is already background-owned: least-surprise,
       // one place that talks to the network, consistent with Phase 1's
-      // existing architecture.
-      return handleAnalyze(message.payload);
+      // existing architecture. sender.tab.id is threaded through so
+      // handleAnalyze can register its AbortController under the tab
+      // that owns this request -- see activeAnalyzeAborters/TASK 1's Stop.
+      return handleAnalyze(message.payload, sender && sender.tab ? sender.tab.id : undefined);
 
     case "RUN_AGENT_LOOP":
       // popup.js -> background.js -> active tab's content script. The
@@ -404,6 +616,22 @@ browser.runtime.onMessage.addListener((message, sender) => {
       // through the background service worker, which knows which tab is
       // active.
       return handleRunAgentLoopFromPopup();
+
+    case "STOP_AGENT_LOOP":
+      // popup.js -> background.js -> (abort in-flight fetch) + active
+      // tab's content script. TASK 1.
+      return handleStopAgentLoop();
+
+    case "GET_RUN_STATE":
+      // popup.js queries this on open AND while polling during an active
+      // run -- TASK 2's "state must live in the background SW ... and be
+      // re-read on popup open" requirement.
+      return handleGetRunState();
+
+    case "RUN_PROGRESS_UPDATE":
+      // content.js -> background.js, fire-and-forget from content.js's
+      // side, at every meaningful stage transition of a running loop.
+      return handleRunProgressUpdate(message.patch, sender);
 
     case "GET_PREWARM_STATUS":
       // popup.js queries this on open so "is the model warm yet" is
@@ -554,15 +782,55 @@ async function handleCaptureAndDetect(sender) {
 // type/loc/msg (422), errorCode+violations with no raw value (400 PII
 // leak), or errorCode+message (502) -- never re-serializes what was sent.
 // ---------------------------------------------------------------------
-async function handleAnalyze(payload) {
+//
+// TASK 1 (Stop) + TASK 3 (readable errors) + TASK 4 (configurable URL)
+// additions, all layered onto the same function rather than three separate
+// call sites:
+//   - `tabId` registers this request's AbortController in
+//     activeAnalyzeAborters BEFORE the fetch starts, so handleStopAgentLoop
+//     can abort it from a completely separate message handler.
+//   - Before ever calling fetch(), the CURRENT `serverUrl` setting is
+//     checked against manifest.json's actual host_permissions
+//     (ServerUrlLib.isHostAllowed) -- Chrome would otherwise block the
+//     request at the network layer and surface only a generic "Failed to
+//     fetch", indistinguishable from "the server just isn't running".
+//     Catching it here, with the exact configured URL and the exact
+//     allowed patterns in hand, is what turns that into a specific,
+//     actionable sentence instead.
+//   - Every ANALYZE_ERROR this function returns now also carries a
+//     `humanMessage` (via error-messages.js) -- purely ADDITIVE to the
+//     existing `error` shape (never replaces status/error.message), so
+//     nothing that already reads `.error.message` breaks.
+//
+async function handleAnalyze(payload, tabId) {
   if (!payload || typeof payload !== "object") {
     return { type: "ANALYZE_ERROR", status: 0, error: { message: "ANALYZE called with no payload" } };
   }
+
+  await loadHelperLibs();
+
+  if (!ServerUrlLib.isHostAllowed(serverUrl)) {
+    const message =
+      `Server URL "${serverUrl}" is outside this extension's permitted hosts ` +
+      `(${ServerUrlLib.DEFAULT_ALLOWED_HOST_PATTERNS.join(", ")}). Chrome blocks the request before it ever ` +
+      "leaves the extension. Fix the Server URL in the popup's Settings, or -- for a genuinely different host " +
+      "-- widen manifest.json's host_permissions and reload the extension; that is a deliberate, separate " +
+      "decision this popup does not make on its own.";
+    log("ANALYZE blocked before fetch -- server URL not covered by host_permissions:", serverUrl);
+    const errResp = { type: "ANALYZE_ERROR", status: 0, error: { message, errorCode: "SERVER_URL_NOT_PERMITTED" } };
+    errResp.humanMessage = message;
+    return errResp;
+  }
+
+  const controller = new AbortController();
+  if (tabId !== undefined && tabId !== null) activeAnalyzeAborters.set(tabId, controller);
+
   try {
-    const res = await fetch(`${SERVER_URL}/analyze`, {
+    const res = await fetch(`${serverUrl}/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
     let body = null;
     try {
@@ -572,17 +840,35 @@ async function handleAnalyze(payload) {
     }
     if (!res.ok) {
       log(`ANALYZE: server returned HTTP ${res.status}`, body);
-      return { type: "ANALYZE_ERROR", status: res.status, error: body || { message: `HTTP ${res.status}` } };
+      const errResp = { type: "ANALYZE_ERROR", status: res.status, error: body || { message: `HTTP ${res.status}` } };
+      errResp.humanMessage = ErrorMessages.mapAnalyzeErrorToMessage(errResp, { serverUrl }).summary;
+      return errResp;
     }
     return { type: "ANALYZE_RESULT", action: body };
   } catch (err) {
+    if (err && err.name === "AbortError") {
+      // Deliberate abort via handleStopAgentLoop() -- NOT a real network
+      // failure. errorCode:"STOPPED" lets content.js's retry loop
+      // recognize this immediately (see isRetryableAnalyzeFailure()) and
+      // record outcome:"stopped" instead of treating it as just another
+      // retryable transient error.
+      const errResp = { type: "ANALYZE_ERROR", status: 0, error: { message: "request cancelled by Stop", errorCode: "STOPPED" } };
+      errResp.humanMessage = "Request was cancelled because you clicked Stop.";
+      return errResp;
+    }
     // Network-level failure: server not running, wrong port, CORS
     // rejection, etc. err.message here is a browser-generated string
     // ("Failed to fetch", "NetworkError when attempting to fetch
     // resource.", ...) -- never derived from `payload`.
     const message = err?.message || String(err);
     console.error("[background] ANALYZE network failure:", message);
-    return { type: "ANALYZE_ERROR", status: 0, error: { message } };
+    const errResp = { type: "ANALYZE_ERROR", status: 0, error: { message } };
+    errResp.humanMessage = ErrorMessages.mapAnalyzeErrorToMessage(errResp, { serverUrl }).summary;
+    return errResp;
+  } finally {
+    if (tabId !== undefined && tabId !== null && activeAnalyzeAborters.get(tabId) === controller) {
+      activeAnalyzeAborters.delete(tabId);
+    }
   }
 }
 
@@ -591,6 +877,17 @@ async function handleAnalyze(payload) {
 // active tab's content script. The popup has no direct channel to a
 // content script; it must go through the background service worker,
 // which can look up the active tab and use chrome.tabs.sendMessage.
+//
+// TASK 1 + TASK 2 additions: initializes the tracked run-state BEFORE
+// relaying to content.js (so GET_RUN_STATE/canStop are correct the moment
+// this function returns control to the popup's own await, not only once
+// content.js's first progress report arrives -- see run-registry.js's
+// requestStop()/canStop() docs for why that ordering matters), and
+// finalizes it once content.js's own response comes back (content.js ALSO
+// reports its own finish via a final RUN_PROGRESS_UPDATE from inside
+// runAgentLoop()'s own finally block -- the two are redundant by design,
+// not a bug: whichever arrives first sets active:false/outcome, the other
+// is a no-op re-application of the same values).
 // ---------------------------------------------------------------------
 async function handleRunAgentLoopFromPopup() {
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
@@ -598,10 +895,27 @@ async function handleRunAgentLoopFromPopup() {
   if (!tab || tab.id === undefined) {
     return { type: "RUN_AGENT_LOOP_ERROR", error: "no active tab found" };
   }
+
+  await loadHelperLibs();
+  let taskGoal = null;
+  try {
+    const stored = await browser.storage.local.get("taskGoal");
+    if (typeof stored.taskGoal === "string") taskGoal = stored.taskGoal;
+  } catch (_err) {
+    /* fall through with taskGoal:null -- content.js's own storage read is authoritative for the actual run */
+  }
+  runState = RunRegistry.startRun(taskGoal, { tabId: tab.id });
+  await persistRunState();
+
   try {
     const response = await browser.tabs.sendMessage(tab.id, { type: "RUN_AGENT_LOOP" });
+    const outcome = response && typeof response.outcome === "string" ? response.outcome : "failed";
+    runState = RunRegistry.finishRun(runState, outcome);
+    await persistRunState();
     return response || { type: "RUN_AGENT_LOOP_ERROR", error: "content script gave no response" };
   } catch (err) {
+    runState = RunRegistry.finishRun(runState, "failed");
+    await persistRunState();
     // Most common cause: the content script isn't loaded on this tab
     // (e.g. a chrome:// page, or the tab predates the extension being
     // installed/reloaded -- content scripts only auto-inject on

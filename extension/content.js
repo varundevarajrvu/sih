@@ -57,6 +57,10 @@ let FrameCoords = null;
 let ElementRanker = null;
 let ActionRisk = null;
 let StallDetector = null;
+// Tier 4 (usable-extension pass), TASK 2: plain-language action/outcome
+// descriptions for the popup -- same dynamic-import pattern as every other
+// ES-module lib file above (see CONTRACT MISMATCH #1's comment for why).
+let ActionDescribe = null;
 
 async function loadLibModules() {
   if (!DomScanner) {
@@ -76,6 +80,9 @@ async function loadLibModules() {
   }
   if (!StallDetector) {
     StallDetector = await import(browser.runtime.getURL("lib/stall-detector.js"));
+  }
+  if (!ActionDescribe) {
+    ActionDescribe = await import(browser.runtime.getURL("lib/action-describe.js"));
   }
 }
 
@@ -177,6 +184,31 @@ async function loadLibModules() {
 // =======================================================================
 
 const IS_TOP_FRAME = window.top === window.self;
+
+// ---------------------------------------------------------------------
+// Tier 4 (usable-extension pass), TASK 1 (Stop). The currently-running
+// agent loop's AbortController, or null when no loop is active in this
+// frame. Module-level (not a runAgentLoop() local) because the
+// STOP_AGENT_LOOP message listener (registered once, below, alongside
+// RUN_AGENT_LOOP's own listener) is a completely separate call than
+// whichever runAgentLoop() invocation is currently executing, and needs a
+// way to reach it. A single slot, never a Map, is sufficient: only the TOP
+// frame ever runs the loop, and its own RUN_AGENT_LOOP listener already
+// refuses to start a second instance while one is active (see that
+// listener, unchanged by this pass) -- so at most one AbortController ever
+// exists at a time.
+//
+// WHY AN AbortController AND NOT JUST A BOOLEAN FLAG: the flag alone
+// cannot interrupt an in-progress `await sleep(delay)` during the /analyze
+// retry backoff -- a flag only gets CHECKED, it doesn't wake anything up.
+// signal.addEventListener("abort", ...) (see sleep()'s own TASK 1 update,
+// near the retry loop) is what turns "Stop was clicked" into "the pending
+// wait resolves immediately" rather than idling out up to ~2-4s of
+// backoff. The signal's own `.aborted` boolean IS also read directly, at
+// every point this file needs a synchronous "should I stop now" check
+// (top of each step, before dispatching an action) -- one object serves
+// both the instant-wake and the polled-check needs.
+let currentRunAbortController = null;
 
 // Chrome's frameId for this frame's content-script instance (0 = top,
 // stable for this navigation otherwise). Learned via FRAME_HELLO's round
@@ -634,6 +666,11 @@ const ANALYZE_BASE_DELAY_MS = 1000; // -> roughly 1s / 2s before attempts 2 / 3
 
 function isRetryableAnalyzeFailure(resp) {
   if (!resp) return false;
+  // TASK 1 (Stop): a request background.js aborted because the user
+  // clicked Stop is never retryable -- retrying it would defeat the whole
+  // point of Stop (see background.js's handleAnalyze, which recognizes its
+  // own AbortError and replies with this errorCode instead of throwing).
+  if (resp.error && resp.error.errorCode === "STOPPED") return false;
   const status = resp.status;
   if (status === 429) return true;
   if (typeof status === "number" && status >= 500 && status <= 599) return true;
@@ -649,8 +686,33 @@ function errorClassOf(resp) {
   return "unknown";
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+// TASK 1 (Stop): `signal`, when provided, makes this wait interruptible --
+// resolves IMMEDIATELY (not after `ms`) once the signal aborts, rather
+// than riding out the full backoff delay. This is what actually satisfies
+// "Stop must not wait out the retry backoff": without it, clicking Stop
+// during a ~1-4s `await sleep(delay)` would silently do nothing until the
+// timer itself fired. Resolves (never rejects) either way -- the CALLER
+// (the retry loop, below) is responsible for checking `signal.aborted`
+// after this returns and reacting accordingly; this function's only job is
+// to stop waiting, not to decide what "stopped early" means.
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal && signal.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true }
+      );
+    }
+  });
 }
 
 // Full jitter around exponential backoff: base * 2^(attempt-1), +/-30%,
@@ -681,6 +743,26 @@ function snapshotMemory() {
     totalJSHeapSizeMB: +(m.totalJSHeapSize / 1048576).toFixed(2),
     jsHeapSizeLimitMB: +(m.jsHeapSizeLimit / 1048576).toFixed(2),
   };
+}
+
+// ---------------------------------------------------------------------
+// Tier 4 (usable-extension pass), TASK 2 (live progress in the popup).
+// Fire-and-forget progress patch to background.js, which is the durable
+// holder of run state (see background.js's run-registry wiring and
+// extension/lib/run-registry.js's own header for why it lives there and
+// not here or in the popup). Deliberately NOT awaited by any caller --
+// this must never slow down or fail an otherwise-healthy agent-loop step
+// just because a popup isn't currently open (the common case) or the
+// background service worker is mid-restart. `.catch(() => {})` swallows
+// "no listener" / SW-not-ready errors; the try/catch below additionally
+// guards the (rarer) case where sendMessage itself throws synchronously.
+// ---------------------------------------------------------------------
+function reportProgress(patch) {
+  try {
+    browser.runtime.sendMessage({ type: "RUN_PROGRESS_UPDATE", patch }).catch(() => {});
+  } catch (_err) {
+    /* progress reporting must never break the loop */
+  }
 }
 
 function createInstrumentation() {
@@ -816,6 +898,12 @@ const MAX_STEPS = 25;
 
 async function runAgentLoop() {
   await loadLibModules();
+
+  // TASK 1 (Stop): see currentRunAbortController's own doc comment (near
+  // IS_TOP_FRAME) for why an AbortController, not a bare boolean flag.
+  const runAbort = new AbortController();
+  currentRunAbortController = runAbort;
+
   const instr = createInstrumentation();
   const stepResults = [];
 
@@ -858,17 +946,62 @@ async function runAgentLoop() {
 
   let outcome = "max_steps_reached";
 
-  for (let step = 1; step <= MAX_STEPS; step++) {
-    // ---- 1. CAPTURE + DETECT (one round trip to background.js, which
-    // times each half separately server-side of the message boundary so
-    // message-passing overhead isn't misattributed to either stage). ----
-    const captureResp = await browser.runtime.sendMessage({ type: "CAPTURE_AND_DETECT" });
-    if (!captureResp || captureResp.type !== "CAPTURE_AND_DETECT_RESULT") {
-      instr.mark(step, "capture", { error: (captureResp && captureResp.error) || "no response from background" });
-      stepResults.push({ step, error: "capture_and_detect_failed", detail: captureResp && captureResp.error });
-      outcome = "capture_failed";
-      break;
-    }
+  // TASK 2 (live progress): the loop's own "I have started" marker --
+  // background.js's handleRunProgressUpdate() bootstraps a tracked run
+  // from this exact patch if handleRunAgentLoopFromPopup()'s own
+  // RunRegistry.startRun() call hasn't landed yet (see that function's own
+  // comment on the race). taskGoal/maxSteps travel with it so the popup
+  // never has to know MAX_STEPS's value itself.
+  reportProgress({
+    active: true,
+    taskGoal,
+    maxSteps: MAX_STEPS,
+    step: 0,
+    stage: "starting",
+    outcome: null,
+    lastAction: null,
+    lastBlock: null,
+    lastError: null,
+  });
+
+  // TASK 1 (Stop): the try/finally spans the whole step loop so the
+  // "run has ended" progress report (in the finally block, below) fires
+  // for EVERY exit path -- normal completion, any break, or even an
+  // unexpected throw -- not just the happy path. currentRunAbortController
+  // is also always released here, so a second "Run Agent Loop" click after
+  // this one ends is never blocked by a stale reference to a finished run.
+  try {
+    for (let step = 1; step <= MAX_STEPS; step++) {
+      // TASK 1 (Stop): checked at the top of EVERY step -- "must take
+      // effect between steps at the latest" per the task brief. This is
+      // the outer bound; the retry loop (interrupts a pending fetch/
+      // backoff) and the pre-act check (never dispatch a fresh action
+      // once stopped) below catch it sooner when possible.
+      if (runAbort.signal.aborted) {
+        outcome = "stopped";
+        console.log(`[agent-loop] STOP requested -- halting before step ${step} begins.`);
+        break;
+      }
+      reportProgress({ step, stage: "capture" });
+
+      // ---- 1. CAPTURE + DETECT (one round trip to background.js, which
+      // times each half separately server-side of the message boundary so
+      // message-passing overhead isn't misattributed to either stage). ----
+      const captureResp = await browser.runtime.sendMessage({ type: "CAPTURE_AND_DETECT" });
+      if (!captureResp || captureResp.type !== "CAPTURE_AND_DETECT_RESULT") {
+        instr.mark(step, "capture", { error: (captureResp && captureResp.error) || "no response from background" });
+        stepResults.push({ step, error: "capture_and_detect_failed", detail: captureResp && captureResp.error });
+        outcome = "capture_failed";
+        reportProgress({
+          stage: "capture",
+          lastError: {
+            summary: `On-device capture/detection failed: ${(captureResp && captureResp.error) || "no response from background"}`,
+            detail: (captureResp && captureResp.error) || "",
+            step,
+          },
+        });
+        break;
+      }
     instr.mark(step, "capture", {
       durationMs: +captureResp.captureMs.toFixed(1),
       offscreenDocumentAlreadyExisted: captureResp.offscreenDocumentAlreadyExisted,
@@ -897,6 +1030,7 @@ async function runAgentLoop() {
       // load or inference time.
       detectMsTotal: +captureResp.detectMs.toFixed(1),
     });
+    reportProgress({ stage: "detect", step, detections: (captureResp.boxes || []).length });
 
     // ---- 2. SCAN -- RULING 1: action-executor FIRST (stamps
     // data-agent-id), dom-scanner SECOND (reuses those ids). Reversed,
@@ -948,6 +1082,7 @@ async function runAgentLoop() {
       subframeActionableNodes: subframeData.domSnapshot.length,
       unscannableRegions: allUnscannableRegions.length,
     });
+    reportProgress({ stage: "scan", step, actionableNodes: domSnapshot.length, sensitiveNodes: sensitiveNodes.length });
 
     // ---- 3. RULING 4 -- wire the sensitive guard. Stamp
     // data-agent-sensitive="true" on the real DOM elements AND build a
@@ -1092,6 +1227,19 @@ async function runAgentLoop() {
       visionBoxesTotal: (captureResp.boxes || []).length,
       visionBoxesKeptAfterFilter: filteredBoxes.length,
     });
+    reportProgress({ stage: "redact", step, regions: redactedRegions.length });
+
+    // TASK 1 (Stop): checked once more before the network send begins --
+    // capture/detect/scan/redact can themselves take a noticeable amount
+    // of time on a slow page, so a Stop clicked during THIS step (not the
+    // previous one) should still be able to skip the send entirely rather
+    // than firing one more request before the retry loop's own checks
+    // (below) get a chance to run.
+    if (runAbort.signal.aborted) {
+      outcome = "stopped";
+      console.log(`[agent-loop] STOP requested -- skipping the /analyze send for step ${step}.`);
+      break;
+    }
 
     // ---- 7 & 8. SECTION 5 CHECK + SEND, with bounded retry on transient
     // upstream failures. THE SECTION 5 CHECK RE-RUNS ON EVERY ATTEMPT --
@@ -1106,6 +1254,14 @@ async function runAgentLoop() {
     let section5Failed = false;
 
     for (let attempt = 1; attempt <= ANALYZE_MAX_ATTEMPTS; attempt++) {
+      // TASK 1 (Stop): checked at the top of EVERY attempt -- this is what
+      // stops a stop request from having to wait through even one more
+      // full send before it's noticed.
+      if (runAbort.signal.aborted) {
+        outcome = "stopped";
+        break;
+      }
+
       attemptsUsed = attempt;
 
       // Freshly constructed AND freshly re-checked every attempt -- not
@@ -1123,9 +1279,14 @@ async function runAgentLoop() {
         section5Failed = true;
         stepResults.push({ step, error: "section5_invariant_violation", detail: err.message, attempt });
         outcome = "section5_violation";
+        reportProgress({
+          stage: "send",
+          lastError: { summary: "Internal safety check failed -- send aborted before anything left the client.", detail: err.message, step },
+        });
         break; // out of the retry loop -- a sanitization bug is not retryable, ever
       }
 
+      reportProgress({ stage: "send", step });
       const tSend0 = performance.now();
       analyzeResp = await browser.runtime.sendMessage({ type: "ANALYZE", payload });
       const sendMs = +(performance.now() - tSend0).toFixed(1);
@@ -1133,6 +1294,18 @@ async function runAgentLoop() {
       if (analyzeResp && analyzeResp.type === "ANALYZE_RESULT") {
         instr.mark(step, "send+response", { attempt, durationMs: sendMs });
         break; // success -- stop retrying
+      }
+
+      // TASK 1 (Stop): background.js's handleAnalyze recognizes its OWN
+      // AbortError (fired by handleStopAgentLoop aborting this exact
+      // request) and replies with this errorCode instead of throwing --
+      // recognized here explicitly so the outcome is "stopped", never
+      // "analyze_failed" (which would misreport a deliberate user action
+      // as a server/network problem).
+      if (analyzeResp && analyzeResp.error && analyzeResp.error.errorCode === "STOPPED") {
+        outcome = "stopped";
+        instr.mark(step, "send+response", { attempt, durationMs: sendMs, errorClass: "stopped" });
+        break;
       }
 
       const retryable = isRetryableAnalyzeFailure(analyzeResp);
@@ -1153,12 +1326,38 @@ async function runAgentLoop() {
         nextDelayMs: willRetry ? delay : undefined,
       });
 
-      if (!willRetry) break; // not retryable (4xx), or attempts exhausted -- stop
+      // TASK 3 (readable errors): background.js already derived a human
+      // sentence for this exact response (error-messages.js, run there so
+      // it has access to the private `serverUrl` setting) -- surface it
+      // prominently the moment this attempt is no longer going to be
+      // retried, not only after the whole loop gives up.
+      if (!willRetry) {
+        reportProgress({
+          stage: "send",
+          lastError: {
+            summary: (analyzeResp && analyzeResp.humanMessage) || `Server request failed (${errClass}).`,
+            detail: JSON.stringify((analyzeResp && analyzeResp.error) || {}),
+            step,
+          },
+        });
+        break; // not retryable (4xx), or attempts exhausted -- stop
+      }
 
       console.log(`[agent-loop] step ${step} attempt ${attempt} failed (${errClass}) -- retrying in ${delay}ms`);
-      await sleep(delay);
+      // TASK 1 (Stop): interruptible -- resolves immediately if Stop is
+      // clicked mid-backoff instead of riding out the full delay.
+      await sleep(delay, runAbort.signal);
+      if (runAbort.signal.aborted) {
+        outcome = "stopped";
+        break;
+      }
       // loop continues to attempt+1, which re-runs assertNoRawPii() above
       // before sending again -- see the comment at the top of this block.
+    }
+
+    if (outcome === "stopped") {
+      console.log(`[agent-loop] STOP requested -- halting step ${step} during the /analyze send/retry.`);
+      break; // out of the STEP loop -- a stop mid-retry must never fall through to act or to the generic analyze_failed handling below
     }
 
     if (section5Failed) {
@@ -1176,6 +1375,18 @@ async function runAgentLoop() {
       break;
     }
     const action = analyzeResp.action;
+
+    // TASK 1 (Stop): the LAST checkpoint before a real DOM action is
+    // dispatched -- "never leave a half-dispatched action" means a Stop
+    // that lands after the /analyze response but before the click/type is
+    // sent must still be able to refuse to act, not just refuse to start a
+    // NEW step.
+    if (runAbort.signal.aborted) {
+      outcome = "stopped";
+      console.log(`[agent-loop] STOP requested -- refusing to dispatch the pending action for step ${step}.`);
+      break;
+    }
+    reportProgress({ stage: "act", step });
 
     // ---- 9. ACT -- see executeActionAcrossFrames() above for the
     // cross-frame relay this pass adds: if `action.targetId` names an
@@ -1210,6 +1421,32 @@ async function runAgentLoop() {
       });
       stepResults.push({ step, action, error: err.message, code: err.code });
       outcome = "act_failed";
+
+      // TASK 2 (live progress): "Blocked actions prominently" -- this
+      // project's whole value proposition is a guard that visibly refuses
+      // an action, and until now that refusal only ever reached the
+      // page's own DevTools console (see this file's own header comment).
+      // SENSITIVE_TARGET_BLOCKED / IRREVERSIBLE_ACTION_BLOCKED get their
+      // own distinct, prominent `lastBlock` field (never merged into the
+      // generic `lastError` bucket below) so the popup can render them
+      // unmissably rather than as just another error string.
+      if (err.code === "SENSITIVE_TARGET_BLOCKED" || err.code === "IRREVERSIBLE_ACTION_BLOCKED") {
+        reportProgress({
+          stage: "act",
+          lastBlock: {
+            code: err.code,
+            reasons: (err.details && Array.isArray(err.details.reasons) ? err.details.reasons : []),
+            targetId: (err.details && err.details.targetId) || action.targetId,
+            step,
+            message: err.message,
+          },
+        });
+      } else {
+        reportProgress({
+          stage: "act",
+          lastError: { summary: `Action failed: ${err.message}`, detail: err.message, step },
+        });
+      }
       break;
     }
     instr.mark(step, "act", {
@@ -1218,6 +1455,15 @@ async function runAgentLoop() {
       relayedToFrameId,
     });
     stepResults.push({ step, action, actResult, relayedToFrameId });
+    reportProgress({
+      stage: "act",
+      step,
+      lastAction: {
+        description: ActionDescribe.describeAction(action, mergedDomSnapshot),
+        action: action.action,
+        targetId: action.targetId,
+      },
+    });
 
     // Record completed click/type targets -- see actedAgentIds comment
     // above runAgentLoop's declaration. Page-level scroll/done (the
@@ -1273,7 +1519,18 @@ async function runAgentLoop() {
     }
   }
 
-  return instr.summarize(stepResults, outcome);
+    return instr.summarize(stepResults, outcome);
+  } finally {
+    // TASK 1 (Stop): release the slot so a later "Run Agent Loop" click
+    // never sees a stale AbortController from a run that already ended.
+    if (currentRunAbortController === runAbort) currentRunAbortController = null;
+    // TASK 2 (live progress): the run's final state, for EVERY exit path
+    // (normal completion, any break above, or an unexpected throw) -- see
+    // the try's own opening comment. `outcome` here is whatever the loop
+    // last set it to; still "max_steps_reached" if the loop ran to
+    // completion without ever assigning a more specific value.
+    reportProgress({ active: false, stage: "finished", outcome });
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -1312,6 +1569,26 @@ browser.runtime.onMessage.addListener((message) => {
       // a deliberate invariant, not an accident: see assertNoRawPii.
       error: (err && err.message) || String(err),
     }));
+  }
+
+  // TASK 1 (Stop). background.js relays this from the popup, targeting
+  // whichever tab it has tracked as running a loop (see
+  // handleStopAgentLoop()) -- Chrome's default tabs.sendMessage routing
+  // targets frameId 0 (the top frame) exactly like RUN_AGENT_LOOP above,
+  // so the same defense-in-depth guard applies here too.
+  if (message.type === "STOP_AGENT_LOOP") {
+    if (!IS_TOP_FRAME) {
+      return Promise.resolve({ ok: false, error: "STOP_AGENT_LOOP received in a non-top frame" });
+    }
+    if (currentRunAbortController) {
+      currentRunAbortController.abort();
+      console.log(
+        "[agent-loop] STOP requested by user -- will halt at the next safe point " +
+          "(before the next step, during the /analyze retry, or before dispatching the next action)."
+      );
+      return Promise.resolve({ ok: true });
+    }
+    return Promise.resolve({ ok: false, error: "no agent loop is currently running in this tab" });
   }
 
   console.log("[content] received message (no handler for this type):", message.type, message);

@@ -41,7 +41,11 @@
         "lib/frame-coords.js",
         "lib/element-ranker.js",
         "lib/action-risk.js",
-        "lib/stall-detector.js"
+        "lib/stall-detector.js",
+        "lib/run-registry.js",
+        "lib/action-describe.js",
+        "lib/error-messages.js",
+        "lib/server-url.js"
       ],
       "matches": ["<all_urls>"]
     }

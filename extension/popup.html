@@ -5,7 +5,7 @@
   <title>SIH 26171 Agent</title>
   <style>
     body {
-      width: 320px;
+      width: 360px;
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       font-size: 13px;
       padding: 12px;
@@ -22,7 +22,8 @@
       text-transform: uppercase;
       letter-spacing: 0.03em;
     }
-    textarea {
+    textarea,
+    input[type="text"] {
       width: 100%;
       box-sizing: border-box;
       font-family: inherit;
@@ -32,6 +33,7 @@
     }
     button {
       margin-top: 6px;
+      margin-right: 6px;
       padding: 6px 10px;
       font-size: 12px;
       cursor: pointer;
@@ -40,13 +42,25 @@
       cursor: default;
       opacity: 0.6;
     }
+    #stopAgentLoop {
+      background: #fdecea;
+      border: 1px solid #e0847c;
+      color: #a3312a;
+      font-weight: 600;
+    }
+    #stopAgentLoop:disabled {
+      background: none;
+      border-color: #ccc;
+      color: inherit;
+      font-weight: normal;
+    }
     p.hint {
       color: #666;
       margin: 4px 0 6px;
       line-height: 1.4;
     }
-    #saveStatus {
-      color: #2a7d2a;
+    #saveStatus,
+    #serverUrlStatus {
       min-height: 1em;
       margin: 4px 0 0;
     }
@@ -92,6 +106,68 @@
       border-color: #f0b4ae;
       color: #a3312a;
     }
+
+    /* Tier 4 (usable-extension pass), TASK 2: live run status panel. */
+    #runStatus {
+      margin-top: 8px;
+      font-size: 12px;
+    }
+    #runStatus:empty {
+      margin-top: 0;
+    }
+    .run-status-line {
+      margin: 4px 0;
+    }
+    .run-status-goal {
+      color: #666;
+      font-style: italic;
+    }
+    /* TASK 2's explicit requirement: a guard refusal must be UNMISSABLE,
+       not just another line of text -- distinct color from the generic
+       error banner below, so "the safety feature fired" is visually
+       distinguishable from "something broke". */
+    .blocked-banner {
+      margin: 6px 0;
+      padding: 8px;
+      border-radius: 4px;
+      background: #fff2d6;
+      border: 1px solid #e0a83c;
+      color: #7a5300;
+    }
+    .error-banner {
+      margin: 6px 0;
+      padding: 8px;
+      border-radius: 4px;
+      background: #fdecea;
+      border: 1px solid #e0847c;
+      color: #a3312a;
+    }
+    .outcome-banner {
+      margin: 6px 0;
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid transparent;
+    }
+    .outcome-success {
+      background: #eefbf0;
+      border-color: #b7e0bf;
+      color: #256d34;
+    }
+    .outcome-warning {
+      background: #fff6e0;
+      border-color: #e0c060;
+      color: #8a6400;
+    }
+    .outcome-error {
+      background: #fdecea;
+      border-color: #f0b4ae;
+      color: #a3312a;
+    }
+    .outcome-neutral {
+      background: #eef1f4;
+      border-color: #c7d0d8;
+      color: #3a4650;
+    }
   </style>
 </head>
 <body>
@@ -127,20 +203,40 @@
 
   <hr />
 
-  <h2>Phase 4: full agent loop</h2>
+  <h2>Full agent loop</h2>
   <p class="hint">
     Runs the complete capture &rarr; detect &rarr; scan &rarr; redact &rarr;
-    send &rarr; act loop against the CURRENT tab, up to 6 steps or until the
-    agent reports "done". Requires the local FastAPI server running at
-    <code>http://localhost:8000</code> (see <code>demo/README.md</code>).
-    Open the page's own DevTools console (not this popup's) BEFORE
-    clicking -- all instrumentation and the Section 5 payload check are
-    logged there, not here.
+    send &rarr; act loop against the CURRENT tab, up to 25 steps or until the
+    agent reports "done". Requires the FastAPI server running and reachable
+    at the Server URL configured under Settings below. Live progress
+    (step, stage, last action, any blocked/refused action, and any error)
+    is shown here as the loop runs -- the page's own DevTools console still
+    has the full per-stage instrumentation and the Section 5 payload check,
+    for anyone who wants that level of detail.
   </p>
   <button id="runAgentLoop" type="button">Run Agent Loop</button>
+  <button id="stopAgentLoop" type="button" disabled>Stop</button>
+  <div id="runStatus"></div>
   <pre id="agentLoopResult"></pre>
 
+  <hr />
+
+  <h2>Settings</h2>
+  <p class="hint">
+    Server URL for the FastAPI backend (default <code>http://localhost:8000</code>).
+    Must be within this extension's permitted hosts
+    (<code>http://localhost/*</code>, <code>http://127.0.0.1/*</code>) --
+    Chrome blocks anything else at the network layer regardless of what is
+    typed here. Using a different host requires widening
+    <code>manifest.json</code>'s <code>host_permissions</code> and
+    reloading the extension; that is a separate, deliberate decision, not
+    something this field can do on its own.
+  </p>
+  <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" />
+  <button id="saveServerUrl" type="button">Save Server URL</button>
+  <p id="serverUrlStatus"></p>
+
   <script src="vendor/browser-polyfill.js"></script>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

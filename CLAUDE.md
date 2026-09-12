@@ -320,6 +320,26 @@ Rationale: an agent typing into a password field is the exact failure this proje
 - ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
+### TIER 4 — PRODUCT SURFACE. Recorded 2026-09-12. **480 tests green** (332 JS + 148 server).
+
+The extension was autonomous, `MAX_STEPS: 25`, injecting on `<all_urls>`, dispatching real clicks — **with no way to stop it.** That was the most important missing control, ahead of any polish.
+
+**STOP — two independent abort paths, because they live in different execution contexts:**
+- *Fetch* (`background.js`): an `AbortController` per request, registered in a `tabId → controller` map BEFORE `fetch()`. Stop aborts it **synchronously, before** the relay message is even sent — so the request dies immediately rather than waiting on a round trip. Resolves as `{errorCode: "STOPPED"}`, which `isRetryableAnalyzeFailure` treats as non-retryable.
+- *Backoff* (`content.js`): a run-scoped controller; `sleep()` races the timer against the abort event, so Stop doesn't ride out a 1–4s jittered delay.
+
+Stop is checked at the top of each step, each retry attempt, after the backoff, after redact (pre-send), and immediately before dispatch — so **a click/type is never half-dispatched**. `try/finally` guarantees `outcome: "stopped"` is recorded on every exit path; that value is used nowhere else and can never be confused with `"done"` or `"stalled"`.
+
+**Run state lives in `background.js`, mirrored to `chrome.storage.session`.** Reasoning: `content.js` executes the loop but the popup can't reach it; the popup is destroyed on blur so it can't hold state. `session` (not `local`) is memory-only for the browser session yet survives SW eviction — a fresh SW rehydrates on first query rather than starting blank. Feature-detected, degrading to in-memory on older Chrome.
+
+**🔒 `action-describe.js` NEVER echoes the typed value.** The popup shows *"typed into Full name"*, not *"typed hunter2"*. Not requested — the agent applied the project's own principle to its UI layer, where a leak would be exactly as real as one on the wire.
+
+**Error mapping** (`error-messages.js`): network failure → *"Server not reachable at <url> — is uvicorn running?"*; `VLM_BACKEND_CALL_FAILED` detects the embedded exception class and gives backend-specific text; `PII_LEAK_DETECTED` flagged as a server-side bug, not user-actionable.
+
+**Server URL** is configurable and persisted, validated against `host_permissions` in BOTH the popup and defensively inside `handleAnalyze` — so a hand-edited storage value yields `SERVER_URL_NOT_PERMITTED`, never an opaque "Failed to fetch". A test reads the REAL `manifest.json` and asserts the patterns never drift from what the code validates against.
+
+**🔴 ORCHESTRATOR RULING — `host_permissions` stays narrow (`localhost` / `127.0.0.1`).** A remote server is a legitimate want, but broadening host permissions is a security decision that must be explicit user opt-in, not a side effect of a settings field. If it's needed later, the right mechanism is `optional_host_permissions` with a runtime consent prompt — never a blanket widening.
+
 ### TIER 2 — `element-ranker.js` + `action-risk.js`. Recorded 2026-09-11. ✅ **BUILT, TESTED, AND WIRED.**
 
 #### WIRING RESULT — 2026-09-11. 393 tests green (245 JS across 7 suites + 148 server).
