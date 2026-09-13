@@ -273,22 +273,81 @@ function frameIdForAgentId(agentId) {
 let lastFrameScan = null; // { idMap, sensitiveAgentIds }
 
 if (!IS_TOP_FRAME) {
-  // One opaque, random, PII-free token, announced to the immediate parent
-  // exactly once. See the FRAME COORDINATION block comment above for why
-  // this is the ONLY thing that ever crosses via postMessage.
+  // One opaque, random, PII-free token, announced to the immediate parent.
+  // See the FRAME COORDINATION block comment above for why this is the
+  // ONLY thing that ever crosses via postMessage.
+  //
+  // 🔴 BUG FOUND BY A REAL BROWSER RUN (framesReported > 0, framesMerged
+  // 0, deterministically, on every step -- never self-healing): this used
+  // to be sent EXACTLY ONCE, synchronously, the moment this frame's own
+  // content.js finished evaluating. postMessage delivery is NOT queued
+  // for a listener that doesn't exist yet -- if the TOP frame's own
+  // content.js (which registers the "message" listener below, near
+  // `tokenToIframeElement`) hasn't reached that line yet at the exact
+  // moment this fires, the message is dispatched into a frame with zero
+  // listeners and is gone forever. There is no cross-frame ordering
+  // guarantee between two DIFFERENT documents' own `document_idle`
+  // timings -- none. A heavier top page (more inline script, more DOM,
+  // e.g. demo/frames-test.html's ruler-building code) can easily still be
+  // initializing its content script while a lighter iframe's has already
+  // finished and fired its one and only postMessage. This is NOT a
+  // "startup race that a later step self-heals" -- the token is consumed
+  // by this exact moment or not at all, and nothing ever resent it, so
+  // every later step of the SAME page load stayed permanently broken.
+  //
+  // FIX: keep announcing on a short interval until the parent explicitly
+  // ACKs (see the top frame's "message" listener below, which now replies
+  // with SIH_FRAME_TOKEN_ACK once it has correlated the token to a live
+  // <iframe> element). This makes the handshake resilient to ANY parent
+  // init delay, not just today's observed one -- exactly the same
+  // "retry instead of trusting a single fragile attempt" posture
+  // SCAN_THIS_FRAME already has (background.js re-asks every step; this
+  // is the equivalent for the ONE part of the protocol that previously
+  // had no retry at all). Still only the same opaque, PII-free token,
+  // resent verbatim -- the security contract is unchanged.
   const frameToken =
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `tok-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-  try {
-    window.parent.postMessage({ type: "SIH_FRAME_TOKEN", token: frameToken }, "*");
-  } catch (err) {
-    // Should not happen (postMessage to window.parent is always legal,
-    // same- or cross-origin) but must never crash this frame's content
-    // script if it somehow does.
-    console.error("[content] failed to announce SIH_FRAME_TOKEN to parent (non-fatal):", err?.message || err);
+  const ANNOUNCE_RETRY_MS = 200;
+  const ANNOUNCE_MAX_ATTEMPTS = 30; // ~6s of retrying -- generous relative to document_idle timings in practice, bounded so a permanently-unreachable parent (e.g. this frame somehow has no parent content script at all) doesn't spam forever.
+  let announceAttempts = 0;
+  let announceIntervalId = null;
+
+  function announceFrameToken() {
+    announceAttempts += 1;
+    try {
+      window.parent.postMessage({ type: "SIH_FRAME_TOKEN", token: frameToken }, "*");
+    } catch (err) {
+      // Should not happen (postMessage to window.parent is always legal,
+      // same- or cross-origin) but must never crash this frame's content
+      // script if it somehow does.
+      console.error("[content] failed to announce SIH_FRAME_TOKEN to parent (non-fatal):", err?.message || err);
+    }
+    if (announceAttempts >= ANNOUNCE_MAX_ATTEMPTS && announceIntervalId !== null) {
+      clearInterval(announceIntervalId);
+      announceIntervalId = null;
+      console.warn(
+        "[content] SIH_FRAME_TOKEN never acknowledged by the parent after " +
+          ANNOUNCE_MAX_ATTEMPTS +
+          " attempts -- giving up. This frame's reports will be dropped (and defensively redacted whole, see " +
+          "collectAndMergeSubframeReports()) until a future navigation retries the handshake."
+      );
+    }
   }
+
+  window.addEventListener("message", (event) => {
+    const data = event && event.data;
+    if (!data || data.type !== "SIH_FRAME_TOKEN_ACK" || data.token !== frameToken) return;
+    if (announceIntervalId !== null) {
+      clearInterval(announceIntervalId);
+      announceIntervalId = null;
+    }
+  });
+
+  announceFrameToken(); // fire immediately -- the common case (parent already ready) still resolves in one round trip, no artificial delay added.
+  announceIntervalId = setInterval(announceFrameToken, ANNOUNCE_RETRY_MS);
 
   /**
    * Scan THIS frame's own document and return a report shaped for the
@@ -417,7 +476,30 @@ if (IS_TOP_FRAME) {
       }
     });
     if (match) {
+      const alreadyKnown = tokenToIframeElement.has(data.token);
       tokenToIframeElement.set(data.token, match);
+      if (!alreadyKnown) {
+        // Loud on success too, not just failure -- mirrors this codebase's
+        // existing convention (e.g. "Section 5 check PASSED" is logged
+        // unconditionally, not only its failure path). A one-line
+        // confirmation that a subframe's geometry token correlated costs
+        // nothing and is the fastest way to tell signature A/B/D apart
+        // from signature C at a glance without opening the Network tab.
+        console.log("[content] correlated SIH_FRAME_TOKEN to an <iframe> element -- this subframe's reports can now be offset-translated and merged.");
+      }
+      // ACK back to the SPECIFIC sender (event.source, not a broadcast) so
+      // the child can stop its retry loop -- see the subframe-side
+      // announceFrameToken() comment for why this retry/ack pair exists at
+      // all (a real browser run found the previous one-shot send could be
+      // dispatched before this listener even existed, losing the token
+      // forever with no way to recover for the rest of that page load).
+      // Still just the same opaque token, echoed back -- no new PII-bearing
+      // channel is created by this ack.
+      try {
+        event.source.postMessage({ type: "SIH_FRAME_TOKEN_ACK", token: data.token }, "*");
+      } catch (err) {
+        console.error("[content] failed to ack SIH_FRAME_TOKEN back to child (non-fatal -- child will keep retrying until its own attempt cap):", err?.message || err);
+      }
     }
     // No match: either a stray/unrelated postMessage, or the iframe was
     // removed between sending its token and this event -- ignored, not
@@ -438,32 +520,75 @@ if (IS_TOP_FRAME) {
  * returned `droppedFrames` list, which runAgentLoop() surfaces in the
  * instrumentation) -- never merged with a fabricated offset.
  *
- * @returns {Promise<{sensitiveNodes: Array, domSnapshot: Array, unscannableRegions: Array, framesReported: number, framesMerged: number, droppedFrames: Array}>}
+ * 🔴 REAL-BROWSER BUG FOUND (real-site hardening pass, follow-up): a
+ * dropped report used to be JUST logged -- the iframe's actual on-screen
+ * region was never added to `unscannableRegions`, so nothing redacted it
+ * and full-page capture still rendered whatever PII it contained straight
+ * into the screenshot sent to the model. `assertNoRawPii` never caught
+ * this because it only inspects the DOM JSON payload, not the image --
+ * exactly the "assertion reports clean while PII leaves the browser"
+ * failure Tier 1 exists to close. FIX below: any `<iframe>` this step
+ * could NOT positively confirm is covered by a merged report -- whether
+ * its report was dropped (this step's droppedFrames) or it hasn't
+ * reported at all yet (still loading / handshake not yet acked) -- gets
+ * its WHOLE on-screen rect pushed into `unscannableRegions` and
+ * defensively blacked out, mirroring the closed-shadow-root policy
+ * (CLAUDE.md TIER 1, ORCHESTRATOR RULING 1: "when you cannot see inside,
+ * over-redact"). This never fabricates a bbox for the PII *inside* the
+ * iframe (that would still violate FAIL LOUD, NOT WRONG) -- it redacts
+ * the CONTAINER, which this frame can always measure honestly regardless
+ * of whether the child's report ever arrives, same as a closed shadow
+ * host's content is unknown but its HOST element's box is not.
+ *
+ * @returns {Promise<{sensitiveNodes: Array, domSnapshot: Array, unscannableRegions: Array, framesReported: number, framesMerged: number, droppedFrames: Array, defensivelyRedactedIframeCount: number}>}
  */
 async function collectAndMergeSubframeReports() {
   await loadLibModules();
-  const empty = { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [], framesReported: 0, framesMerged: 0, droppedFrames: [] };
 
   let collectResp;
   try {
     collectResp = await browser.runtime.sendMessage({ type: "COLLECT_FRAME_REPORTS" });
   } catch (err) {
     console.error("[content] COLLECT_FRAME_REPORTS failed (non-fatal -- proceeding with top-frame-only coverage this step):", err?.message || err);
-    return empty;
+    // Even a fully failed COLLECT_FRAME_REPORTS round trip doesn't excuse
+    // leaving a live <iframe>'s content unredacted in the screenshot --
+    // fall through to the same defensive-redaction pass below with zero
+    // merged reports, rather than returning `empty` early.
+    return mergeAndDefensivelyRedactUnmergedIframes([[], [], []], [], { framesReported: 0 });
   }
   const reports = (collectResp && collectResp.frameReports) || [];
 
   const merged = { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [] };
   const droppedFrames = [];
+  const mergedIframeEls = new Set();
 
   for (const report of reports) {
     if (!report || report.ok !== true) {
       droppedFrames.push({ frameId: report && report.frameId, reason: (report && report.error) || "unknown failure" });
       continue;
     }
-    const iframeEl = tokenToIframeElement.get(report.token);
+    let iframeEl = tokenToIframeElement.get(report.token);
+    let staleDetached = false;
+    if (iframeEl && !iframeEl.isConnected) {
+      // Stale mapping (e.g. the page reloaded and re-created this iframe
+      // under a NEW frameId while background.js's knownFrames registry
+      // -- keyed by tabId, never pruned on navigation, see background.js's
+      // own comment -- still remembers the OLD one). Trusting a detached
+      // element's getBoundingClientRect() here would silently produce a
+      // {0,0,0,0}-ish offset that LOOKS resolved but is meaningless --
+      // exactly the "wrong bbox that looks like success" this whole
+      // module refuses to do. Purge it and treat as unresolved.
+      tokenToIframeElement.delete(report.token);
+      iframeEl = null;
+      staleDetached = true;
+    }
     if (!iframeEl) {
-      droppedFrames.push({ frameId: report.frameId, reason: "offset unresolved (token not yet correlated to an <iframe> element)" });
+      droppedFrames.push({
+        frameId: report.frameId,
+        reason: staleDetached
+          ? "resolved <iframe> element is no longer connected to the document (stale mapping, purged)"
+          : "offset unresolved (token not yet correlated to a live <iframe> element)",
+      });
       continue;
     }
     const rect = iframeEl.getBoundingClientRect();
@@ -481,6 +606,7 @@ async function collectAndMergeSubframeReports() {
       droppedFrames.push({ frameId: report.frameId, reason: "translateFrameReport threw: " + (err?.message || err) });
       continue;
     }
+    mergedIframeEls.add(iframeEl);
     merged.sensitiveNodes.push(...translated.sensitiveNodes);
     merged.domSnapshot.push(...translated.domSnapshot);
     merged.unscannableRegions.push(...translated.unscannableRegions);
@@ -488,12 +614,73 @@ async function collectAndMergeSubframeReports() {
 
   if (droppedFrames.length > 0) {
     console.warn(
-      `[agent-loop] ${droppedFrames.length} subframe report(s) DROPPED this step (not merged -- see frame-coords.js's FAIL LOUD policy):`,
+      `[agent-loop] ${droppedFrames.length} subframe report(s) DROPPED this step (not merged -- see frame-coords.js's FAIL LOUD policy). ` +
+        "The affected <iframe>(s) are defensively redacted whole below -- see the next warning if any were found:",
       droppedFrames
     );
   }
 
-  return { ...merged, framesReported: reports.length, framesMerged: reports.length - droppedFrames.length, droppedFrames };
+  return mergeAndDefensivelyRedactUnmergedIframes(
+    [merged.sensitiveNodes, merged.domSnapshot, merged.unscannableRegions],
+    droppedFrames,
+    { framesReported: reports.length, mergedIframeEls }
+  );
+}
+
+/**
+ * Shared tail of collectAndMergeSubframeReports(): given whatever WAS
+ * successfully merged this step (possibly nothing at all, e.g. when
+ * COLLECT_FRAME_REPORTS itself failed), defensively redact every
+ * `<iframe>` currently in this document that is NOT accounted for by a
+ * merged report -- see the FAIL LOUD doc comment above for why this
+ * exists. Split out so the "COLLECT_FRAME_REPORTS itself failed" early
+ * return above can share this exact policy instead of duplicating it.
+ *
+ * @param {[Array, Array, Array]} mergedArrays [sensitiveNodes, domSnapshot, unscannableRegions]
+ * @param {Array} droppedFrames
+ * @param {{framesReported: number, mergedIframeEls?: Set}} meta
+ */
+function mergeAndDefensivelyRedactUnmergedIframes([sensitiveNodes, domSnapshot, unscannableRegions], droppedFrames, meta) {
+  const mergedIframeEls = meta.mergedIframeEls || new Set();
+  const allIframeEls = Array.from(document.querySelectorAll("iframe"));
+  const unmergedIframeEls = allIframeEls.filter((el) => !mergedIframeEls.has(el));
+
+  const defensiveRegions = [];
+  if (unmergedIframeEls.length > 0) {
+    for (const el of unmergedIframeEls) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue; // not rendered -- nothing on screen to leak
+      let selector = "iframe";
+      try {
+        if (DomScanner && typeof DomScanner.computeSelector === "function") selector = DomScanner.computeSelector(el);
+      } catch (_err) {
+        /* selector is cosmetic (logging/debugging only) -- never let it block the actual redaction below */
+      }
+      defensiveRegions.push({
+        selector,
+        bbox: { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
+        reason: "subframe-report-unmerged-this-step",
+      });
+    }
+    if (defensiveRegions.length > 0) {
+      console.warn(
+        `[agent-loop] ${defensiveRegions.length} <iframe> element(s) have NO confirmed-merged report this step -- ` +
+          "defensively redacting their FULL on-screen rect so the screenshot never exposes unverified iframe content " +
+          "(same policy as closed-shadow-root handling; never silently left unredacted):",
+        defensiveRegions.map((r) => r.selector)
+      );
+    }
+  }
+
+  return {
+    sensitiveNodes,
+    domSnapshot,
+    unscannableRegions: unscannableRegions.concat(defensiveRegions),
+    framesReported: meta.framesReported,
+    framesMerged: meta.framesReported - droppedFrames.length,
+    droppedFrames,
+    defensivelyRedactedIframeCount: defensiveRegions.length,
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -2019,14 +2206,21 @@ browser.runtime.onMessage.addListener((message) => {
   if (message.type === "RUN_AGENT_LOOP") {
     // FRAME COORDINATION guard (real-site hardening pass): this file now
     // runs in every frame (manifest.json's all_frames:true), so this
-    // listener exists in every subframe too. Chrome's default
-    // chrome.tabs.sendMessage routing already targets frameId 0 (the top
-    // frame) when background.js's handleRunAgentLoopFromPopup sends this
-    // without an explicit {frameId}, so a subframe should never actually
-    // receive it -- but this guard is defense in depth, not decoration:
-    // it costs nothing and turns "the loop silently ran twice, once per
-    // frame, corrupting shared state" into a clean, loud, immediate
-    // error if that routing assumption is ever wrong.
+    // listener exists in every subframe too.
+    //
+    // 🔴 CORRECTED CLAIM (this comment used to be wrong -- found by a real
+    // browser run): chrome.tabs.sendMessage does NOT default to frameId 0.
+    // Per Chrome's own docs, omitting `frameId` delivers the message to
+    // EVERY frame of the tab. background.js's handleRunAgentLoopFromPopup()
+    // now passes `{frameId: 0}` explicitly (see its own comment for the
+    // live-run evidence: without it, this listener really did fire in
+    // BOTH frames, and the subframe's near-instant guard rejection below
+    // could win the race for the popup's displayed result while the top
+    // frame's real run kept going, disconnected, in the background). This
+    // guard stays regardless -- defense in depth against exactly that
+    // scenario recurring if background.js's explicit frameId is ever
+    // dropped again -- but it is no longer "should never fire," it is
+    // "closes a real hole that already fired once."
     if (!IS_TOP_FRAME) {
       return Promise.resolve({
         type: "RUN_AGENT_LOOP_ERROR",
@@ -2045,9 +2239,9 @@ browser.runtime.onMessage.addListener((message) => {
 
   // TASK 1 (Stop). background.js relays this from the popup, targeting
   // whichever tab it has tracked as running a loop (see
-  // handleStopAgentLoop()) -- Chrome's default tabs.sendMessage routing
-  // targets frameId 0 (the top frame) exactly like RUN_AGENT_LOOP above,
-  // so the same defense-in-depth guard applies here too.
+  // handleStopAgentLoop()), now also with an explicit `{frameId: 0}` for
+  // the same reason as RUN_AGENT_LOOP above -- the same defense-in-depth
+  // guard applies here too.
   if (message.type === "STOP_AGENT_LOOP") {
     if (!IS_TOP_FRAME) {
       return Promise.resolve({ ok: false, error: "STOP_AGENT_LOOP received in a non-top frame" });

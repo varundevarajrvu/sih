@@ -355,6 +355,27 @@ function sendToFrameWithTimeout(tabId, frameId, message) {
   ]);
 }
 
+// 🔴 REAL-BROWSER BUG FOUND (real-site hardening pass, follow-up):
+// `knownFrames` is populated by FRAME_HELLO but this file's own comment
+// above already conceded it is "NEVER cleared except on tab close" and
+// called a stale entry "harmless". That was wrong in one specific way: a
+// stale frameId (e.g. left behind by a full-page reload of a tab that
+// previously had an iframe -- the reload gives the NEW iframe a brand new
+// frameId while the OLD one lingers, since nothing prunes on navigation)
+// gets re-polled by THIS function on every single step for the rest of
+// that tab's life, always failing the same way ("receiving end does not
+// exist" -- that content script is gone), permanently inflating
+// `framesReported`/`framesDropped` by one and wasting a full
+// FRAME_ROUND_TRIP_TIMEOUT_MS on a frame that will never answer. This is
+// the leading explanation for a real run's `framesReported: 2` on a page
+// that only ever embeds ONE iframe. Genuinely harmless from a
+// correctness standpoint (content.js's own defensive-redaction fallback
+// -- see its collectAndMergeSubframeReports() -- covers the resulting
+// drop regardless), but not "harmless" in the sense the old comment
+// meant, so: prune a frameId the instant we get positive confirmation
+// it's gone, rather than only on tab close.
+const FRAME_GONE_ERROR_RE = /does not exist|no frame with id|no tab with id/i;
+
 /**
  * Ask every KNOWN subframe of `tabId` (i.e. every frameId that has sent at
  * least one FRAME_HELLO, EXCLUDING frameId 0, the top frame, which scans
@@ -366,6 +387,15 @@ function sendToFrameWithTimeout(tabId, frameId, message) {
  * inside the frame's own scan) becomes `{ ok: false, frameId, error }` in
  * the results array rather than failing the whole batch, so one bad frame
  * can never take down coverage of the others.
+ *
+ * A frameId whose failure POSITIVELY confirms it no longer exists (matches
+ * FRAME_GONE_ERROR_RE) is pruned from `knownFrames` right here -- see the
+ * comment above for why this isn't just a performance nicety. A bare
+ * TIMEOUT is deliberately NOT treated as "gone" -- that frame may simply be
+ * slow/busy this step and could still answer next step (the existing,
+ * declared "self-heals within remaining steps" behavior for a
+ * still-loading iframe); pruning on a timeout would wrongly convert that
+ * into a permanent, unrecoverable drop.
  *
  * @param {number} tabId
  * @returns {Promise<{ frameReports: Array<object> }>}
@@ -381,7 +411,12 @@ async function collectFrameReports(tabId) {
         }
         return { ...resp, frameId };
       } catch (err) {
-        return { ok: false, frameId, error: err?.message || String(err) };
+        const message = err?.message || String(err);
+        if (FRAME_GONE_ERROR_RE.test(message)) {
+          const set = knownFrames.get(tabId);
+          if (set) set.delete(frameId);
+        }
+        return { ok: false, frameId, error: message };
       }
     })
   );
@@ -546,7 +581,9 @@ async function handleStopAgentLoop() {
   }
 
   try {
-    const resp = await browser.tabs.sendMessage(tabId, { type: "STOP_AGENT_LOOP" });
+    // See handleRunAgentLoopFromPopup()'s matching comment -- omitting
+    // frameId broadcasts to every frame of the tab, not just the top one.
+    const resp = await browser.tabs.sendMessage(tabId, { type: "STOP_AGENT_LOOP" }, { frameId: 0 });
     return { type: "STOP_AGENT_LOOP_RESULT", ok: true, contentAck: resp };
   } catch (err) {
     // Content script unreachable (tab closed/navigated away). The abort()
@@ -1090,7 +1127,27 @@ async function handleRunAgentLoopFromPopup() {
   await persistRunState();
 
   try {
-    const response = await browser.tabs.sendMessage(tab.id, { type: "RUN_AGENT_LOOP" });
+    // 🔴 BUG FOUND BY A REAL BROWSER RUN (real-site hardening pass,
+    // follow-up): this used to omit `{frameId: 0}`, on the belief (stated
+    // in content.js's own RUN_AGENT_LOOP listener comment, which was
+    // WRONG and has been corrected) that Chrome's default routing already
+    // targets the top frame only. It does not -- per chrome.tabs.sendMessage's
+    // own documented behaviour, omitting frameId delivers to EVERY frame
+    // of the tab. On a page with a subframe (e.g. demo/frames-test.html),
+    // this actually reached content.js's listener in BOTH frames: the
+    // subframe's own defense-in-depth guard ("RUN_AGENT_LOOP received in
+    // a non-top frame") resolves near-instantly and can win the race for
+    // THIS function's single `response`, while the TOP frame's own
+    // runAgentLoop() invocation keeps running, completely disconnected
+    // from what the popup displays -- confirmed live: the popup showed
+    // "RUN_AGENT_LOOP received in a non-top frame -- refusing to run a
+    // second agent loop instance" while the top frame's own RUN SUMMARY
+    // was still printing to the console seconds later. Explicitly
+    // targeting frameId 0 removes the race at the source instead of
+    // depending on the subframe's guard to merely avoid a SECOND loop
+    // instance (which it does) while still leaving the popup's reported
+    // outcome wrong (which it did).
+    const response = await browser.tabs.sendMessage(tab.id, { type: "RUN_AGENT_LOOP" }, { frameId: 0 });
     const outcome = response && typeof response.outcome === "string" ? response.outcome : "failed";
     runState = RunRegistry.finishRun(runState, outcome);
     await persistRunState();
