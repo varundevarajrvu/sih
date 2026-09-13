@@ -224,22 +224,38 @@ different one.
    much slower detection (Phase 0's wasm+fp32 number was 33,576ms
    median warm — 4x slower than webgpu).
 
-3. **`webextension-polyfill` is vendored as a plain `<script>`/
-   `importScripts()` file, not bundled with esbuild into each entry
-   point.** Only `offscreen.entry.js` strictly needs esbuild (mandatory
-   carry-over #6 — transformers.js's bare-specifier imports). Bundling
-   `background.js`/`content.js`/`popup.js` too would add a second build
-   step and MV3 module-service-worker complications for no real benefit,
-   since `webextension-polyfill` ships a UMD build designed exactly for
-   `<script>`/`importScripts()` use. `background.js` is declared as a
-   **classic** (non-module) service worker specifically so it can
-   `importScripts("vendor/browser-polyfill.js")`. `content.js` and
-   `popup.js` load it via a plain `<script src="vendor/browser-polyfill.js">`
-   tag before their own script. `chrome.offscreen.createDocument` and
+3. **`webextension-polyfill` is vendored as a UMD build, not bundled with
+   esbuild into each entry point.** Only `offscreen.entry.js` strictly
+   needs esbuild (mandatory carry-over #6 — transformers.js's
+   bare-specifier imports). `content.js`/`popup.js` load it via a plain
+   `<script src="vendor/browser-polyfill.js">` tag (or a manifest
+   `content_scripts.js` array entry) before their own script — both are
+   classic scripts. `chrome.offscreen.createDocument` and
    `chrome.runtime.onInstalled`/`onStartup` are deliberately left as
    native `chrome.*` calls (no Firefox equivalent exists for
    `chrome.offscreen` — this is the intended future branch point for the
    Firefox retrofit pass CLAUDE.md describes).
+
+   **CORRECTION (superseded design, kept for history):** `background.js`
+   was originally declared as a **classic** (non-module) service worker
+   specifically so it could `importScripts("vendor/browser-polyfill.js")`,
+   with the five `lib/*.js` helper modules (`run-registry.js`,
+   `action-describe.js`, `error-messages.js`, `server-url.js`,
+   `capture-plan.js`) loaded via `await import(chrome.runtime.getURL(...))`
+   inside a `loadHelperLibs()` function. **This was broken in production**
+   — dynamic `import()` is disallowed inside `ServiceWorkerGlobalScope` by
+   the HTML spec (Chrome: `Uncaught TypeError: import() is disallowed on
+   ServiceWorkerGlobalScope`; see
+   https://github.com/w3c/ServiceWorker/issues/1356), so the service
+   worker never started. `background.js` is now declared as a **MODULE**
+   service worker (`manifest.json`'s `background.type: "module"`), loads
+   the polyfill via a static side-effect `import "./vendor/browser-polyfill.js"`
+   (module workers have no `importScripts()`), and loads all five helper
+   libs via static top-level `import * as X from "./lib/x.js"` instead of
+   `loadHelperLibs()`, which no longer exists. `content.js` is unaffected
+   — it is a content script (a regular document context, not a service
+   worker), where dynamic `import()` is legitimate and still used for its
+   own six dynamically-loaded libs.
 
 4. **`content_scripts.matches` is `<all_urls>`.** This is the broadest
    possible content-script permission and Chrome will show a

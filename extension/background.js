@@ -11,17 +11,49 @@
 //     correlation by requestId (concurrent requests are supported, not
 //     assumed away).
 //
-// Loaded as a CLASSIC (non-module) service worker on purpose, so it can
-// use importScripts() to load the vendored webextension-polyfill build
-// -- see extension/README.md "Why importScripts instead of bundling"
-// for the reasoning. Everything below this line uses `browser.*`
-// (polyfilled, promise-based, matches popup.js) EXCEPT chrome.offscreen
-// and chrome.runtime.onInstalled/onStartup, which have no Firefox
-// equivalent and are deliberately left as native `chrome.*` calls -- a
-// clearly-marked branch point for the future Firefox retrofit pass
-// (CLAUDE.md: "chrome.offscreen branch only if the Firefox event-page
-// path doesn't pan out").
-importScripts("vendor/browser-polyfill.js");
+// Loaded as a MODULE service worker (manifest.json's `background.type` is
+// `"module"`) because this file needs `lib/*.js` -- those modules use real
+// ES `export` syntax, and dynamic `import()` is DISALLOWED inside
+// ServiceWorkerGlobalScope by the HTML spec (see
+// https://github.com/w3c/ServiceWorker/issues/1356; Chrome throws
+// "Uncaught TypeError: import() is disallowed on ServiceWorkerGlobalScope"
+// at the first call site and the whole service worker fails to start).
+// A classic (non-module) service worker cannot load them at all:
+// importScripts() only understands classic scripts / UMD-style globals,
+// not files with `export` statements, and dynamic import() -- the thing
+// that would otherwise bridge the gap -- is exactly what's banned. Static
+// top-level `import` is the only mechanism a service worker is allowed to
+// use to pull in ES module code, so this file is a module and
+// importScripts() (module workers don't have it) is replaced below with a
+// static side-effect import of the vendored webextension-polyfill build.
+// Everything below this line uses `browser.*` (polyfilled, promise-based,
+// matches popup.js) EXCEPT chrome.offscreen and
+// chrome.runtime.onInstalled/onStartup, which have no Firefox equivalent
+// and are deliberately left as native `chrome.*` calls -- a clearly-marked
+// branch point for the future Firefox retrofit pass (CLAUDE.md:
+// "chrome.offscreen branch only if the Firefox event-page path doesn't
+// pan out").
+import "./vendor/browser-polyfill.js";
+
+// Static imports for this pass's lib/*.js modules -- same libs content.js
+// loads via dynamic import() (a content script is NOT a service worker, so
+// dynamic import() is legitimate there; see that file's CONTRACT MISMATCH
+// #1 comment). A service worker cannot use dynamic import() at all (see the
+// note above), so these are ordinary static ES imports instead, bound to
+// namespace objects so every existing `RunRegistry.foo()` / `ErrorMessages.
+// foo()` call site below reads exactly as it did when these were populated
+// by `await import(...)`. `web_accessible_resources` still lists these
+// files (manifest.json) for uniformity with every other lib/*.js module --
+// this privileged extension context doesn't strictly need that listing to
+// import its own bundled files, content.js's foreign-page context does.
+import * as RunRegistry from "./lib/run-registry.js";
+import * as ActionDescribe from "./lib/action-describe.js";
+import * as ErrorMessages from "./lib/error-messages.js";
+import * as ServerUrlLib from "./lib/server-url.js";
+// Full-page scroll-and-stitch capture: pure scroll-plan/stitch-geometry
+// math -- see content.js's "FULL-PAGE SCROLL-AND-STITCH CAPTURE" block
+// comment and lib/capture-plan.js's own header for the feature writeup.
+import * as CapturePlanLib from "./lib/capture-plan.js";
 
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 // Generous relative to Phase 0's measured 8,432ms median warm WebGPU
@@ -45,40 +77,6 @@ let serverUrl = DEFAULT_SERVER_URL;
 
 function log(...args) {
   console.log("[background]", ...args);
-}
-
-// ---------------------------------------------------------------------
-// Dynamic-import loader for this pass's new lib/*.js modules. Same
-// pattern content.js already established for dom-scanner.js/redaction.js/
-// etc. (see that file's CONTRACT MISMATCH #1 comment): MV3's declarative
-// content_scripts array has no `type:"module"` option, but this file is a
-// CLASSIC (non-module) service worker for the SAME reason content.js is a
-// classic content script -- importScripts() (used above for the
-// webextension-polyfill) is only available to classic scripts, and
-// dynamic import() works from inside a classic script/service worker
-// regardless, so there is no need to convert this whole file to
-// `"type":"module"` (which would also break importScripts() outright).
-// Unlike content.js, this is a privileged extension context (not a
-// content script running inside a foreign page), so loading its own
-// bundled files this way does not depend on web_accessible_resources --
-// they're listed there anyway (manifest.json), for uniformity with every
-// other lib/*.js module, not because this call site strictly requires it.
-// ---------------------------------------------------------------------
-let RunRegistry = null;
-let ActionDescribe = null;
-let ErrorMessages = null;
-let ServerUrlLib = null;
-// Full-page scroll-and-stitch capture: pure scroll-plan/stitch-geometry
-// math -- see content.js's "FULL-PAGE SCROLL-AND-STITCH CAPTURE" block
-// comment and lib/capture-plan.js's own header for the feature writeup.
-let CapturePlanLib = null;
-
-async function loadHelperLibs() {
-  if (!RunRegistry) RunRegistry = await import(chrome.runtime.getURL("lib/run-registry.js"));
-  if (!ActionDescribe) ActionDescribe = await import(chrome.runtime.getURL("lib/action-describe.js"));
-  if (!ErrorMessages) ErrorMessages = await import(chrome.runtime.getURL("lib/error-messages.js"));
-  if (!ServerUrlLib) ServerUrlLib = await import(chrome.runtime.getURL("lib/server-url.js"));
-  if (!CapturePlanLib) CapturePlanLib = await import(chrome.runtime.getURL("lib/capture-plan.js"));
 }
 
 // Loaded once at SW startup, refreshed live on every chrome.storage.local
@@ -466,7 +464,6 @@ async function loadPersistedRunStateIfMissing() {
  * has to import run-registry.js just to render one boolean correctly.
  */
 async function handleGetRunState() {
-  await loadHelperLibs();
   await loadPersistedRunStateIfMissing();
   const state = runState || RunRegistry.createRunState();
   return { type: "RUN_STATE", state, canStop: RunRegistry.canStop(state) };
@@ -488,7 +485,6 @@ async function handleGetRunState() {
  * fabricate a new "active" run out of nothing.
  */
 async function handleRunProgressUpdate(patch, sender) {
-  await loadHelperLibs();
   const tabId = sender && sender.tab ? sender.tab.id : undefined;
 
   if (!runState || runState.active !== true) {
@@ -528,8 +524,6 @@ const activeAnalyzeAborters = new Map();
  * during one).
  */
 async function handleStopAgentLoop() {
-  await loadHelperLibs();
-
   if (!runState || !RunRegistry.canStop(runState)) {
     return { type: "STOP_AGENT_LOOP_RESULT", ok: false, error: "no agent loop is currently running" };
   }
@@ -883,8 +877,6 @@ async function base64PngToImageBitmap(base64) {
 async function handleStitchAndDetect(message) {
   const tStitch0 = performance.now();
   try {
-    await loadHelperLibs();
-
     const rawSlices = Array.isArray(message && message.slices) ? message.slices : [];
     if (rawSlices.length === 0) {
       return { type: "STITCH_AND_DETECT_ERROR", error: "STITCH_AND_DETECT called with no slices" };
@@ -1000,8 +992,6 @@ async function handleAnalyze(payload, tabId) {
     return { type: "ANALYZE_ERROR", status: 0, error: { message: "ANALYZE called with no payload" } };
   }
 
-  await loadHelperLibs();
-
   if (!ServerUrlLib.isHostAllowed(serverUrl)) {
     const message =
       `Server URL "${serverUrl}" is outside this extension's permitted hosts ` +
@@ -1089,7 +1079,6 @@ async function handleRunAgentLoopFromPopup() {
     return { type: "RUN_AGENT_LOOP_ERROR", error: "no active tab found" };
   }
 
-  await loadHelperLibs();
   let taskGoal = null;
   try {
     const stored = await browser.storage.local.get("taskGoal");
