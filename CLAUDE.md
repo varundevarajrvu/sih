@@ -411,7 +411,31 @@ Why this matters: sensitive nodes are not candidate targets. They are load-beari
 
 **Consumption points** (each file carries a HOW TO CONSUME block): `element-ranker` runs after the sensitive-flag merge and before the `/analyze` POST, fed real viewport dims. `action-risk` runs inside `executeAction()` at the same point `guardSensitive()` does, passed the **live DOM element's** attributes — not the lossy `domSnapshot` — for best recall.
 
-### TIER 1 — IFRAME + SHADOW DOM COVERAGE. Recorded 2026-09-11. **Closed a real privacy hole.**
+### 🔴🔴 CONFIRMED OPEN BUG — IFRAME PII IS NOT REDACTED. Found in-browser 2026-09-13.
+
+**The Tier 1 iframe work does NOT work in practice.** Verified on `demo/frames-test.html`, deterministic across consecutive steps:
+```
+framesReported: 2,  framesMerged: 0,  framesDropped: 2
+subframeSensitiveNodes: 0,  subframeActionableNodes: 0
+```
+Frames report themselves, then **every report is dropped at merge**. The iframe's nodes never reach `domSnapshot`, so no redaction region is built for them — while full-page capture renders that iframe into the stitched image.
+
+**Visually confirmed by Varun: the password field inside the iframe is READABLE in the capture, not blacked out.** The screenshot sent to the model contains an unredacted credential.
+
+**`assertNoRawPii` still reports PASS**, because it inspects the DOM payload, not the image. This is exactly the "assertion reports clean while PII leaves the browser" failure Tier 1 was built to close.
+
+**Why three safety nets all missed it — worth internalising:**
+1. Unit tests cannot see it. `frame-coords.js` is correct and well tested; the bug is a handshake *timing relationship* between `postMessage` and `chrome.runtime`, which no pure function exposes.
+2. The Section 5 assertion inspects the wrong artefact — DOM payload, not image.
+3. **`demo/test-page.html` has no iframes**, so every prior browser run — including the ones producing the project's best evidence — exercised zero frame code.
+
+**⚠️ DOCUMENTATION IS CURRENTLY OVERSTATED.** `README.md` and `site/index.html` present iframe coverage as working. Until this is fixed, that claim is false. Either fix it or correct the docs before any submission — do not ship a privacy claim that a fifteen-minute test disproves.
+
+Fix in progress. The repair must NOT merge with a fabricated or zero offset: a wrong bbox is a leak that looks like success, strictly worse than a visible drop. Unmergeable cases must fail loudly AND defensively redact, the same stance already taken for closed shadow roots.
+
+**Passing in the same run, for the record:** `unscannableRegions: 2` — the closed-shadow MAIN-world patch DID fire, previously unverified. And full-page capture latency is now measured: stitched 959×4862, inference **973ms / 613ms**, essentially unchanged from the ~800ms viewport baseline (the model resizes to a fixed input), with capture+stitch adding ~2.4s per step.
+
+### TIER 1 — IFRAME + SHADOW DOM COVERAGE. Recorded 2026-09-11. ~~Closed a real privacy hole.~~ **SUPERSEDED — see the CONFIRMED OPEN BUG above. This mechanism does not work in a browser.**
 
 Before this, `all_frames` was unset and neither DOM walker pierced shadow roots. PII inside an iframe or shadow root was never scanned, flagged, redacted, or stripped — **and the Section 5 assertion still PASSED**, because it only checks nodes the scanner found. A guarantee that silently doesn't cover part of the page is worse than none. Real sites put payment fields in iframes.
 
