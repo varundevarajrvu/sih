@@ -691,6 +691,56 @@ function mergeAndDefensivelyRedactUnmergedIframes([sensitiveNodes, domSnapshot, 
 // out couches and remotes and destroy the screenshot for no privacy
 // benefit.
 //
+// 🔴 REAL-BROWSER BUG FOUND (a live run dumped a redacted screenshot that
+// is ~97% solid black): the ORIGINAL allowlist here included "tv"/
+// "tvmonitor" and "laptop". Confirmed against a live `redactedRegions`
+// dump on a 959x4862 full-page capture -- TWO vision boxes, both
+// `rawType: "tv"`, one of them {x:63,y:45,w:873,h:4706} covering ~88-97%
+// of the entire image. This is NOT a rare misfire to tune away: the
+// model's input IS a screenshot of a screen. A COCO detector trained to
+// recognize television sets in ordinary photographs of rooms will
+// structurally match the page's own rectangle (or any large screen-shaped
+// region embedded in it, e.g. an ad iframe or a video player) essentially
+// every time it runs on this kind of input -- there is no threshold/score
+// tuning that fixes a category mismatch this fundamental. "laptop" and
+// "cell phone" share the exact same failure mode for the same reason (a
+// laptop screen IS a screenshot-shaped rectangle; a phone screenshot
+// embedded in a page looks exactly like a phone). The consequence is not
+// cosmetic: a fully-blacked screenshot means the vision half of the
+// pipeline contributes NOTHING (defeats its own purpose) while the run
+// still reports success (redactedRegions is non-empty, redact() completes
+// without error) -- over-redaction here is a failure mode, not a safe
+// default, because it silently blinds the agent while looking identical
+// to a healthy run in every log line except the image bytes themselves.
+//
+// DECISION: DROP "tv", "tvmonitor", "laptop", "cell phone" entirely.
+// KEEP "person" and "book". Reasoning, spelled out so a future reader
+// does not "helpfully" re-add the dropped ones:
+//   - "person" and "book" detect a REAL PHOTOGRAPHED SUBJECT (a face, a
+//     document/card image) rendered as CONTENT within the page -- exactly
+//     the category of thing the DOM cannot describe and vision exists to
+//     catch. A face or a book cover does not structurally recur across
+//     ordinary page layouts the way a screen-shaped rectangle does, so
+//     these two do not share the pathological base rate of the dropped
+//     classes. This is also why demo/test-page.html's ID-card face is
+//     still redacted after this change -- it fires as "person" (verified
+//     browser run, CLAUDE.md Phase 4: "detections: 3 ... the ID-card face
+//     firing person"), which this allowlist keeps.
+//   - "tv"/"tvmonitor"/"laptop"/"cell phone" detect SCREEN-SHAPED
+//     RECTANGLES -- and the input is a picture of a screen. There is no
+//     way to keep them that isn't structurally self-defeating on this
+//     project's own input distribution.
+//   - The AREA SANITY CAP below (filterBoxesByAreaCap) is independent
+//     defense-in-depth, not a reason to keep the screen-like classes
+//     "behind the cap" instead of dropping them: a moderately-sized false
+//     "laptop" box (e.g. one that matches only an embedded video player,
+//     well under the area cap) would still be a pure false positive that
+//     buys zero privacy benefit and burns redaction budget/screen space
+//     for no reason. The cap protects against ANY class (including
+//     "person"/"book") producing an implausibly large box; it is not a
+//     substitute for removing classes that are wrong for this input by
+//     construction.
+//
 // NOTE on "map via id2label, never literal-match class names": by the
 // time a detection reaches this file, it has already been through
 // offscreen.entry.js's flattenDetections(), which takes `r.label` --
@@ -699,18 +749,165 @@ function mergeAndDefensivelyRedactUnmergedIframes([sensitiveNodes, domSnapshot, 
 // id2label table (extension/models/Xenova/yolos-tiny/config.json). There
 // is no raw numeric class id available at this layer to map ourselves --
 // only the already-resolved label STRING. This allowlist matches against
-// that resolved string, case-insensitively, and deliberately includes
-// BOTH "tv" (this model's actual id2label value, confirmed against
-// config.json) and "tvmonitor" (a different candidate model's label for
-// the same concept, per CLAUDE.md's "class-name trap" note) so a future
-// detector swap that changes label spelling doesn't silently stop
-// filtering that class in or out.
+// that resolved string, case-insensitively.
 // ---------------------------------------------------------------------
-const PRIVACY_RELEVANT_LABELS = new Set(["person", "tv", "tvmonitor", "laptop", "cell phone", "book"]);
+const PRIVACY_RELEVANT_LABELS = new Set(["person", "book"]);
 
 function filterPrivacyRelevantBoxes(boxes) {
   if (!Array.isArray(boxes)) return [];
   return boxes.filter((b) => b && typeof b.label === "string" && PRIVACY_RELEVANT_LABELS.has(b.label.toLowerCase()));
+}
+
+// ---------------------------------------------------------------------
+// AREA SANITY CAP -- independent second half of the same fix. Even
+// restricted to "person"/"book", a detector can in principle emit an
+// implausibly large box (a mislabeled full-page match, a corrupted
+// inference, a future class re-added by someone who didn't read the
+// comment above). A single vision box covering most of the screenshot is
+// a misfire, not an object: no legitimate face or document-page photo
+// spans that much of an entire page capture, and redacting it protects
+// nothing while destroying the image the model needs to operate.
+//
+// THRESHOLDS, chosen with the real evidence in hand:
+//   - MAX_SINGLE_BOX_AREA_FRACTION = 0.5 (50% of total image area). The
+//     actual observed misfire measured ~88-97% of the frame -- 50% is
+//     comfortably below that with a wide margin (not fitted tightly to
+//     88-97%, which would be fragile against the next, slightly smaller,
+//     misfire) while staying well above any legitimate person/book
+//     detection this project's own demo/tests exercise (a face or an
+//     ID-card image occupies a small fraction of a normal viewport, even
+//     zoomed in).
+//   - MAX_COMBINED_BOX_AREA_FRACTION = 0.65 (65% of total image area,
+//     summed over every box that already passed the single-box cap).
+//     "Several medium boxes can black out a page just as effectively as
+//     one large one" -- e.g. three boxes at 30% each individually clear
+//     the 50% single cap but together cover 90%. The combined cap is set
+//     ABOVE the single-box cap (not equal to it) so genuinely distinct,
+//     legitimate detections can coexist (e.g. two faces plus a document
+//     on one page, ~3 boxes), but still meaningfully below 100% so a
+//     handful of medium-sized misfires cannot collectively reproduce the
+//     same near-total blackout a single oversized box would.
+//
+// SELECTION POLICY when the combined cap would be exceeded: smallest
+// boxes are kept first. Smaller boxes are the more plausible detections
+// (closer to what a real face/document actually looks like in a page
+// screenshot) and larger boxes are exactly the shape of the failure this
+// cap exists to catch -- so when budget runs out, it is the larger boxes
+// that lose their slot, not an arbitrary/input-order tiebreak.
+//
+// EVERY rejection is logged (console.warn) with the offending box's
+// label/score/bbox/fraction-of-image, individually, not just a count.
+// Silently dropping a detection is exactly how the OPPOSITE bug (a real
+// face slipping through unredacted because it happened to get flagged by
+// this cap, with nobody able to tell after the fact) gets introduced
+// later -- CLAUDE.md's "HAZARD 4"/"report dropped even at zero" precedent
+// applies here too, at both the per-box (console.warn) and per-step
+// (instrumentation counters at the redact mark, see runAgentLoop) level.
+// ---------------------------------------------------------------------
+const MAX_SINGLE_BOX_AREA_FRACTION = 0.5;
+const MAX_COMBINED_BOX_AREA_FRACTION = 0.65;
+
+function visionBoxArea(box) {
+  const w = box.xmax - box.xmin;
+  const h = box.ymax - box.ymin;
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return 0; // malformed coords: redaction.js's own isUsableVisionBox() will skip this box later; treat as zero-area here so it can never be wrongly REJECTED by this cap for a reason that isn't actually about size.
+  return Math.abs(w) * Math.abs(h);
+}
+
+function isUsableImageDims(imageDims) {
+  return (
+    imageDims &&
+    typeof imageDims.width === "number" &&
+    Number.isFinite(imageDims.width) &&
+    imageDims.width > 0 &&
+    typeof imageDims.height === "number" &&
+    Number.isFinite(imageDims.height) &&
+    imageDims.height > 0
+  );
+}
+
+/**
+ * Reject any vision box whose area (alone, or combined with other
+ * surviving boxes) exceeds a sane fraction of the total screenshot area.
+ * See the AREA SANITY CAP comment above for the thresholds and the
+ * real-run evidence behind them. Pure function -- no chrome.* API, easily
+ * unit-testable (see tests/unit/test_vision_area_cap.mjs).
+ *
+ * @param {Array<{label?: string, score?: number, xmin:number, ymin:number, xmax:number, ymax:number}>} boxes
+ *   Already class-filtered (filterPrivacyRelevantBoxes()) vision boxes, in
+ *   screenshot-pixel space.
+ * @param {{width: number, height: number}} imageDims
+ *   The screenshot's own pixel dimensions -- the SAME space `boxes`'
+ *   xmin/ymin/xmax/ymax are already in (see call site in runAgentLoop()
+ *   for how this is derived for both viewport-only and full-page capture).
+ * @returns {Array} the subset of `boxes` that passed both caps, in their
+ *   ORIGINAL relative order (the size-based selection below is internal
+ *   bookkeeping, not a reason to reorder what callers/tests see).
+ */
+function filterBoxesByAreaCap(boxes, imageDims) {
+  if (!Array.isArray(boxes)) return [];
+  // `.slice()`, not a bare `[]` literal -- preserves the species/realm of
+  // the caller's own array (matters when this function is evaluated in a
+  // different realm than its caller, e.g. under test; functionally
+  // identical to an empty array either way).
+  if (boxes.length === 0) return boxes.slice();
+
+  if (!isUsableImageDims(imageDims)) {
+    // No usable image dimensions to measure a fraction against -- degrade
+    // to "keep everything" (the pre-existing, pre-area-cap behavior)
+    // rather than silently rejecting every box for a reason that has
+    // nothing to do with the detector. Logged loudly: this should not
+    // happen in practice (see the call site, which always computes real
+    // dimensions from either window.innerWidth/innerHeight*DPR or the
+    // full-page stitch dimensions background.js already measured), so a
+    // future regression here is worth someone's attention.
+    console.warn("[agent-loop] area-cap: no usable image dimensions -- skipping area-cap filtering for this step's vision boxes (kept as-is).", imageDims);
+    return boxes.slice();
+  }
+
+  const imageArea = imageDims.width * imageDims.height;
+
+  // ---- Pass 1: independent per-box cap. ----
+  const underSingleCap = [];
+  for (const box of boxes) {
+    const area = visionBoxArea(box);
+    const fraction = area / imageArea;
+    if (fraction > MAX_SINGLE_BOX_AREA_FRACTION) {
+      console.warn(
+        `[agent-loop] area-cap: REJECTED vision box (label=${box.label}, score=${box.score}) -- covers ` +
+          `${(fraction * 100).toFixed(1)}% of the ${imageDims.width}x${imageDims.height}px image, over the ` +
+          `${(MAX_SINGLE_BOX_AREA_FRACTION * 100).toFixed(0)}% single-box cap. This is almost always the detector ` +
+          "matching the page/screen itself rather than a real object -- see the AREA SANITY CAP comment above " +
+          "PRIVACY_RELEVANT_LABELS in content.js.",
+        box
+      );
+      continue;
+    }
+    underSingleCap.push({ box, area });
+  }
+
+  // ---- Pass 2: combined cap, smallest-area-first (see SELECTION POLICY
+  // above for why smaller boxes get first claim on the shared budget). ----
+  const bySize = underSingleCap.slice().sort((a, b) => a.area - b.area);
+  const kept = new Set();
+  let runningArea = 0;
+  for (const { box, area } of bySize) {
+    if ((runningArea + area) / imageArea > MAX_COMBINED_BOX_AREA_FRACTION) {
+      console.warn(
+        `[agent-loop] area-cap: REJECTED vision box (label=${box.label}, score=${box.score}) -- would push the ` +
+          `COMBINED redacted area over the ${(MAX_COMBINED_BOX_AREA_FRACTION * 100).toFixed(0)}% cap ` +
+          `(already at ${((runningArea / imageArea) * 100).toFixed(1)}% from other surviving boxes this step).`,
+        box
+      );
+      continue;
+    }
+    kept.add(box);
+    runningArea += area;
+  }
+
+  // Restore original relative order -- `kept` is a reference set, so this
+  // filter is an identity check, not a re-derivation of the decision above.
+  return boxes.filter((b) => kept.has(b));
 }
 
 // ---------------------------------------------------------------------
@@ -1823,9 +2020,26 @@ async function runAgentLoop() {
     const scaleFactor = window.devicePixelRatio || 1;
     mergedDomSnapshot = scaleDomSnapshotBBoxes(mergedDomSnapshot, scaleFactor);
 
-    // ---- 5. RULING 3 -- filter vision boxes to privacy-relevant classes
-    // before they ever reach redact(). ----
-    const filteredBoxes = filterPrivacyRelevantBoxes(captureResp.boxes);
+    // ---- 5. RULING 3 -- filter vision boxes to privacy-relevant classes,
+    // THEN cap by area (see the AREA SANITY CAP comment above
+    // PRIVACY_RELEVANT_LABELS for the full rationale and thresholds)
+    // before they ever reach redact(). `imageDims` is the screenshot's OWN
+    // pixel dimensions -- the same space captureResp.boxes' coordinates are
+    // already in (vision boxes are never scaled, per RULING 2's own note
+    // below): full-page capture already measures and returns its exact
+    // stitched canvas size (background.js's handleStitchAndDetect(),
+    // computeStitchLayout()); viewport-only capture has no such field on
+    // CAPTURE_AND_DETECT_RESULT, so it is derived from the CSS viewport
+    // size times the SAME devicePixelRatio scaleFactor computed just above
+    // -- chrome.tabs.captureVisibleTab captures at physical/device pixel
+    // resolution, exactly the assumption redaction.js's own coordinate-
+    // space hazard note already relies on for DOM boxes. ----
+    const imageDims =
+      captureResp.fullPage && captureResp.fullPage.enabled
+        ? { width: captureResp.fullPage.stitchWidthPx, height: captureResp.fullPage.stitchHeightPx }
+        : { width: window.innerWidth * scaleFactor, height: window.innerHeight * scaleFactor };
+    const classFilteredBoxes = filterPrivacyRelevantBoxes(captureResp.boxes);
+    const filteredBoxes = filterBoxesByAreaCap(classFilteredBoxes, imageDims);
 
     // ---- 5.5. DEFENSIVE REDACTION of confirmed-unscannable regions
     // (real-site hardening pass). A closed shadow root's content is
@@ -1878,6 +2092,14 @@ async function runAgentLoop() {
       durationMs: +(performance.now() - tRedact0).toFixed(1),
       regions: redactedRegions.length,
       visionBoxesTotal: (captureResp.boxes || []).length,
+      // Reported unconditionally, even at zero rejections -- silent
+      // truncation/rejection reads as "nothing happened" when it did (same
+      // precedent as element-ranker's `dropped` and full-page capture's
+      // `truncated`). visionBoxesKeptAfterFilter is kept as the FINAL
+      // count (after both the class filter and the area cap) for
+      // backward-compat with any tooling already reading this field.
+      visionBoxesKeptAfterClassFilter: classFilteredBoxes.length,
+      visionBoxesRejectedByAreaCap: classFilteredBoxes.length - filteredBoxes.length,
       visionBoxesKeptAfterFilter: filteredBoxes.length,
     });
     reportProgress({ stage: "redact", step, regions: redactedRegions.length });
