@@ -26,7 +26,7 @@ lines requested at the end.
 5. **Check for a red error banner on the extension's card immediately.**
    If you see one, the manifest or a referenced file failed to load —
    copy the exact error text, that's the first thing to report back.
-6. The card should read "SIH 26171 - On-Device Visual Perception Agent".
+6. The card should read "Dhristi - A Privacy-Preserving Browser Tool".
    Chrome will show a permissions notice mentioning access to all sites
    (from `content_scripts.matches: ["<all_urls>"]` — expected; see
    §4 "Design decisions" for why) and "Read your browsing history" /

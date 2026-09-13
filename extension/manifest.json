@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SIH 26171 - On-Device Visual Perception Agent",
+  "name": "Dhristi - A Privacy-Preserving Browser Tool",
   "version": "0.2.0",
   "description": "Phase 4: full on-device privacy-preserving browser agent loop. Captures the visible tab, runs local WebGPU object detection (Xenova/yolos-tiny), scans the DOM for PII, redacts both the screenshot and the DOM snapshot client-side, and only then sends the redacted result to a local FastAPI server for the next action -- zero raw PII ever leaves the client.",
   "permissions": ["offscreen", "activeTab", "scripting", "storage"],

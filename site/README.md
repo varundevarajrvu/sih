@@ -1,4 +1,6 @@
-# SIH 26171 — showcase site
+# Dhristi — showcase site
+
+Showcase page for **Dhristi, A Privacy-Preserving Browser Tool** (SIH 26171).
 
 A single static page presenting the project: the redaction proof, the pipeline,
 a live console replay, the safety layers, the four demo scenarios, measured

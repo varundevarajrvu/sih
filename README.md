@@ -1,6 +1,6 @@
-# On-Device Visual Perception for Lightweight Browser Agents
+# Dhristi — A Privacy-Preserving Browser Tool
 
-**SIH Problem Statement 26171**
+**SIH Problem Statement 26171 — On-Device Visual Perception for Lightweight Browser Agents**
 
 A Chrome extension that lets a browser agent *see* the page it's working on — without ever sending your passwords, emails, ID numbers, or face to the model.
 

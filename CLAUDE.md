@@ -1,4 +1,5 @@
-# Project Orchestrator — SIH 26171: On-Device Visual Perception for Lightweight Browser Agents
+# Project Orchestrator — Dhristi: A Privacy-Preserving Browser Tool
+**SIH 26171 — On-Device Visual Perception for Lightweight Browser Agents**
 
 Drop this file at the repo root as `CLAUDE.md`. Claude Code loads it automatically into the main session and into every subagent except the built-in `Explore`/`Plan` agents — that's what makes this "self-contained": you don't re-paste architecture into every delegation, the file does it for you.
 

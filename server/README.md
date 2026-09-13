@@ -1,6 +1,6 @@
 # server — Phase 2c (`server-api`)
 
-FastAPI `/analyze` endpoint for SIH 26171. Fully independent of the browser
+FastAPI `/analyze` endpoint for Dhristi (SIH 26171). Fully independent of the browser
 extension — build, test, and run it standalone. See the repo root
 `CLAUDE.md` (Section 4, Phase 2c) for the full contract and rationale.
 
