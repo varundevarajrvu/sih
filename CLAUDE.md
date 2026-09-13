@@ -426,6 +426,15 @@ Every counter moved the right way. The phantom second frame is gone (registry pr
 
 **Two related bugs found on the way:** `background.js` never pruned its `tabId→frameId` registry on navigation (a reload left a dead frameId being polled forever — the phantom second frame), and `chrome.tabs.sendMessage` without `frameId` broadcasts to EVERY frame despite a code comment claiming otherwise, letting a subframe's instant guard-rejection race the top frame's real result back to the popup. Now pinned to `frameId: 0`.
 
+**✅ CROSS-ORIGIN IFRAME CONFIRMED 2026-09-14.** Run on `frames-test.html?xorigin=1` with the child served from a second origin (`localhost:5501`):
+```
+framesReported: 2,  framesMerged: 2,  framesDropped: 0
+subframeSensitiveNodes: 3   (was 2 same-origin-only — the third is the cross-origin password)
+```
+The `MessageEvent.source` ↔ `iframe.contentWindow` correlation holds across an origin boundary, which is the whole reason that mechanism exists: a cross-origin child cannot read its own position in the parent (`window.frameElement` is null, no geometry is exposed), so the parent must identify the sender by reference and measure the offset itself. Both `postMessage` calls use `"*"` as targetOrigin, and only the opaque token crosses that channel — the actual node data travels over `chrome.runtime`, which page script cannot observe.
+
+**This was the last unverified code path in the project.**
+
 **✅ BBOX PLACEMENT CONFIRMED 2026-09-14.** Varun opened the dumped PNG and reported the black bar **sitting on the iframe's password field** — near the bottom of a 959×4862 stitched image, matching `redactedRegions`' `y: 4719.6`. The three-deep transform chain (frame offset → document offset → devicePixelRatio) composes correctly in a real browser. Failure signature C is ruled out.
 
 **This completes the image half of the privacy claim**, which had never actually been verified before this. Worth being precise about why: the famous `hunter2` vs `hunter2Demo!` result proves the model never received the password **in the DOM JSON** — it could not have proved image redaction, because a password input renders as `•••••` whether or not a bar covers it. The Section 5 assertion likewise inspects the payload JSON, not the pixels. Both halves are now independently proven; before this run, only one was.
