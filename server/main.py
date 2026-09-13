@@ -38,16 +38,31 @@ Run with:
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+import debug_dump
 from schemas import ActionResponse, AnalyzeRequest, PIILeakDetected, find_pii_leaks
 from vlm_client import VLMClient, VLMRequestContext, build_prompt, get_vlm_client
 
-app = FastAPI(title="SIH 26171 server-api", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # See debug_dump.py's module docstring for the full safety rationale.
+    # This is the ONE place the startup warning fires — if DEBUG_DUMP_DIR
+    # is set, every /analyze request gets written to disk, including any
+    # unredacted PII a failed redaction might contain, so this must never
+    # be silently on.
+    debug_dump.warn_if_enabled()
+    yield
+
+
+app = FastAPI(title="SIH 26171 server-api", version="0.1.0", lifespan=lifespan)
 
 # Phase 4 (integration-loop) MINIMAL addition: the extension's background
 # service worker POSTs here from a chrome-extension:// origin. Chrome
@@ -122,7 +137,16 @@ async def get_validated_analyze_request(payload: AnalyzeRequest) -> AnalyzeReque
     endpoint. Any future endpoint accepting AnalyzeRequest should depend
     on this function rather than the raw model, so the check can't be
     forgotten at a new call site.
+
+    debug_dump.dump_request() runs FIRST, before the leak check —
+    deliberately, so a request that trips PII_LEAK_DETECTED still gets
+    dumped (it's a legitimate debugging target too: seeing exactly what
+    leaked is useful). It is a complete no-op unless DEBUG_DUMP_DIR is
+    set, and cannot raise, so this adds no behaviour change when the
+    debug dump is (as it is by default) off.
     """
+    debug_dump.dump_request(payload)
+
     leaks = find_pii_leaks(payload.domSnapshot, payload.redactedRegions)
     if leaks:
         raise PIILeakDetected(leaks)

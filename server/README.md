@@ -108,14 +108,20 @@ below), just a different destination.
   own. If no key resolves, `/analyze` returns a clean `502` naming
   `GeminiCredentialsMissing` rather than a raw SDK stack trace.
 - **Model**: defaults to `GEMINI_MODEL`'s value if set, otherwise
-  `gemini-2.0-flash`. **This default is NOT verified against a live API
-  call** — no credentials are available on this dev machine, and guessing
-  a current model id from memory was explicitly out of bounds (Gemini's
-  model lineup is exactly the kind of detail that goes stale). The value
-  was instead read out of the installed SDK's own bundled source code,
-  where it is used consistently as the canonical example across half a
-  dozen files. If it turns out to be wrong or is retired, the model-not-
-  found error tells you exactly how to list real, currently-valid ids:
+  `gemini-3.8-flash`. **This default IS verified against a live API call** —
+  it returned a schema-conforming action for a real image+prompt request
+  on a free-tier key.
+
+  The original default (`gemini-2.0-flash`) was taken from the installed
+  SDK's own bundled examples, which is better evidence than recall but is
+  not confirmation — and it turned out to be wrong: that id does not
+  appear in `models.list()` at all on a live key.
+
+  A trap worth knowing, found the same way: **`models.list()` is not
+  sufficient on its own.** `gemini-2.5-flash` IS listed and still `404`s
+  on `generateContent`. Only a real call proves a model id. When this
+  default eventually retires, the model-not-found error names the helper
+  for listing currently-valid ids:
   ```bash
   python -c "from google import genai; [print(m.name) for m in genai.Client().models.list()]"
   ```
@@ -155,6 +161,75 @@ the face, the ID card are never in the payload in the first place (see
 where its data goes, including when the answer is "a free tier that may
 train on it" — the redaction guarantee is what makes that an acceptable
 answer, not a reason to avoid stating it.
+
+## Debug dump — `DEBUG_DUMP_DIR`
+
+Redaction happens on the captured screenshot, not the live page, so
+there is otherwise no practical way to confirm a black bar actually
+landed on the right pixels (e.g. an iframe's password field, after the
+frame-offset math). The counters the extension logs (`framesMerged: 1`,
+`subframeSensitiveNodes: 2`, ...) look identical whether the offset is
+right or wrong — only the actual image settles it. This is a one-env-
+var way to get that image onto disk instead of DevTools → Network →
+copy a base64 blob → paste as a `data:` URL.
+
+**Default is OFF.** Leave `DEBUG_DUMP_DIR` unset and this feature does
+not exist at runtime: no directory is created, nothing is written, the
+endpoint's behaviour is byte-for-byte unchanged.
+
+To turn it on:
+
+```bash
+DEBUG_DUMP_DIR=server/debug_dumps .venv/Scripts/python.exe -m uvicorn main:app --reload
+```
+
+Every `POST /analyze` that reaches a validated `AnalyzeRequest` (i.e.
+survives ordinary 422 schema validation — a request rejected as
+`PII_LEAK_DETECTED` is *still* dumped, deliberately, since seeing
+exactly what leaked is itself useful) writes two files into that
+directory, sharing a sortable, correlated filename prefix:
+
+```
+2026-09-14T10-22-31-123Z-a1b2c3-image.png       <- the decoded screenshot, raw PNG bytes
+2026-09-14T10-22-31-123Z-a1b2c3-payload.json    <- everything else in the request
+```
+
+The payload JSON is the full request **minus the base64 `image`
+field** — that field is already on disk as the `.png` above, and
+inlining a multi-KB base64 blob into the JSON would make it unreadable.
+A small `_dump` key is added noting which `.png` it pairs with.
+
+To eyeball a dump quickly: a plain sorted directory listing is enough
+— open the folder in a file browser, or `cd` into it and run
+`python -m http.server 8000`, then open `http://localhost:8000/` and
+click through PNGs in order.
+
+A write failure here (bad path, permissions, disk full, corrupt
+base64) is caught and logged; it can never fail or otherwise alter the
+`/analyze` response — this is a debugging aid bolted onto the endpoint,
+not something the endpoint depends on.
+
+### 🔴 A dump can contain UNREDACTED PII — read this before enabling it
+
+**The whole reason to turn this on is to investigate a suspected
+redaction failure.** That means the images this writes are exactly the
+ones that might have a readable password, email, or face in them — the
+opposite of the usual "it's fine, it's already redacted" reasoning that
+holds everywhere else in this project.
+
+- The server logs a loud, named warning at startup whenever
+  `DEBUG_DUMP_DIR` is set, so it is never silently on. If you don't see
+  that line, dumping is off.
+- The dump directory is `.gitignore`'d (see the repo-root
+  `.gitignore` — it matches any directory literally named
+  `debug_dumps`, which is the name used in the example above; if you
+  pick a different path, `.gitignore` it yourself). A leaked debug dump
+  in a public repo would be a genuinely bad outcome for a privacy
+  project.
+- **Delete the dump directory once you're done inspecting it.**
+- **Never enable this for a live demo.** It exists for offline
+  debugging of the redaction pipeline, not for anything that runs while
+  someone is watching.
 
 ## Privacy (Section 5)
 

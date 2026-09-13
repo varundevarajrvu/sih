@@ -44,3 +44,11 @@ spike-ui-detector/chrome-harness/offscreen.bundle.js
 
 # Python venv
 .venv/
+
+# server/main.py debug dump (DEBUG_DUMP_DIR) -- OFF by default, opt-in
+# for inspecting redaction placement. Matches any directory literally
+# named debug_dumps anywhere in the tree (e.g. server/debug_dumps/),
+# which is the name used in server/README.md's example. May contain
+# UNREDACTED PII -- see the safety note there. If you point
+# DEBUG_DUMP_DIR at a different name/location, .gitignore that path too.
+debug_dumps/
