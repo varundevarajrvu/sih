@@ -157,7 +157,15 @@
       noteBadge.textContent = "agentId: " + (noteId || "(scan not seen yet)");
       noteBadge.className = "badge" + (noteId ? " on" : "");
 
-      var nested = document.getElementById("frNestedContact");
+      // BUG FIXED 2026-09-14: was document.getElementById, but this element
+      // lives INSIDE nestedRoot, an open shadow root -- and
+      // document.getElementById does not pierce a shadow boundary, so it
+      // returned null and this badge stayed frozen on "(scan not seen yet)"
+      // forever regardless of whether the extension found the field. Same
+      // defect as frames-test.html's open-shadow badges, same fix: query
+      // THROUGH the shadow root. A verification page that cannot report
+      // success manufactures false evidence of a bug.
+      var nested = nestedRoot.querySelector("#frNestedContact");
       if (nested) {
         var nestedId = nested.getAttribute("data-agent-id");
         var nestedIdBadge = document.getElementById("frNestedIdBadge");
