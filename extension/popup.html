@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="color-scheme" content="dark" />
-<title>SIH 26171 Agent</title>
+<title>Dhristi</title>
 <style>
   /* ==========================================================================
      SIH 26171 -- extension popup, glassmorphism pass.
@@ -706,6 +706,19 @@
           <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" />
           <button id="saveServerUrl" type="button" class="btn btn-ghost">Save server URL</button>
           <p id="serverUrlStatus" aria-live="polite"></p>
+
+          <p class="hint" style="margin-top: 14px;">
+            Full-page capture: scroll the page in steps and stitch the captures into one
+            image before detection, instead of the visible viewport only. <strong>Default
+            off</strong> (viewport-only remains the known-good fallback). Slower per step
+            (bigger image, more captures) and uses more memory -- see the RUN SUMMARY's
+            <code>fullPage</code> fields for real numbers on a given page.
+          </p>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:6px; cursor:pointer;">
+            <input id="fullPageCaptureToggle" type="checkbox" />
+            <span>Enable full-page scroll-and-stitch capture</span>
+          </label>
+          <p id="fullPageCaptureStatus" class="hint" aria-live="polite"></p>
         </div>
       </details>
 

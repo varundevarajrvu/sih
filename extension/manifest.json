@@ -57,7 +57,8 @@
         "lib/run-registry.js",
         "lib/action-describe.js",
         "lib/error-messages.js",
-        "lib/server-url.js"
+        "lib/server-url.js",
+        "lib/capture-plan.js"
       ],
       "matches": ["<all_urls>"]
     }

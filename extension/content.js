@@ -61,6 +61,10 @@ let StallDetector = null;
 // descriptions for the popup -- same dynamic-import pattern as every other
 // ES-module lib file above (see CONTRACT MISMATCH #1's comment for why).
 let ActionDescribe = null;
+// Full-page scroll-and-stitch capture pass: pure scroll-plan/geometry/
+// document-offset math -- see extension/lib/capture-plan.js's own header
+// for the coordinate-problem this closes. Same dynamic-import pattern.
+let CapturePlan = null;
 
 async function loadLibModules() {
   if (!DomScanner) {
@@ -83,6 +87,9 @@ async function loadLibModules() {
   }
   if (!ActionDescribe) {
     ActionDescribe = await import(browser.runtime.getURL("lib/action-describe.js"));
+  }
+  if (!CapturePlan) {
+    CapturePlan = await import(browser.runtime.getURL("lib/capture-plan.js"));
   }
 }
 
@@ -562,6 +569,342 @@ function scaleDomSnapshotBBoxes(domSnapshot, scaleFactor) {
   });
 }
 
+// =======================================================================
+// FULL-PAGE SCROLL-AND-STITCH CAPTURE.
+//
+// GOAL: today, `chrome.tabs.captureVisibleTab` sees one viewport.
+// Feature-flagged (default OFF -- see FULL_PAGE_CAPTURE_STORAGE_KEY below):
+// when enabled, this scrolls the page in steps, captures each step, and
+// asks background.js to stitch them into one full-page image before
+// detection runs -- so the model reasons over the whole page in one shot
+// instead of whatever happened to be on screen.
+//
+// SETTING: chrome.storage.local["fullPageCapture"], boolean, DEFAULT FALSE.
+// Default-safe on purpose -- viewport-only (today's exact, already-tested
+// behavior) remains the fallback path a fresh install and every existing
+// test exercises; full-page capture is opt-in per CLAUDE.md's own
+// instruction that "a regression in capture breaks everything downstream."
+// Toggled from popup.html's Settings disclosure (see popup.js).
+//
+// PURE MATH LIVES IN capture-plan.js (scroll-step planning, throttle
+// timing, stitch geometry, the document-offset transform) -- this block is
+// the browser-only DRIVER: it owns the actual `window.scrollTo()` calls,
+// finding/hiding fixed & sticky elements, and orchestrating the
+// background.js round trips (CAPTURE_VIEWPORT per slice, STITCH_AND_DETECT
+// once at the end). See capture-plan.js's own header for the full
+// coordinate-problem writeup and the mandatory 3-step transform order this
+// feature adds a middle step to (frame offset -> DOCUMENT OFFSET -> DPR).
+//
+// ---- HAZARD 1: FIXED/STICKY ELEMENTS REPEATING IN EVERY SLICE ----
+// A `position:fixed` header would otherwise be captured N times (once per
+// slice) and appear N times, stacked, in the stitched image. APPROACH
+// CHOSEN: find every element whose COMPUTED `position` is `fixed` or
+// `sticky` (getComputedStyle -- catches both inline and stylesheet-
+// authored fixed positioning, not just an inline style attribute), hide
+// each via `style.setProperty("visibility", "hidden", "important")`
+// (never `display:none` -- visibility preserves the element's layout box,
+// so scrollHeight/layout stays stable across the capture pass; display:none
+// would risk shifting scroll math mid-capture) for the ENTIRE capture
+// pass (not just "all but the first slice" -- simpler, and it means the
+// element never appears at all in the stitched result rather than
+// appearing exactly once at an arbitrary slice boundary), then restores
+// each element's ORIGINAL inline visibility value (not just "unhide") in a
+// `finally` block that runs on every exit path, including Stop and a
+// thrown error.
+//
+// PROOF HIDDEN ELEMENTS ARE STILL SCANNED (the hazard's explicit
+// requirement): the hide/restore window is CLOSED, completely, before
+// content.js's own SCAN step (RULING 1, dom-scanner.js/action-executor.js)
+// ever runs -- see captureFullPageAndDetect()'s call site in step 1 of
+// runAgentLoop(), which awaits this whole function (hide -> capture loop
+// -> restore -> stitch -> detect) and returns BEFORE step 2 (SCAN) begins.
+// By the time scanForPii()/buildDomSnapshot()
+// call getComputedStyle()/getBoundingClientRect() on any element, every
+// fixed/sticky element's `visibility` has ALREADY been restored to its
+// original value -- dom-scanner.js and action-executor.js see the exact
+// same DOM they would have seen with this feature turned off entirely.
+// This was a deliberate design choice, not an accident: doing it any other
+// way (e.g. hiding only for the screenshot half of each step, leaving scan
+// to run while something is still hidden) would risk exactly the failure
+// this hazard warns about, so the hide/restore window was scoped as
+// narrowly as possible around JUST the capture loop.
+//
+// KNOWN LIMITATION, stated not silently assumed: only elements in the TOP
+// FRAME's light DOM are checked. An element inside an open shadow root or
+// inside an iframe that is itself `position:fixed`/`sticky` is not
+// specially handled here -- consistent with this codebase's existing
+// pattern of stating iframe/shadow-DOM scope boundaries explicitly (see
+// TIER 1's "ONE level of iframe nesting" limitation) rather than silently
+// claiming full coverage.
+// =======================================================================
+
+const FULL_PAGE_CAPTURE_STORAGE_KEY = "fullPageCapture";
+
+async function isFullPageCaptureEnabled() {
+  try {
+    const stored = await browser.storage.local.get(FULL_PAGE_CAPTURE_STORAGE_KEY);
+    return stored[FULL_PAGE_CAPTURE_STORAGE_KEY] === true;
+  } catch (_err) {
+    return false; // default-safe: any storage-read failure falls back to viewport-only, never the other way around
+  }
+}
+
+function findFixedOrStickyElements(doc) {
+  const win = (doc && doc.defaultView) || window;
+  let all;
+  try {
+    all = doc.querySelectorAll("*");
+  } catch (_err) {
+    return [];
+  }
+  const found = [];
+  for (const el of all) {
+    let position;
+    try {
+      position = win.getComputedStyle(el).position;
+    } catch (_err) {
+      continue; // an exotic/detached element failing getComputedStyle must never abort the whole pass
+    }
+    if (position === "fixed" || position === "sticky") found.push(el);
+  }
+  return found;
+}
+
+/**
+ * Hide every fixed/sticky element found in `doc` and return a function that
+ * restores each one's ORIGINAL inline `visibility` value (not merely
+ * "unhide" -- an element that already had its own inline visibility set
+ * for unrelated reasons must get that value back, not an empty string).
+ * Caller MUST invoke the returned function in a `finally` block -- see this
+ * block's own header comment for why the window this stays hidden for must
+ * be as narrow as possible and must always close.
+ */
+function hideFixedStickyElements(doc) {
+  const elements = findFixedOrStickyElements(doc);
+  const originalVisibility = elements.map((el) => el.style.getPropertyValue("visibility"));
+  for (const el of elements) {
+    el.style.setProperty("visibility", "hidden", "important");
+  }
+  let restored = false;
+  return function restoreFixedStickyElements() {
+    if (restored) return; // idempotent -- a finally block calling this after an earlier explicit call must never re-clobber a value
+    restored = true;
+    elements.forEach((el, i) => {
+      const prev = originalVisibility[i];
+      if (prev) {
+        el.style.setProperty("visibility", prev);
+      } else {
+        el.style.removeProperty("visibility");
+      }
+    });
+  };
+}
+
+// ---- HAZARD 2: captureVisibleTab's ~2/sec MV3 rate limit ----
+// Enforced HERE (content.js, the driver) via capture-plan.js's pure
+// computeThrottleDelay(), proactively, BEFORE each capture -- not merely
+// reactively catching the MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND error
+// after the fact. background.js's own CAPTURE_VIEWPORT handler ALSO
+// catches that specific error and retries once as a last-resort backstop
+// (see its own comment) in case this proactive margin is ever
+// insufficient under real scheduling jitter -- belt and suspenders, not
+// redundant: this is the deliberate half, that is the safety net.
+let lastCaptureVisibleTabAt = null;
+
+async function throttledCaptureViewport(runAbortSignal) {
+  const now = performance.now();
+  const waitMs = CapturePlan.computeThrottleDelay({ lastCaptureAt: lastCaptureVisibleTabAt, now });
+  if (waitMs > 0) {
+    await sleep(waitMs, runAbortSignal);
+    if (runAbortSignal.aborted) return { ok: false, aborted: true };
+  }
+  let resp;
+  try {
+    resp = await browser.runtime.sendMessage({ type: "CAPTURE_VIEWPORT" });
+  } catch (err) {
+    resp = { ok: false, error: err?.message || String(err) };
+  }
+  lastCaptureVisibleTabAt = performance.now();
+  return resp;
+}
+
+/**
+ * Drive one full-page scroll-and-stitch capture pass: hide fixed/sticky
+ * elements, loop scrolling + capturing (throttled, re-measuring document
+ * height fresh every iteration, capped, abortable), restore everything
+ * (scroll position AND fixed/sticky visibility) no matter how the loop
+ * ends, then ask background.js to stitch + detect once on the composite.
+ *
+ * Returns a response SHAPED LIKE `CAPTURE_AND_DETECT_RESULT` (same fields
+ * the viewport-only path already produces) PLUS a `fullPage` diagnostics
+ * object, so the caller in runAgentLoop() needs only ONE branch to read
+ * the result either way -- see that call site.
+ */
+async function captureFullPageAndDetect(runAbortSignal) {
+  // CapturePlan is guaranteed loaded here -- this function is only ever
+  // called from inside runAgentLoop(), which awaits loadLibModules() at
+  // its very top before step 1 can run at all.
+  const FULL_PAGE_MAX_VIEWPORTS = CapturePlan.DEFAULT_MAX_VIEWPORTS;
+  const viewportHeight = window.innerHeight;
+  const originalScrollX = window.scrollX;
+  const originalScrollY = window.scrollY;
+
+  let restoreFixedSticky = null;
+  const slices = [];
+  let truncated = false;
+  let viewportsNeeded = 1;
+  const captureTimings = [];
+  let aborted = false;
+
+  try {
+    restoreFixedSticky = hideFixedStickyElements(document);
+
+    let capturedCount = 0;
+    while (capturedCount < FULL_PAGE_MAX_VIEWPORTS) {
+      // HAZARD 6: Stop must interrupt mid-stitch -- checked at the top of
+      // every slice, same posture as the main step loop's own Stop checks.
+      if (runAbortSignal.aborted) {
+        aborted = true;
+        break;
+      }
+
+      // HAZARD 3: re-measure document height FRESH every iteration -- a
+      // lazy-loaded page that grew since the last slice is picked up here,
+      // not assumed away from a single measurement taken before the loop
+      // started. POLICY (stated explicitly): continue capturing toward the
+      // NEW height, still bounded by the SAME overall
+      // FULL_PAGE_MAX_VIEWPORTS cap -- growth can extend how far down the
+      // plan reaches, never how MANY captures the budget allows. This is
+      // exactly what re-invoking computeScrollTargets() with a fresh
+      // documentHeight on every iteration produces (see that function's
+      // own "lazy-load growth reconciliation" doc comment and tests).
+      const documentHeight = Math.max(
+        document.documentElement ? document.documentElement.scrollHeight : 0,
+        document.body ? document.body.scrollHeight : 0,
+        viewportHeight
+      );
+      const plan = CapturePlan.computeScrollTargets({
+        documentHeight,
+        viewportHeight,
+        maxViewports: FULL_PAGE_MAX_VIEWPORTS,
+      });
+      truncated = plan.truncated;
+      viewportsNeeded = plan.viewportsNeeded;
+
+      if (capturedCount >= plan.targets.length) break; // covered everything the budget allows for the CURRENT height
+
+      const targetScrollY = plan.targets[capturedCount];
+      window.scrollTo(0, targetScrollY);
+      // Let one paint happen before capturing -- a capture taken mid-scroll
+      // can show a half-rendered frame. Two chained rAFs is the standard,
+      // cheap way to wait for "the next real paint has occurred" rather
+      // than a magic-number setTimeout.
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+      if (runAbortSignal.aborted) {
+        aborted = true;
+        break;
+      }
+
+      const tCap0 = performance.now();
+      const captureResp = await throttledCaptureViewport(runAbortSignal);
+      if (runAbortSignal.aborted || (captureResp && captureResp.aborted)) {
+        aborted = true;
+        break;
+      }
+      if (!captureResp || captureResp.ok !== true) {
+        const errMsg = (captureResp && captureResp.error) || "no response from background";
+        console.warn(
+          `[agent-loop][full-page] slice ${capturedCount} capture failed (${errMsg}) -- ` +
+            "stopping full-page capture early and stitching whatever was collected so far."
+        );
+        break;
+      }
+
+      slices.push({
+        scrollY: targetScrollY, // the REQUESTED target -- window.scrollTo() on a real page can't land anywhere invalid here since targetScrollY is always clamped to [0, documentHeight-viewportHeight] by computeScrollTargets() itself
+        screenshot: captureResp.screenshot,
+      });
+      captureTimings.push(+(performance.now() - tCap0).toFixed(1));
+      capturedCount++;
+    }
+  } finally {
+    // HAZARDS 1 + 5 (restore fixed/sticky, restore scroll position) --
+    // BOTH live in this ONE finally block, deliberately, so BOTH run on
+    // every exit path from the try above -- normal completion, any
+    // `break`, Stop, or an unexpected throw. This was originally written
+    // as two separate steps (fixed/sticky restored in an inner
+    // try/finally, scroll restored as a plain statement afterward) and
+    // that was a real bug caught before shipping: if the capture loop
+    // threw an uncaught exception, the inner finally would restore
+    // fixed/sticky visibility correctly, but the exception would then
+    // continue propagating PAST the plain scroll-restore statement below
+    // it, skipping it entirely -- silently leaving the user's page
+    // scrolled to wherever the last slice was, exactly the failure hazard
+    // 5 exists to prevent ("Use try/finally so it restores even on error
+    // or Stop"). Restoring scroll BEFORE returning to runAgentLoop()
+    // (which runs the SCAN step immediately after this function returns)
+    // is also what makes "the scroll position at DOM-scan time" a stable,
+    // known value -- see capture-plan.js's header for why that is "the
+    // moment of measurement" the document-offset transform must use.
+    if (restoreFixedSticky) restoreFixedSticky();
+    try {
+      window.scrollTo(originalScrollX, originalScrollY);
+    } catch (_err) {
+      /* scrollTo should not throw, but must never abort this finally block if it somehow does */
+    }
+  }
+
+  if (aborted || slices.length === 0) {
+    return { ok: false, aborted, sliceCount: slices.length };
+  }
+
+  const tStitch0 = performance.now();
+  let stitchResp;
+  try {
+    stitchResp = await browser.runtime.sendMessage({
+      type: "STITCH_AND_DETECT",
+      slices: slices.map((s) => ({ scrollY: s.scrollY, screenshot: s.screenshot })),
+      scaleFactor: window.devicePixelRatio || 1,
+    });
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+  const stitchMs = +(performance.now() - tStitch0).toFixed(1);
+
+  if (!stitchResp || stitchResp.type !== "STITCH_AND_DETECT_RESULT") {
+    return { ok: false, error: (stitchResp && stitchResp.error) || "no response from background for STITCH_AND_DETECT" };
+  }
+
+  return {
+    ok: true,
+    type: "CAPTURE_AND_DETECT_RESULT", // shape-compatible with the viewport-only path -- see runAgentLoop()'s single call site
+    screenshot: stitchResp.screenshot,
+    boxes: stitchResp.boxes,
+    captureMs: captureTimings.reduce((a, b) => a + b, 0),
+    detectMs: stitchResp.detectMs,
+    modelLoadMs: stitchResp.modelLoadMs,
+    inferenceMs: stitchResp.inferenceMs,
+    pipelineWasAlreadyLoaded: stitchResp.pipelineWasAlreadyLoaded,
+    offscreenDocumentAlreadyExisted: stitchResp.offscreenDocumentAlreadyExisted,
+    device: stitchResp.device,
+    // HAZARD 4: truncation must never be silent -- these fields are always
+    // present (never only-when-truncated) and are surfaced in the RUN
+    // SUMMARY unconditionally by runAgentLoop()'s own instr.mark() call,
+    // mirroring element-ranker.js's "report `dropped` even at zero"
+    // precedent.
+    fullPage: {
+      enabled: true,
+      viewportsCaptured: slices.length,
+      viewportsNeeded,
+      truncated,
+      stitchWidthPx: stitchResp.stitchWidthPx,
+      stitchHeightPx: stitchResp.stitchHeightPx,
+      stitchMs,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------
 // CONTRACT MISMATCH #2, found and fixed here: dom-scanner.js's fallback
 // agentId self-assignment (`options.getAgentId`, used only when an
@@ -944,6 +1287,14 @@ async function runAgentLoop() {
     /* fall through with the default goal string -- storage read failure must not abort the demo */
   }
 
+  // Full-page scroll-and-stitch capture: read ONCE per run (not re-read
+  // per step) so a setting change mid-run can't switch coordinate modes
+  // partway through -- see the FULL-PAGE SCROLL-AND-STITCH CAPTURE block
+  // comment above scaleDomSnapshotBBoxes() for the full feature writeup.
+  // Default FALSE (viewport-only, today's exact behavior) if unset or if
+  // the storage read itself fails.
+  const fullPageCaptureEnabled = await isFullPageCaptureEnabled();
+
   let outcome = "max_steps_reached";
 
   // TASK 2 (live progress): the loop's own "I have started" marker --
@@ -984,11 +1335,28 @@ async function runAgentLoop() {
       }
       reportProgress({ step, stage: "capture" });
 
-      // ---- 1. CAPTURE + DETECT (one round trip to background.js, which
-      // times each half separately server-side of the message boundary so
-      // message-passing overhead isn't misattributed to either stage). ----
-      const captureResp = await browser.runtime.sendMessage({ type: "CAPTURE_AND_DETECT" });
+      // ---- 1. CAPTURE + DETECT. Viewport-only (default): one round trip
+      // to background.js, unchanged from before this feature existed.
+      // Full-page (opt-in setting): captureFullPageAndDetect() drives its
+      // OWN multiple round trips (scroll + CAPTURE_VIEWPORT per slice,
+      // then one STITCH_AND_DETECT) and returns a response shaped
+      // identically to CAPTURE_AND_DETECT_RESULT -- see that function's own
+      // doc comment -- so everything below this line needs exactly ONE
+      // branch, not two. ----
+      const captureResp = fullPageCaptureEnabled
+        ? await captureFullPageAndDetect(runAbort.signal)
+        : await browser.runtime.sendMessage({ type: "CAPTURE_AND_DETECT" });
       if (!captureResp || captureResp.type !== "CAPTURE_AND_DETECT_RESULT") {
+        // TASK 1 (Stop): captureFullPageAndDetect() can end early because
+        // Stop was clicked mid-scroll/mid-capture (its own `aborted` flag,
+        // NOT a real failure) -- recognized here so the outcome is
+        // "stopped", never "capture_failed" (which would misreport a
+        // deliberate user action as a device/detector problem).
+        if (fullPageCaptureEnabled && captureResp && captureResp.aborted) {
+          outcome = "stopped";
+          console.log(`[agent-loop] STOP requested -- halting full-page capture mid-slice for step ${step}.`);
+          break;
+        }
         instr.mark(step, "capture", { error: (captureResp && captureResp.error) || "no response from background" });
         stepResults.push({ step, error: "capture_and_detect_failed", detail: captureResp && captureResp.error });
         outcome = "capture_failed";
@@ -1005,6 +1373,11 @@ async function runAgentLoop() {
     instr.mark(step, "capture", {
       durationMs: +captureResp.captureMs.toFixed(1),
       offscreenDocumentAlreadyExisted: captureResp.offscreenDocumentAlreadyExisted,
+      // HAZARD 4 (truncation must never be silent): present on EVERY step,
+      // even when full-page capture is disabled (fullPage: null) or wasn't
+      // truncated (truncated: false) -- never omitted, matching
+      // element-ranker.js's own "report unconditionally" precedent.
+      fullPage: captureResp.fullPage || null,
     });
     // Split load vs. inference (coordinator-requested diagnostic,
     // 2026-09-11) -- these were previously conflated into one "detect"
@@ -1053,6 +1426,35 @@ async function runAgentLoop() {
       // restarting dom-scanner's own fallback counter at 1.
       getAgentId: () => `agent-${++nextFallbackIndex}`,
     });
+
+    // ---- DOCUMENT OFFSET, captured NOW -- "at the moment of that
+    // element's measurement" (capture-plan.js's own phrasing). The DOM
+    // scan above (buildDomSnapshot()/scanForPii(), both synchronous) just
+    // ran every getBoundingClientRect() call it will run for this step, at
+    // whatever scroll position the page is CURRENTLY resting at.
+    // captureFullPageAndDetect() (step 1, above) already restored the
+    // page's scroll to its ORIGINAL pre-capture position in a `finally`
+    // block before ever returning -- so by the time control reaches this
+    // line, window.scrollX/scrollY reflect that stable, restored position,
+    // not wherever the last capture slice happened to leave it. Reading it
+    // HERE, once, and never again for this step, is what "not at some
+    // later time" (the hazard's own wording) means in practice: the value
+    // is captured now and threaded through as a plain number, not re-read
+    // at each of the two places it's later applied (see the two
+    // addDocumentOffsetToNodes() call sites below).
+    //
+    // Viewport-only mode (the default): a single screenshot IS the current
+    // viewport, so a viewport-relative bbox ALREADY matches that
+    // screenshot's own pixel space with nothing to add -- using
+    // CapturePlan.NO_DOCUMENT_OFFSET here (an explicit, named {x:0,y:0},
+    // never an implicit fallback) keeps this feature a mathematical no-op
+    // end to end when disabled, which is what makes "viewport-only remains
+    // the known-good fallback path" true by construction rather than by
+    // a separate code path that could drift from it.
+    const documentScanScrollOffset =
+      captureResp.fullPage && captureResp.fullPage.enabled
+        ? { x: window.scrollX, y: window.scrollY }
+        : CapturePlan.NO_DOCUMENT_OFFSET;
 
     // ---- 2.5. FRAME COORDINATION (real-site hardening pass): merge in
     // every subframe's already-offset-translated, already-sanitized
@@ -1173,6 +1575,27 @@ async function runAgentLoop() {
       );
     }
 
+    // ---- 3.6. DOCUMENT OFFSET, applied ONCE, to mergedDomSnapshot only,
+    // AFTER ranking and BEFORE DPR scaling -- the mandated middle step of
+    // capture-plan.js's 3-step transform order (frame offset -> DOCUMENT
+    // OFFSET -> DPR). Applied AFTER ranking (not before) DELIBERATELY:
+    // element-ranker.js's on/off-screen scoring compares bbox against
+    // `{width: window.innerWidth, height: window.innerHeight}` assuming a
+    // shared VIEWPORT-relative origin (see step 3.5's own comment on why
+    // ranking runs on unscaled CSS px) -- feeding it DOCUMENT-relative
+    // bboxes instead would silently break that "is this on screen" signal
+    // for every page where the agent had already scrolled down (a large
+    // scrollY would make every currently-visible element look enormous/
+    // off-scale to a ranker expecting viewport-sized coordinates). Running
+    // this step AFTER ranking keeps element-ranker.js's input byte-for-byte
+    // identical to its pre-existing contract in BOTH capture modes, and
+    // only the SURVIVING (already budget-filtered) nodes pay for the
+    // translation. This is the ONE point mergedDomSnapshot's document
+    // offset is applied -- do not add a second call site (see
+    // capture-plan.js's own double-application test for what that mistake
+    // would produce numerically). ----
+    mergedDomSnapshot = CapturePlan.addDocumentOffsetToNodes(mergedDomSnapshot, documentScanScrollOffset);
+
     // ---- 4. RULING 2 -- bbox normalization, ONE point. domSnapshot's
     // own bboxes are scaled here, explicitly, exactly once (see the
     // CONTRACT GAP note above scaleDomSnapshotBBoxes). sensitiveNodes'
@@ -1210,7 +1633,24 @@ async function runAgentLoop() {
     const defensiveUnscannableNodes = allUnscannableRegions
       .filter((r) => r && r.bbox)
       .map((r) => ({ bbox: r.bbox, piiType: "other", selector: r.selector }));
-    const redactionInputNodes = allSensitiveNodes.concat(defensiveUnscannableNodes);
+    // DOCUMENT OFFSET, applied ONCE, to the redaction-input node list --
+    // the SECOND (and last) of the two deliberate call sites (see step 3.6
+    // above for the first, on mergedDomSnapshot). This mirrors the
+    // pre-existing devicePixelRatio asymmetry content.js already documents
+    // for this exact pair of arrays (sensitiveNodes scales INSIDE redact()
+    // via options.scaleFactor; domSnapshot scales via its own separate
+    // call) -- "exactly once each, do not fix one to match the other."
+    // allSensitiveNodes/redactionInputNodes are NEVER passed through
+    // rankElements() at all, so there is no ordering conflict with step
+    // 3.6's ranking-before-offset reasoning here; this is simply the
+    // earliest point after allSensitiveNodes/defensiveUnscannableNodes
+    // both exist and before redact() (which applies DPR next) consumes
+    // them -- satisfying the same "offset before DPR" order via a
+    // different call site, for a different array.
+    const redactionInputNodes = CapturePlan.addDocumentOffsetToNodes(
+      allSensitiveNodes.concat(defensiveUnscannableNodes),
+      documentScanScrollOffset
+    );
 
     // ---- 6. REDACT ----
     const tRedact0 = performance.now();

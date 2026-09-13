@@ -321,6 +321,29 @@ Rationale: an agent typing into a password field is the exact failure this proje
 - ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
+### FULL-PAGE SCROLL-AND-STITCH CAPTURE. Recorded 2026-09-13. **526 tests green** (378 JS + 148 server). **Ships OFF by default.**
+
+Setting: `chrome.storage.local["fullPageCapture"]`, boolean, **default `false`** — viewport-only remains the known-good path. Capture sits upstream of detection, redaction and grounding, so a regression there breaks everything at once; the default must stay the proven route.
+
+**🔴 THE TRANSFORM ORDER IS NOW THREE DEEP. Each applied exactly once, in this order:**
+1. **Frame offset** (`frame-coords.js`) — subframe-local → top-frame viewport-relative.
+2. **Document offset** (NEW, `capture-plan.js`) — viewport-relative → document-relative. `getBoundingClientRect()` is viewport-relative; a stitched image is document-relative. The offset is read **once**, immediately after the synchronous DOM scan, stored, and threaded as a plain value — never re-read, so it cannot drift as the page scrolls during capture.
+3. **devicePixelRatio** — applied last, uniformly.
+
+Vision boxes are **excluded** from step 2 — they come back already document-relative by construction. In viewport-only mode step 2 applies `NO_DOCUMENT_OFFSET` `{x:0,y:0}` unconditionally, so the feature is a mathematical no-op when disabled rather than a branch that could diverge.
+`addDocumentOffset` **throws** on a missing or non-finite offset rather than defaulting to zero. A wrong bbox is a leak that looks like success.
+Tests include an explicit double-application case asserting the numeric fingerprint of that bug (off by exactly one extra scrollOffset), plus an order test proving offset-before-DPR ≠ DPR-before-offset.
+
+**Fixed/sticky elements** would otherwise repeat in every slice. They are hidden with `visibility:hidden` (NOT `display:none`, which would change `scrollHeight` mid-capture) for the whole capture pass and restored in `finally`. **They are still fully scanned** — the hide/restore window closes before the SCAN step runs, so `dom-scanner` and `action-executor` see a completely normal DOM. Limitation: top-frame light DOM only, not inside iframes or shadow roots.
+
+**Throttling:** 550ms minimum between captures (>10% margin over Chrome's ~2/sec limit), plus a reactive 3× retry on `MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND`.
+**Lazy-load:** document height is re-measured every iteration; growth is followed but the cap is never exceeded — proven against a simulated infinite-scroll page that doubles height 20×.
+**Cap:** 5 viewports. Truncation is reported in every RUN SUMMARY under `fullPage` (`viewportsCaptured`/`viewportsNeeded`/`truncated`), unconditionally — silent truncation reads as "we saw everything" when we didn't.
+
+**⚠️ LATENCY AND MEMORY ARE UNMEASURED.** The agent's Playwright harness could not exercise the real capture path — opening `popup.html` as a bare tab does not grant `activeTab`, which only a genuine toolbar-icon click provides. **It declined to fabricate numbers**, correctly. Varun measures this by toggling the setting and comparing `inference.durationMs` between runs. A stitched image is several times larger; if detection degrades badly from the ~780–880ms viewport baseline, the hybrid approach becomes the better answer.
+
+**A bug it caught in its own draft:** scroll restoration sat *after* an inner `try/finally`, so an exception inside the capture loop would have left the user's page scrolled elsewhere. Moved into an outer `finally`.
+
 ### TIER 4 — PRODUCT SURFACE. Recorded 2026-09-12. **480 tests green** (332 JS + 148 server).
 
 The extension was autonomous, `MAX_STEPS: 25`, injecting on `<all_urls>`, dispatching real clicks — **with no way to stop it.** That was the most important missing control, ahead of any polish.

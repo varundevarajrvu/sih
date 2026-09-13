@@ -68,12 +68,17 @@ let RunRegistry = null;
 let ActionDescribe = null;
 let ErrorMessages = null;
 let ServerUrlLib = null;
+// Full-page scroll-and-stitch capture: pure scroll-plan/stitch-geometry
+// math -- see content.js's "FULL-PAGE SCROLL-AND-STITCH CAPTURE" block
+// comment and lib/capture-plan.js's own header for the feature writeup.
+let CapturePlanLib = null;
 
 async function loadHelperLibs() {
   if (!RunRegistry) RunRegistry = await import(chrome.runtime.getURL("lib/run-registry.js"));
   if (!ActionDescribe) ActionDescribe = await import(chrome.runtime.getURL("lib/action-describe.js"));
   if (!ErrorMessages) ErrorMessages = await import(chrome.runtime.getURL("lib/error-messages.js"));
   if (!ServerUrlLib) ServerUrlLib = await import(chrome.runtime.getURL("lib/server-url.js"));
+  if (!CapturePlanLib) CapturePlanLib = await import(chrome.runtime.getURL("lib/capture-plan.js"));
 }
 
 // Loaded once at SW startup, refreshed live on every chrome.storage.local
@@ -671,6 +676,23 @@ browser.runtime.onMessage.addListener((message, sender) => {
         ? executeActionInFrame(sender.tab.id, message.frameId, message.action)
         : Promise.resolve({ ok: false, error: "no sender tab -- cannot resolve which tab's frame to target" });
 
+    // ---- Full-page scroll-and-stitch capture additions below ----
+
+    case "CAPTURE_VIEWPORT":
+      // content.js's full-page driver -> background.js, once per slice.
+      // Deliberately lean (JUST captureVisibleTab, no detection) -- see
+      // handleCaptureViewport()'s own comment for why detection is
+      // deferred to a single STITCH_AND_DETECT call at the end rather than
+      // running once per slice.
+      return handleCaptureViewport(sender);
+
+    case "STITCH_AND_DETECT":
+      // content.js's full-page driver -> background.js, once per step,
+      // after every slice has been collected. Stitches (OffscreenCanvas +
+      // createImageBitmap, both available in a service worker) then runs
+      // detection ONCE on the composite image.
+      return handleStitchAndDetect(message);
+
     default:
       // Not recognized -- ignore rather than throw (matches this
       // listener's existing behaviour for any unrecognized message type).
@@ -763,6 +785,177 @@ async function handleCaptureAndDetect(sender) {
     const message = err?.message || String(err);
     console.error("[background] CAPTURE_AND_DETECT FAILED:", message);
     return { type: "CAPTURE_AND_DETECT_ERROR", error: message };
+  }
+}
+
+// ---------------------------------------------------------------------
+// Full-page scroll-and-stitch capture. content.js's driver (the only
+// context that can scroll the page) calls CAPTURE_VIEWPORT once per slice,
+// then STITCH_AND_DETECT once at the end with every slice collected. See
+// content.js's own "FULL-PAGE SCROLL-AND-STITCH CAPTURE" block comment and
+// lib/capture-plan.js's header for the coordinate-problem/feature writeup
+// this pair of handlers is the browser-only half of.
+//
+// WHY DETECTION RUNS ONCE, HERE, ON THE COMPOSITE -- NOT PER SLICE:
+// the whole point of this feature is "the model sees the whole page at
+// once," not five separate viewport-sized detections the caller would then
+// have to de-duplicate/re-project itself. Running inference once on the
+// stitched image also means exactly one inference cost is paid per step
+// regardless of how many slices were captured -- N captures do NOT mean N
+// inferences.
+// ---------------------------------------------------------------------
+
+function isFiniteNumber(n) {
+  return typeof n === "number" && Number.isFinite(n);
+}
+
+// HAZARD 2 backstop: content.js already throttles PROACTIVELY, before each
+// capture (see its own `computeThrottleDelay()` call site) -- this is the
+// REACTIVE half, a last-resort retry in case that proactive margin is ever
+// insufficient under real scheduling jitter (e.g. another extension also
+// calling captureVisibleTab against the same tab in the same window).
+// Chrome's own error string for this specific condition is
+// "MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND" -- matched by substring since
+// there is no typed error code for it exposed to extensions.
+const CAPTURE_RATE_LIMIT_RETRY_MS = 400;
+const CAPTURE_RATE_LIMIT_MAX_RETRIES = 3;
+
+async function captureVisibleTabWithRetry(windowId) {
+  let lastErr;
+  for (let attempt = 0; attempt <= CAPTURE_RATE_LIMIT_MAX_RETRIES; attempt++) {
+    try {
+      return await browser.tabs.captureVisibleTab(windowId, { format: "png" });
+    } catch (err) {
+      lastErr = err;
+      const message = err?.message || String(err);
+      if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/i.test(message) || attempt === CAPTURE_RATE_LIMIT_MAX_RETRIES) {
+        throw err; // not the rate-limit error, or retries exhausted -- surface it
+      }
+      log(
+        `captureVisibleTab rate-limited (attempt ${attempt + 1}/${CAPTURE_RATE_LIMIT_MAX_RETRIES + 1}) -- ` +
+          `retrying in ${CAPTURE_RATE_LIMIT_RETRY_MS}ms:`,
+        message
+      );
+      await new Promise((resolve) => setTimeout(resolve, CAPTURE_RATE_LIMIT_RETRY_MS));
+    }
+  }
+  throw lastErr; // unreachable in practice (the loop above always throws or returns) -- satisfies control-flow analysis
+}
+
+/**
+ * ONE slice of a full-page capture: just the screenshot, no detection.
+ * Lean and single-purpose so content.js's per-slice round trip stays as
+ * fast/cheap as possible under the ~2/sec rate-limit budget.
+ */
+async function handleCaptureViewport(sender) {
+  try {
+    const windowId = sender && sender.tab ? sender.tab.windowId : undefined;
+    const dataUrl = await captureVisibleTabWithRetry(windowId);
+    const screenshot = stripDataUrlPrefix(dataUrl);
+    return { ok: true, screenshot };
+  } catch (err) {
+    const message = err?.message || String(err);
+    console.error("[background] CAPTURE_VIEWPORT failed:", message);
+    return { ok: false, error: message };
+  }
+}
+
+async function base64PngToImageBitmap(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: "image/png" });
+  return createImageBitmap(blob);
+}
+
+/**
+ * Stitch every collected slice into one full-page image (canvas
+ * compositing, HAZARD 8: memory -- each decoded ImageBitmap is `.close()`d
+ * immediately after being drawn, rather than held until the whole loop
+ * finishes, to release its (often GPU-backed) memory as early as
+ * possible), then run detection ONCE on the composite.
+ *
+ * `slices` (from content.js): `[{scrollY: number (CSS px), screenshot:
+ * base64 PNG, no "data:" prefix}]`, in the order they were captured.
+ * `scaleFactor`: devicePixelRatio, for placing each CSS-px `scrollY` onto
+ * the device-px canvas -- see capture-plan.js's `computeStitchLayout()`.
+ */
+async function handleStitchAndDetect(message) {
+  const tStitch0 = performance.now();
+  try {
+    await loadHelperLibs();
+
+    const rawSlices = Array.isArray(message && message.slices) ? message.slices : [];
+    if (rawSlices.length === 0) {
+      return { type: "STITCH_AND_DETECT_ERROR", error: "STITCH_AND_DETECT called with no slices" };
+    }
+    const scaleFactor = isFiniteNumber(message.scaleFactor) && message.scaleFactor > 0 ? message.scaleFactor : 1;
+
+    // Matches handleCaptureAndDetect()'s own diagnostic: check BEFORE any
+    // detectObjects()/ensureOffscreenDocument() call has a chance to
+    // (re)create one, so the response can truthfully report whether the
+    // offscreen document already existed going into this step.
+    const offscreenDocumentAlreadyExisted = await hasOffscreenDocument();
+
+    const decoded = [];
+    for (const slice of rawSlices) {
+      const bitmap = await base64PngToImageBitmap(slice.screenshot);
+      decoded.push({ scrollY: slice.scrollY, widthPx: bitmap.width, heightPx: bitmap.height, bitmap });
+    }
+
+    const layout = CapturePlanLib.computeStitchLayout({
+      slices: decoded.map((d) => ({ scrollY: d.scrollY, widthPx: d.widthPx, heightPx: d.heightPx })),
+      scaleFactor,
+    });
+
+    const canvas = new OffscreenCanvas(layout.canvasWidthPx, layout.canvasHeightPx);
+    const ctx = canvas.getContext("2d");
+    // Draw in the order computeStitchLayout returned placements (== capture
+    // order, ascending scrollY) -- overlap correctness doesn't depend on
+    // draw order (identical content in the overlap draws identical
+    // pixels), this is for determinism only. Each bitmap is closed
+    // immediately after drawing -- HAZARD 8 (memory): nothing holds more
+    // than one decoded slice's worth of extra memory at a time beyond the
+    // canvas itself.
+    for (const placement of layout.placements) {
+      const d = decoded[placement.index];
+      ctx.drawImage(d.bitmap, placement.drawXPx, placement.drawYPx);
+      d.bitmap.close();
+    }
+
+    const stitchBlob = await canvas.convertToBlob({ type: "image/png" });
+    const stitchedScreenshot = await blobToBase64(stitchBlob);
+    const stitchMs = performance.now() - tStitch0; // decode + draw + encode, everything before detection starts
+
+    const tDetect0 = performance.now();
+    const result = await detectObjects(stitchedScreenshot);
+    const detectMs = performance.now() - tDetect0;
+
+    log(
+      `STITCH_AND_DETECT OK -- ${decoded.length} slice(s) -> ${layout.canvasWidthPx}x${layout.canvasHeightPx}px stitched image, ` +
+        `stitch(decode+draw+encode) ${stitchMs.toFixed(0)}ms, detect ${detectMs.toFixed(0)}ms ` +
+        `(modelLoadMs=${result.modelLoadMs.toFixed(0)}, inferenceMs=${result.inferenceMs.toFixed(0)}), ` +
+        `${result.boxes.length} detection(s)`
+    );
+
+    return {
+      type: "STITCH_AND_DETECT_RESULT",
+      screenshot: stitchedScreenshot,
+      boxes: result.boxes,
+      detectMs,
+      modelLoadMs: result.modelLoadMs,
+      inferenceMs: result.inferenceMs,
+      pipelineWasAlreadyLoaded: result.pipelineWasAlreadyLoaded,
+      offscreenDocumentAlreadyExisted,
+      device: result.device,
+      stitchWidthPx: layout.canvasWidthPx,
+      stitchHeightPx: layout.canvasHeightPx,
+      stitchMs,
+    };
+  } catch (err) {
+    const message = err?.message || String(err);
+    console.error("[background] STITCH_AND_DETECT failed:", message);
+    return { type: "STITCH_AND_DETECT_ERROR", error: message };
   }
 }
 

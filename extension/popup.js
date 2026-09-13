@@ -31,6 +31,8 @@ const prewarmStatusEl = document.getElementById("prewarmStatus");
 const serverUrlInput = document.getElementById("serverUrlInput");
 const saveServerUrlBtn = document.getElementById("saveServerUrl");
 const serverUrlStatusEl = document.getElementById("serverUrlStatus");
+const fullPageCaptureToggle = document.getElementById("fullPageCaptureToggle");
+const fullPageCaptureStatusEl = document.getElementById("fullPageCaptureStatus");
 
 const DEFAULT_SERVER_URL = "http://localhost:8000";
 
@@ -166,6 +168,37 @@ saveServerUrlBtn.addEventListener("click", async () => {
   serverUrlInput.value = result.value;
   serverUrlStatusEl.textContent = `Saved: ${result.value} (background.js picks this up immediately, no reload needed).`;
   serverUrlStatusEl.style.color = "var(--pass)";
+});
+
+// =======================================================================
+// Full-page scroll-and-stitch capture setting.
+//
+// chrome.storage.local["fullPageCapture"], boolean, DEFAULT FALSE --
+// content.js reads this ONCE per run (see its own runAgentLoop() comment)
+// so a mid-run toggle can't switch coordinate modes partway through a run
+// that's already in progress; it takes effect on the NEXT "Run Agent
+// Loop" click. Read/write here mirrors the Server URL setting immediately
+// above it: read on popup open, written immediately on change (no
+// separate "Save" button needed for a checkbox -- there's no free-text
+// value to validate first, unlike the server URL).
+// =======================================================================
+browser.storage.local.get("fullPageCapture").then((stored) => {
+  fullPageCaptureToggle.checked = stored.fullPageCapture === true;
+});
+
+fullPageCaptureToggle.addEventListener("change", async () => {
+  const enabled = fullPageCaptureToggle.checked;
+  try {
+    await browser.storage.local.set({ fullPageCapture: enabled });
+    fullPageCaptureStatusEl.textContent = enabled
+      ? "On -- the next run will scroll and stitch the whole page before detection."
+      : "Off -- the next run captures the current viewport only (default, known-good).";
+    fullPageCaptureStatusEl.style.color = "var(--text-muted)";
+  } catch (err) {
+    fullPageCaptureToggle.checked = !enabled; // revert the visual state -- the write didn't actually happen
+    fullPageCaptureStatusEl.textContent = `Failed to save: ${err.message || err}`;
+    fullPageCaptureStatusEl.style.color = "var(--redact)";
+  }
 });
 
 // =======================================================================
