@@ -390,8 +390,18 @@
       el.className = "badge" + (on ? " on" : "");
     }
     function refreshBadges() {
-      var osEmail = document.getElementById("osEmail");
-      var osTel = document.getElementById("osTel");
+      // BUG FIXED 2026-09-14: these two were `document.getElementById(...)`,
+      // but both fields live INSIDE openRoot, an open shadow root.
+      // document.getElementById does NOT pierce a shadow boundary, so it
+      // returned null, the guarded block below never ran, and these two
+      // badges stayed frozen on their initial "(scan not seen yet)" text
+      // forever -- regardless of whether the extension was working.
+      //
+      // That made this page's headline open-shadow check report a false
+      // negative. Query THROUGH the shadow root instead; that is the whole
+      // point of holding a reference to it.
+      var osEmail = openRoot.querySelector("#osEmail");
+      var osTel = openRoot.querySelector("#osTel");
       if (osEmail) {
         var eid = osEmail.getAttribute("data-agent-id");
         setBadge("osEmailIdBadge", !!eid, "email agentId: " + eid, "email agentId: (scan not seen yet)");
