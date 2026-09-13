@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Dhristi -- TIER 1 verification: iframe + Shadow DOM coverage (SIH 26171)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 760px;
+    margin: 0 auto 120px 56px; /* left margin clears the fixed ruler */
+    padding: 24px 16px 0;
+    color: #1a1a1a;
+    background: #fafafa;
+  }
+  h1 { font-size: 21px; margin-bottom: 4px; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #666; margin: 0 0 12px; }
+  p.lede { color: #444; margin-top: 0; line-height: 1.55; }
+  code { background: #eee; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+  pre.geo-readout {
+    background: #10141c;
+    color: #b7ffcf;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+    padding: 10px 12px;
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 10px 0 0;
+  }
+
+  .card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin: 18px 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .card h2 { margin-bottom: 10px; }
+
+  /* Callout flavors -- consistent color language used everywhere on this
+     page and in the two iframe children, so a color alone tells you the
+     category before you've read a word. */
+  .pii-flag, .safe-flag, .mech-flag, .legend-flag {
+    border-left: 4px solid #c23b5a;
+    padding: 10px 12px;
+    background: #fff5f6;
+    border-radius: 4px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: #6b1a2c;
+    margin-top: 10px;
+  }
+  .safe-flag { border-left-color: #2a9d4a; background: #f0fbf3; color: #1c5c2c; }
+  .mech-flag { border-left-color: #7a4fd1; background: #f7f3ff; color: #4a2f8a; }
+  .legend-flag { border-left-color: #2a6fdb; background: #eef4ff; color: #1a3f7a; }
+
+  label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+  input[type="text"], input[type="email"] {
+    width: 100%;
+    max-width: 360px;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    font-size: 14px;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+  }
+  input.field-filled { border-color: #2a9d4a; background: #eefbf0; }
+  .field-confirm {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #256d34;
+  }
+  .field-confirm.visible { display: inline-flex; }
+  .field-confirm .check {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #2a9d4a; color: #fff; font-size: 11px; line-height: 1;
+  }
+  button {
+    margin-top: 14px; padding: 8px 16px; font-size: 14px; border-radius: 4px;
+    border: 1px solid #2a6fdb; background: #2a6fdb; color: #fff; cursor: pointer;
+  }
+  button:hover { background: #1f57ad; }
+  #thanksMsg {
+    margin-top: 14px; padding: 10px 14px; background: #e6f6e9;
+    border: 1px solid #b7e0bf; border-radius: 4px; color: #256d34; font-size: 14px;
+  }
+
+  .badge {
+    display: inline-block; margin-top: 6px; margin-right: 6px;
+    padding: 2px 7px; border-radius: 10px; font-size: 10.5px;
+    font-family: ui-monospace, Consolas, monospace; font-weight: 600;
+    background: #e2e2e2; color: #555; border: 1px solid #ccc;
+  }
+  .badge.on { background: #e6f6e9; color: #256d34; border-color: #b7e0bf; }
+
+  iframe { display: block; }
+
+  /* ---- Fixed, always-on VIEWPORT ruler. Ticks are position:fixed so
+     "120px" always means "120px down from the current top edge of the
+     browser window right now" -- the EXACT coordinate space
+     getBoundingClientRect() (and therefore frame-coords.js) works in.
+     pointer-events:none so it never blocks clicking/typing on real
+     content underneath it. ---- */
+  #pxRuler { position: fixed; inset: 0; pointer-events: none; z-index: 9998; }
+  .ruler-tick {
+    position: absolute; left: 0; width: 100%; border-top: 1px dashed rgba(217,140,25,0.4);
+  }
+  .ruler-tick span {
+    display: inline-block; background: rgba(255,247,232,0.9); color: #b5780f;
+    font: 10px/1.4 ui-monospace, Consolas, monospace; padding: 1px 5px;
+    border-radius: 0 3px 3px 0; border: 1px solid rgba(217,140,25,0.4); border-left: none;
+  }
+
+  /* ---- Document-flow markers inside the filler spacers: label their OWN
+     absolute document Y, computed live by JS (not hand-typed), so the
+     number is always correct regardless of how the CSS above shifts
+     layout. ---- */
+  .spacer {
+    height: 480px; display: flex; align-items: center; justify-content: center;
+    border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; margin: 18px 0;
+    background: repeating-linear-gradient(135deg, #f2f2f2, #f2f2f2 12px, #e8e8e8 12px, #e8e8e8 24px);
+  }
+  .doc-marker {
+    background: #2b2b2b; color: #fff; padding: 7px 16px; border-radius: 20px;
+    font-size: 12px; font-family: ui-monospace, Consolas, monospace;
+  }
+
+  footer { font-size: 12px; color: #777; margin: 40px 0 20px; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <div id="pxRuler"></div>
+
+  <h1>Dhristi -- TIER 1 verification: iframe + Shadow DOM coverage</h1>
+  <p class="lede">
+    This page exercises every path <code>CLAUDE.md</code>'s <strong>TIER 1 --
+    IFRAME + SHADOW DOM COVERAGE</strong> block added: frame-offset
+    translation (<code>frame-coords.js</code>), the <code>agentId</code>
+    cross-frame prefixing scheme, shadow-root piercing (open mode) in
+    <code>dom-scanner.js</code>/<code>action-executor.js</code>, and the
+    closed-shadow MAIN-world detection patch (<code>shadow-detect.js</code>).
+    That work is fully unit-tested (28 dom-scanner + 19 frame-coords tests,
+    all green) but <strong>has never run in a real browser</strong> --
+    this page, plus <code>demo/README.md</code>'s matching section, is that
+    first run. It does NOT modify <code>demo/test-page.html</code> or any of
+    its four existing scenarios; this is a fully separate page.
+  </p>
+
+  <div class="card">
+    <h2>How to read this page</h2>
+    <p class="lede" style="margin-bottom:6px;">
+      Every PII element below is labeled with what SHOULD happen to it. The
+      thin dashed lines running across the whole page (with numbers on the
+      left, e.g. <code>1200px</code>) are a fixed ruler -- they always show
+      distance from the TOP of your current browser window, which is the
+      exact coordinate space bboxes live in. Green <code class="badge on"
+      style="margin:0;">badges</code> are read directly off the live DOM's
+      own attributes (<code>data-agent-id</code>, <code>data-agent-sensitive</code>,
+      <code>data-sih-closed-shadow</code>) by this page's own script --
+      genuinely independent confirmation, not a restatement of anything the
+      extension prints. Dark <code>geo-readout</code> boxes show this page's
+      own, independently computed "expected" geometry for the iframe cases,
+      for you to compare by eye against the ruler.
+    </p>
+    <p class="lede" style="margin-bottom:0;">
+      After running the loop, open the PAGE's console (not the popup, not
+      the service worker) for the RUN SUMMARY -- see <code>demo/README.md</code>'s
+      new TIER 1 section for the exact fields to read
+      (<code>framesReported</code>, <code>framesMerged</code>,
+      <code>framesDropped</code>, <code>subframeSensitiveNodes</code>,
+      <code>subframeActionableNodes</code>, <code>unscannableRegions</code>)
+      and what each PASS/FAILURE combination means.
+    </p>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 5. Safe actionable field -- so the loop has something to do   -->
+  <!-- ============================================================ -->
+  <div class="card">
+    <h2>5. Safe actionable field</h2>
+    <label for="travelerName">Traveler name</label>
+    <input type="text" id="travelerName" name="traveler_name" placeholder="Enter your name" />
+    <span id="travelerConfirm" class="field-confirm"><span class="check">&#10003;</span> Agent filled this field</span>
+    <p class="safe-flag">
+      Empty, no PII-shaped placeholder, not flagged by dom-scanner --
+      mirrors <code>demo/test-page.html</code>'s "Full name" field exactly
+      (same reveal-on-fill + Continue pattern, same reason it exists:
+      without one legitimate target, a real VLM has nothing safe to do and
+      the run proves nothing about the frame/shadow coverage below).
+    </p>
+    <button id="continueBtn" type="button" hidden>Continue</button>
+    <div id="thanksMsg" hidden>Thanks! Traveler name received.</div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 2. Open shadow root, top frame                                -->
+  <!-- ============================================================ -->
+  <div class="card">
+    <h2>2. Open Shadow DOM (top frame) -- two different detection paths</h2>
+    <div id="openShadowHost"></div>
+    <p class="pii-flag">
+      <code>attachShadow({mode:"open"})</code>. Expect BOTH fields inside to
+      be found by dom-scanner's recursive shadow walk
+      (<code>element.shadowRoot</code> is non-null for open mode): the email
+      field via <code>type="email"</code>, the phone field via
+      <code>autocomplete="tel"</code> -- two independent classification
+      paths, so this isn't one lucky match. Expect both values to be
+      stripped from the outgoing <code>domSnapshot</code> (Section 5) and
+      never appear in the <code>/analyze</code> network payload. No iframe
+      is involved here, so no frame-offset math applies -- this is the
+      baseline shadow case to confirm BEFORE the composed iframe+shadow
+      case further down.
+    </p>
+    <span id="osEmailIdBadge" class="badge">email agentId: (scan not seen yet)</span>
+    <span id="osEmailSensBadge" class="badge">email sensitive: not set</span><br />
+    <span id="osTelIdBadge" class="badge">tel agentId: (scan not seen yet)</span>
+    <span id="osTelSensBadge" class="badge">tel sensitive: not set</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- 3. Closed shadow root, top frame                               -->
+  <!-- ============================================================ -->
+  <div class="card">
+    <h2>3. Closed Shadow DOM (top frame) -- the completely unverified path</h2>
+    <div id="closedShadowHost"></div>
+    <p class="pii-flag">
+      <code>attachShadow({mode:"closed"})</code>. dom-scanner.js can NEVER
+      see inside this -- <code>element.shadowRoot</code> reads back
+      <code>null</code> for closed mode, patch or no patch, always. The
+      <strong>only</strong> way this gets caught at all is
+      <code>shadow-detect.js</code>'s MAIN-world <code>attachShadow</code>
+      patch marking the host with <code>data-sih-closed-shadow</code>
+      BEFORE this card's own <code>attachShadow()</code> call (below) ever
+      runs. CLAUDE.md records this exact mechanism as
+      <strong>completely unverified in a real browser</strong> -- this is
+      the single highest-value thing on this page to check.
+    </p>
+    <p class="pii-flag">
+      <strong>If the patch fired:</strong> the badge below turns green, this
+      host is counted in <code>unscannableRegions</code>, and the WHOLE card
+      gets defensively blacked out in the redacted screenshot (the entire
+      host, not just text -- nothing inside a closed root can be
+      individually located, so the whole thing is the redaction unit).
+      <strong>If the patch did NOT fire:</strong> the badge stays gray
+      forever, this host is invisible to every scan, and -- because closed-
+      shadow content still <em>renders</em> on screen even though script
+      cannot read it -- the real, readable PII text below would be sent to
+      the VLM <strong>unredacted, inside the screenshot</strong>, with zero
+      console error. That silent failure mode is exactly the hole TIER 1
+      closes, and exactly why it needs a real browser to confirm.
+    </p>
+    <span id="closedShadowBadge" class="badge">data-sih-closed-shadow: not set</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Filler -- pushes the iframe far down the page ON PURPOSE.      -->
+  <!-- See demo/README.md's "why the iframe sits here" note: a        -->
+  <!-- broken/missing frame offset looks almost right by accident     -->
+  <!-- when the iframe is near the top of the page. Down here, the    -->
+  <!-- same bug would place a redaction rectangle wildly far from     -->
+  <!-- where the password field actually is.                          -->
+  <!-- ============================================================ -->
+  <div class="spacer"><div class="doc-marker marker-label">computing position&hellip;</div></div>
+  <div class="spacer"><div class="doc-marker marker-label">computing position&hellip;</div></div>
+  <div class="spacer"><div class="doc-marker marker-label">computing position&hellip;</div></div>
+
+  <!-- ============================================================ -->
+  <!-- 1 & 4. Same-origin iframe: password field + shadow nested      -->
+  <!-- inside it.                                                     -->
+  <!-- ============================================================ -->
+  <div class="card" id="sameOriginCard">
+    <h2>1 &amp; 4. Same-origin &lt;iframe&gt; -- password field + Shadow DOM nested inside it</h2>
+    <p class="pii-flag">
+      <strong>This card is placed roughly
+      <span id="sameOriginApproxY">1500+</span>px down the page, deliberately.</strong>
+      A completely broken or missing frame-offset would still place the
+      redaction rectangle SOMEWHERE on the page (most likely near the top,
+      y&#8776;0-100) -- unmissable this far down, because the ruler tick
+      nearest that wrong position is nowhere close to the ruler tick nearest
+      this card. If this iframe sat at the very top of the page instead,
+      that exact same bug would land in roughly the right place by sheer
+      coincidence, and the test would falsely pass.
+    </p>
+    <iframe id="sameOriginFrame" src="frames-iframe.html" style="width:100%;height:460px;border:3px solid #d98c19;border-radius:6px;" title="same-origin child frame"></iframe>
+    <pre class="geo-readout" id="geoSameOrigin">geometry check loading&hellip;</pre>
+    <p class="mech-flag">
+      The inline note field inside that iframe (labeled "Safe note") is a
+      SECOND, distinct check: not scanning-into-a-subframe, but the top
+      frame relaying a <code>type</code> ACTION into that subframe by its
+      prefixed agentId (<code>agent-f&lt;N&gt;-&lt;n&gt;</code>,
+      <code>RUN_ACTION_IN_FRAME</code>). If you see that field's border turn
+      green during the run, the write path across frames works too, not
+      just the read/scan path.
+    </p>
+  </div>
+
+  <div id="crossOriginMount"></div>
+
+  <footer>
+    <p><strong>Declared limitations (CLAUDE.md TIER 1) -- not bugs, do not
+      mistake these for failures:</strong></p>
+    <ul style="margin:4px 0; padding-left:20px;">
+      <li>Only ONE level of iframe nesting is supported. Iframe-inside-iframe
+        is out of scope for this pass -- not exercised on this page.</li>
+      <li>CSS <code>transform: scale</code> on an <code>&lt;iframe&gt;</code>
+        element is NOT compensated (position offset only). This page never
+        applies a transform to either iframe, on purpose.</li>
+      <li><code>assertNoRawPii</code> cannot check subframe nodes against
+        live element references from the top frame -- each subframe runs
+        its own sanitize + leak check before its report ever leaves that
+        frame's isolated world instead (see <code>scanThisFrame()</code> in
+        <code>content.js</code>).</li>
+    </ul>
+    <p>See <code>demo/README.md</code>'s TIER 1 verification section for the
+      full pass/fail decision tree, and <code>CLAUDE.md</code>'s TIER 1
+      block for the underlying mechanism writeup.</p>
+  </footer>
+
+  <script>
+    // =====================================================================
+    // 5. Safe field -- identical mechanics to demo/test-page.html's
+    // "Full name" pattern (reveal Continue on fill; field keeps its value
+    // visible; content.js's actedAgentIds is what stops it being re-offered,
+    // not this script removing it).
+    // =====================================================================
+    var travelerName = document.getElementById("travelerName");
+    var travelerConfirm = document.getElementById("travelerConfirm");
+    var continueBtn = document.getElementById("continueBtn");
+    var thanksMsg = document.getElementById("thanksMsg");
+    travelerName.addEventListener("input", function () {
+      if (travelerName.value && travelerName.value.trim().length > 0) {
+        travelerName.classList.add("field-filled");
+        travelerName.readOnly = true;
+        travelerConfirm.classList.add("visible");
+        continueBtn.hidden = false;
+      }
+    });
+    continueBtn.addEventListener("click", function () {
+      continueBtn.remove();
+      thanksMsg.hidden = false;
+    });
+
+    // =====================================================================
+    // 2. Open shadow root (top frame): email (type=email) + tel
+    // (autocomplete=tel) -- two different classification paths.
+    // =====================================================================
+    var openHost = document.getElementById("openShadowHost");
+    var openRoot = openHost.attachShadow({ mode: "open" });
+    openRoot.innerHTML =
+      '<div style="padding:10px;border:1px dashed #2a6fdb;border-radius:6px;background:#f4f8ff;">' +
+      '<label style="display:block;font-size:13px;font-weight:600;margin:0 0 4px;" for="osEmail">Email on file</label>' +
+      '<input type="email" id="osEmail" value="priya.k.demo@example.com" style="width:100%;max-width:340px;box-sizing:border-box;padding:8px 10px;font-size:14px;border:1px solid #bbb;border-radius:4px;" />' +
+      '<label style="display:block;font-size:13px;font-weight:600;margin:10px 0 4px;" for="osTel">Phone on file</label>' +
+      '<input type="text" id="osTel" autocomplete="tel" value="+91 98765 43210" style="width:100%;max-width:340px;box-sizing:border-box;padding:8px 10px;font-size:14px;border:1px solid #bbb;border-radius:4px;" />' +
+      "</div>";
+
+    // =====================================================================
+    // 3. Closed shadow root (top frame): visible PII, genuinely
+    // unreachable by any script once attached.
+    // =====================================================================
+    var closedHost = document.getElementById("closedShadowHost");
+    var closedRoot = closedHost.attachShadow({ mode: "closed" });
+    closedRoot.innerHTML =
+      '<div style="padding:10px;border:1px solid #c23b5a;border-radius:6px;background:#fff0f2;">' +
+      '<p style="margin:0;font-size:13px;"><strong>Internal profile widget</strong> (rendered on screen -- the DOM subtree itself is closed)</p>' +
+      '<p style="margin:6px 0 0;font-size:13px;">Support contact: raj.verma@example.com &middot; +91 90210 12345</p>' +
+      "</div>";
+
+    // =====================================================================
+    // Devtools-free self-check badges -- read the SHARED DOM's own
+    // attributes (mutated by the isolated-world content script, visible
+    // here because it's the same real DOM tree, not a separate JS realm).
+    // Genuinely independent verification, not a restatement of the
+    // extension's own console output.
+    // =====================================================================
+    function setBadge(id, on, onText, offText) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = on ? onText : offText;
+      el.className = "badge" + (on ? " on" : "");
+    }
+    function refreshBadges() {
+      var osEmail = document.getElementById("osEmail");
+      var osTel = document.getElementById("osTel");
+      if (osEmail) {
+        var eid = osEmail.getAttribute("data-agent-id");
+        setBadge("osEmailIdBadge", !!eid, "email agentId: " + eid, "email agentId: (scan not seen yet)");
+        setBadge("osEmailSensBadge", osEmail.getAttribute("data-agent-sensitive") === "true", "email sensitive: true (STAMPED)", "email sensitive: not set");
+      }
+      if (osTel) {
+        var tid = osTel.getAttribute("data-agent-id");
+        setBadge("osTelIdBadge", !!tid, "tel agentId: " + tid, "tel agentId: (scan not seen yet)");
+        setBadge("osTelSensBadge", osTel.getAttribute("data-agent-sensitive") === "true", "tel sensitive: true (STAMPED)", "tel sensitive: not set");
+      }
+      var closedHostEl = document.getElementById("closedShadowHost");
+      setBadge(
+        "closedShadowBadge",
+        closedHostEl.hasAttribute("data-sih-closed-shadow"),
+        "data-sih-closed-shadow: SET (patch fired)",
+        "data-sih-closed-shadow: not set"
+      );
+    }
+    refreshBadges();
+    setInterval(refreshBadges, 700);
+
+    // =====================================================================
+    // Fixed viewport ruler -- ticks every 100px, always relative to the
+    // CURRENT top of the browser window (position:fixed), i.e. exactly the
+    // coordinate space getBoundingClientRect()/frame-coords.js work in.
+    // =====================================================================
+    function buildRuler() {
+      var ruler = document.getElementById("pxRuler");
+      ruler.innerHTML = "";
+      var h = window.innerHeight;
+      for (var y = 0; y <= h; y += 100) {
+        var tick = document.createElement("div");
+        tick.className = "ruler-tick";
+        tick.style.top = y + "px";
+        var label = document.createElement("span");
+        label.textContent = y + "px";
+        tick.appendChild(label);
+        ruler.appendChild(tick);
+      }
+    }
+
+    // =====================================================================
+    // Document-flow markers inside the filler spacers -- computed live so
+    // the number is always correct, never a hand-typed guess.
+    // =====================================================================
+    function updateDocMarkers() {
+      var labels = document.querySelectorAll(".marker-label");
+      for (var i = 0; i < labels.length; i++) {
+        var rect = labels[i].getBoundingClientRect();
+        var absY = Math.round(rect.top + window.scrollY);
+        labels[i].textContent = "Document Y ≈ " + absY + "px from the top of the page";
+      }
+      var cardEl = document.getElementById("sameOriginCard");
+      if (cardEl) {
+        var cardRect = cardEl.getBoundingClientRect();
+        var cardY = document.getElementById("sameOriginApproxY");
+        if (cardY) cardY.textContent = Math.round(cardRect.top + window.scrollY);
+      }
+    }
+
+    // =====================================================================
+    // Geometry oracle -- computed independently by THIS page's own script
+    // (not the extension) via the same getBoundingClientRect() calls
+    // content.js itself makes, so Varun has an expected value to compare
+    // the ruler against by eye. Same-origin iframe only: cross-origin
+    // contentDocument access is expected to throw (SOP) -- that failure is
+    // the whole reason the postMessage/MessageEvent.source mechanism
+    // exists, so it's shown here as an expected result, not an error.
+    // =====================================================================
+    function updateOracle() {
+      var out = [];
+      var frame = document.getElementById("sameOriginFrame");
+      if (frame) {
+        var r = frame.getBoundingClientRect();
+        out.push(
+          "[same-origin] <iframe> element, top-frame viewport rect: x=" +
+            Math.round(r.left) + ", y=" + Math.round(r.top) +
+            "  <- this is EXACTLY what content.js measures via iframeEl.getBoundingClientRect() at merge time"
+        );
+        try {
+          var doc = frame.contentDocument;
+          var pwEl = doc && doc.getElementById("frPw");
+          if (pwEl) {
+            var pr = pwEl.getBoundingClientRect();
+            var expectedY = r.top + pr.top;
+            var expectedX = r.left + pr.left;
+            out.push(
+              "  password field, frame-local rect: x=" + Math.round(pr.left) + ", y=" + Math.round(pr.top)
+            );
+            out.push(
+              "  ==> EXPECTED merged top-frame position ~= x=" + Math.round(expectedX) + ", y=" + Math.round(expectedY) +
+                "  <- compare against the ruler tick nearest this Y, and against where the password field visually sits right now"
+            );
+          }
+        } catch (err) {
+          out.push("  (could not read contentDocument: " + err.message + ")");
+        }
+      }
+
+      var xoFrame = document.getElementById("crossOriginFrame");
+      if (xoFrame) {
+        var xr = xoFrame.getBoundingClientRect();
+        out.push(
+          "[cross-origin] <iframe> element, top-frame viewport rect: x=" +
+            Math.round(xr.left) + ", y=" + Math.round(xr.top) +
+            "  <- still legal to measure (SOP blocks reading INSIDE it, never the tag's own position)"
+        );
+        try {
+          var xoDoc = xoFrame.contentDocument;
+          out.push("  contentDocument unexpectedly readable cross-origin?! (" + (xoDoc ? "not null" : "null") + ") -- this should not happen in a real browser");
+        } catch (err) {
+          out.push(
+            "  contentDocument access BLOCKED as expected (Same-Origin Policy): " + err.message +
+              "  <- this is exactly why postMessage + MessageEvent.source matching exists; this page has no other way to compute an expected value for this frame"
+          );
+        }
+      }
+
+      var el = document.getElementById("geoSameOrigin");
+      if (el) el.textContent = out.length ? out.join("\n") : "geometry check loading…";
+    }
+
+    function updateAll() {
+      updateDocMarkers();
+      updateOracle();
+    }
+
+    window.addEventListener("load", function () {
+      buildRuler();
+      updateAll();
+    });
+    window.addEventListener("resize", function () {
+      buildRuler();
+      updateAll();
+    });
+    window.addEventListener(
+      "scroll",
+      function () {
+        window.requestAnimationFrame(updateOracle);
+      },
+      { passive: true }
+    );
+    setInterval(updateAll, 1000);
+    buildRuler();
+    updateAll();
+
+    // =====================================================================
+    // 6. OPTIONAL cross-origin iframe -- mounted ONLY when the page is
+    // loaded with ?xorigin=1, exactly mirroring demo/test-page.html's own
+    // ?scenario=checkout pattern (see that file's own comment for why: an
+    // always-present extra actionable-adjacent element would silently
+    // change the default run's step sequence for every other scenario on
+    // this page). Requires a SECOND local server on a different port --
+    // see demo/README.md's "Optional: cross-origin iframe" section.
+    // =====================================================================
+    var params = new URLSearchParams(location.search);
+    if (params.get("xorigin") === "1") {
+      var mount = document.getElementById("crossOriginMount");
+      mount.innerHTML =
+        '<div class="card" id="crossOriginCard">' +
+        "<h2>6. Cross-origin &lt;iframe&gt; (optional) -- the case postMessage/MessageEvent.source exists for</h2>" +
+        '<p class="mech-flag">Loaded because the URL has <code>?xorigin=1</code>. ' +
+        "This iframe's <code>src</code> points at a SECOND local server on a " +
+        "different port -- a different port is a different origin, so this is " +
+        "genuinely, testably cross-origin, not simulated. If that second " +
+        "server isn't running, this iframe simply never loads a document at " +
+        "all (a connection error inside the iframe only) -- no content script " +
+        "ever runs there, so it will NOT appear in <code>framesReported</code> " +
+        "at all. That's a different, more basic failure than a frame that " +
+        "loaded but got dropped -- see demo/README.md.</p>" +
+        '<iframe id="crossOriginFrame" src="http://localhost:5501/frames-iframe-xo.html" ' +
+        'style="width:100%;height:230px;border:3px solid #c23b5a;border-radius:6px;" title="cross-origin child frame"></iframe>' +
+        "</div>";
+      // Re-run the oracle now that the cross-origin frame element exists.
+      updateAll();
+    }
+  </script>
+</body>
+</html>

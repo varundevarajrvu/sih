@@ -547,6 +547,286 @@ a purchase proves nothing.
 
 ---
 
+## 10. TIER 1 verification: iframe + Shadow DOM coverage (`frames-test.html`)
+
+**A separate page, a separate test — does NOT touch `test-page.html` or any
+of scenarios 1–3 above.** CLAUDE.md's TIER 1 block ("IFRAME + SHADOW DOM
+COVERAGE", recorded 2026-09-11) added same-/cross-origin iframe scanning,
+the cross-frame `agentId` prefixing scheme, open-shadow-root piercing, and a
+MAIN-world patch that detects closed shadow roots — closing a real gap
+where PII inside an iframe or a shadow root was previously never scanned,
+flagged, or redacted **while Section 5 still reported PASSED**, because
+that check only ever looked at nodes the scanner found. All of it is
+unit-tested (37 dom-scanner + 19 frame-coords tests, all green) but had
+**never run in a real browser** before this page existed. This is that run.
+
+`demo/frames-test.html` (plus `demo/frames-iframe.html` and, optionally,
+`demo/cross-origin/frames-iframe-xo.html`) exercises every path TIER 1
+added: a same-origin iframe with a password field, an open shadow root
+with two independently-classified PII fields, a closed shadow root, a
+shadow root nested *inside* the same-origin iframe (composing both
+mechanisms at once), a benign actionable field inside that iframe (so the
+cross-frame *action* path gets exercised too, not just scanning), and an
+optional cross-origin iframe for the one case genuinely untestable any
+other way locally.
+
+### Why the iframe sits ~1500–2000px down the page — read this before anything else
+
+**This is the single most important design decision on this page.**
+`frame-coords.js` translates a subframe's bbox into top-frame coordinates
+by *adding* that iframe's own on-screen offset. If that offset is broken,
+missing, or defaults to `{x:0,y:0}`, the resulting (wrong) bbox still lands
+*somewhere* on the page — and if the iframe were near the top of the page,
+"somewhere near the top" and "the actual, correct position" look
+suspiciously similar by pure coincidence. The test would visually and
+numerically appear to pass while the underlying code is broken. Pushing
+the iframe far down the page makes that impossible: a broken offset now
+lands wildly far from where the iframe visibly is (most likely near
+`y≈0-100`, since a missing offset defaults to the frame-local value alone),
+against a ruler and a computed "expected" readout that both say the real
+position is 1500+ px down. A wrong answer here is obviously wrong, not
+subtly wrong.
+
+### Running it
+
+1. Start the server and load/reload the extension exactly as in steps 1–2
+   above (mock backend is fine for the primary structural check below; the
+   optional value-leak proof at the very end needs the real Gemini
+   backend, same as §8).
+2. Serve `demo/` over HTTP exactly as in step 3 — if you already have
+   `python -m http.server 5500` running from `demo/` for the other
+   scenarios, you don't need a second one; just navigate to:
+   ```
+   http://localhost:5500/frames-test.html
+   ```
+3. Open **this page's own** DevTools console (right-click the tab →
+   Inspect → Console) — same as step 4. You do NOT need to open a separate
+   console for the iframe: Chrome's Console panel aggregates `console.*`
+   output from every frame of the inspected tab (top frame AND every
+   iframe) into one view by default, so the iframe's own Section 5 line
+   (see below) shows up right alongside the top frame's, in the same
+   console you already have open.
+4. Read the page top-to-bottom once before running anything — every PII
+   element is labeled with what should happen to it, and the closed-shadow
+   badge, the open-shadow badges, and the in-iframe badges (scroll down
+   into the iframe card to see them) all start in their "not yet" state.
+   This is your baseline.
+5. Click the extension icon → **Run Agent Loop** (any task goal works for
+   the primary check below — the deterministic mock backend never reads
+   it; try `Fill in the traveler name and continue`).
+6. Watch the badges update live (polled ~every 700ms, no page reload
+   needed) as the loop runs, then read the RUN SUMMARY as described below.
+
+### Exact fields to read, and what each one means
+
+Every step's RUN SUMMARY `stages` array has one entry with `"stage":
+"scan"`. On this page, look at its extra fields (all added by TIER 1):
+
+| Field | What it means |
+|---|---|
+| `framesReported` | How many subframes sent this frame a report at all (structural: "did the subframe's content script run and respond"), regardless of whether that report was usable. |
+| `framesMerged` | Of those, how many were successfully offset-translated and folded into this step's `sensitiveNodes`/`domSnapshot`. |
+| `framesDropped` | `framesReported - framesMerged` — reports that arrived but could not be merged (offset never resolved, or a malformed report). Always 0 on a healthy run. A `console.warn` with the frameId + reason accompanies any non-zero value. |
+| `subframeSensitiveNodes` | PII nodes contributed by *merged* subframe reports only (a dropped report's nodes are not counted here — they were never merged into anything). |
+| `subframeActionableNodes` | Same, for the subframe's actionable `domSnapshot` entries (includes its sensitive nodes too — actionable-ness and sensitivity are independent; a password field is both). |
+| `unscannableRegions` | Top-frame **and** merged-subframe closed-shadow hosts combined — the count of elements confirmed unreachable and defensively blacked out whole. |
+
+**Also present** (pre-existing, not TIER 1-specific, but relevant here):
+`sensitiveNodes`/`actionableNodes` in the same `scan` stage entry are the
+**top frame's own** counts — they do NOT include subframe contributions
+(those are the `subframe*` fields above). Don't add them together and
+expect a specific total without checking both.
+
+### Expected numbers, exactly, for this page's default configuration (no `?xorigin=1`)
+
+Every step's `scan` entry should read:
+
+```json
+{
+  "actionableNodes": 4,          // travelerName + the hidden-but-present "Continue" button (hidden does NOT remove an element from the actionable walk, same precedent as test-page.html) + osEmail + osTel
+  "sensitiveNodes": 2,           // the open-shadow email + tel fields
+  "framesReported": 1,
+  "framesMerged": 1,
+  "framesDropped": 0,
+  "subframeSensitiveNodes": 2,   // the iframe's own password + nested-shadow-in-iframe contact
+  "subframeActionableNodes": 3,  // password + safe note field + nested-shadow contact
+  "unscannableRegions": 2        // ONE closed-shadow host, reported once by dom-scanner.js and once by action-executor.js (both independently walk the shadow tree and both find it — this is correct, not a double-count bug)
+}
+```
+
+These numbers should be **identical on every step** of the run (nothing in
+the iframe/shadow content changes step to step in this demo — only the
+top-level traveler-name/Continue elements do) — that stability is itself a
+sanity check.
+
+### What a PASS looks like, end to end
+
+With the mock backend (default), the expected sequence is **4 steps**, one
+longer than `test-page.html`'s classic 3-step demo, because this page adds
+a second safe target inside the iframe:
+
+1. **`type`** → the top-level "Traveler name" field (the only safe,
+   empty, top-frame-typeable field — chosen first because top-frame nodes
+   always precede subframe nodes in the merged array).
+2. **`type`** → the iframe's own "Safe note" field (`agent-f<N>-<n>`) —
+   the top frame relays this action *into* the subframe via
+   `RUN_ACTION_IN_FRAME`, resolved against that frame's own cached idMap.
+   Its border turns green and its badge updates — this is the *write*
+   half of TIER 1 working, not just the *read*/scan half.
+3. **`click`** → "Continue" (now the only remaining non-sensitive,
+   non-redacted actionable element).
+4. **`done`** — nothing safe/actionable remains.
+
+Alongside that: **expect TWO separate `[agent-loop] Section 5 check
+PASSED` lines per step, not one** — `assertNoRawPii()` is called
+independently by the TOP frame (right before its own `/analyze` send) AND
+by the SAME-ORIGIN IFRAME (inside its own `scanThisFrame()`, before its
+report ever leaves that frame's isolated world), and each logs its own
+line with its own frame-local count. Chrome's console aggregates every
+frame's `console` output into one view by default, so both lines land in
+the same console you're already watching, just as two distinct entries:
+
+```
+[agent-loop] Section 5 check PASSED -- outgoing payload contains no raw value for 2 flagged sensitive node(s).   // TOP frame: the open-shadow email + tel fields
+[agent-loop] Section 5 check PASSED -- outgoing payload contains no raw value for 2 flagged sensitive node(s).   // the iframe's OWN check: its password field + the nested-shadow-in-iframe contact field
+```
+
+(With `?xorigin=1`, a third line appears from the cross-origin frame,
+`for 1 flagged sensitive node(s)`.) **Do not sum these into one number** —
+each is independently scoped to what that specific frame's own live DOM
+elements hold; there is no single combined-total check anywhere by
+design (`assertNoRawPii` needs live element references, which cannot
+cross a frame boundary — see the "Declared limitations" list below). The
+closed-shadow badge should be green. The open-shadow and in-iframe badges
+should all show a populated `agentId` and `sensitive: true` where
+expected — subframe ones matching the `agent-f\d+-\d+` shape.
+
+### The four distinct failure modes — do not conflate them, they have different fixes
+
+**A — the frame was never scanned at all.**
+Signature: `framesReported: 0`. `subframeSensitiveNodes: 0`,
+`subframeActionableNodes: 0`. Scroll into the iframe card — its own
+badges (`frPwIdBadge`, etc.) stay stuck on "scan not seen yet" forever,
+because that frame's own content script never completed a scan step at
+all. **Implicates:** `manifest.json`'s `all_frames:true` wiring, or
+`background.js`'s `FRAME_HELLO`/`SCAN_THIS_FRAME` per-frame messaging —
+*not* `frame-coords.js`'s math, which is never even reached in this case.
+
+**B — the frame was scanned, but its report was never merged (offset
+never resolved).**
+Signature: `framesReported: 1` but `framesMerged: 0` and
+`framesDropped: 1`, with a `console.warn` naming the frameId and a reason
+like `"offset unresolved (token not yet correlated to an <iframe>
+element)"`. **The key distinguishing signal versus Mode A:** scroll into
+the iframe — its OWN badges (`data-agent-id`, `data-agent-sensitive`) ARE
+populated correctly, because that frame's own scan+stamp genuinely
+succeeded; only the TOP frame's merge step failed to fold it in.
+**Implicates:** the `postMessage` token / `MessageEvent.source`
+correlation in `content.js`'s top-frame `"message"` listener
+(`tokenToIframeElement`) — *not* `frame-coords.js`'s arithmetic, which
+also is never reached here (`collectAndMergeSubframeReports()` drops the
+report before calling `translateFrameReport`).
+
+**C — the frame was scanned AND merged, but the offset math itself is
+wrong (redaction lands at the wrong height).**
+Signature: **`framesReported`/`framesMerged`/`framesDropped` all look
+perfect** (1/1/0), and `subframeSensitiveNodes`/`subframeActionableNodes`
+are correct too — every count-based signal says PASS, which is exactly
+why this is the dangerous one and exactly why this page exists. The only
+way to catch it:
+  - *Fast, no devtools:* scroll so the iframe card is on screen, and
+    compare the dark `geo-readout` box's "EXPECTED merged top-frame
+    position" `y` value against the fixed ruler tick nearest where the
+    password field visually sits. Wildly different (off by hundreds of
+    px — e.g. the expected value says ~1700 but the redaction would land
+    near the top of whatever's currently in the viewport) means the
+    offset math is wrong.
+  - *Exact, one-time DevTools check:* Network tab → the `/analyze`
+    request → Payload → `redactedRegions[].bbox` → its `y` (divide out
+    `devicePixelRatio` — this array is in scaled screenshot-px, not raw
+    CSS px) should be close to the `geo-readout` box's independently
+    computed expected `y`.
+  **Implicates:** `frame-coords.js`'s `translateBBox()`/
+  `translateNodeBBoxes()`, or the offset construction itself
+  (`{x: rect.left, y: rect.top}` in `collectAndMergeSubframeReports()`) —
+  *not* the merge bookkeeping/counts, which cannot see this class of bug
+  by design (they count *how many* regions merged, never *where* they
+  ended up).
+
+**D — the closed-shadow MAIN-world patch never fired.**
+Signature: the `data-sih-closed-shadow` badge (card 3) never turns green,
+no matter how long you wait or how many times you re-run the loop.
+`unscannableRegions` will be **2 lower** than the table above (0 instead
+of 2 — no dom-scanner/action-executor contribution for the never-marked
+host). **Critically, there is no console error anywhere** — this fails
+completely silently, which is the entire reason CLAUDE.md flags this exact
+mechanism as unverified and worth checking first. If this fires, the real
+PII text in card 3 is being sent to the VLM **unredacted inside the
+screenshot** (closed-shadow content still renders even though script can't
+read it). **Implicates:** `shadow-detect.js`'s static
+`world:"MAIN"`/`document_start` declaration — per CLAUDE.md's own ruling,
+the documented fallback is `chrome.scripting.registerContentScripts()`,
+which needs broader `host_permissions`; per that same ruling, don't reach
+for it until this static approach is confirmed to actually fail.
+
+**E — (cross-origin only) the second frame never appears in
+`framesReported` at all, not even as dropped.**
+This is neither A nor B — it means `http://localhost:5501/...` never
+served a document, so no content script ever ran there in the first
+place (a network failure inside that one iframe, visible only if you
+happen to look inside it). Not a code bug — start the second server (see
+below).
+
+### Suggested task goals
+
+- **Primary / structural check (mock backend, no API key):** anything —
+  the mock never reads the task goal. `Fill in the traveler name and
+  continue` matches what the page is built to do.
+- **Advanced / value-leak proof (needs `VLM_BACKEND=gemini`, mirrors
+  CLAUDE.md's flagship "hunter2" demo — §8 above):**
+  ```
+  Fill in the password field inside the iframe with the value hunter2
+  ```
+  Expect `SENSITIVE_TARGET_BLOCKED` with a `targetId` matching
+  `agent-f<N>-<n>` (not bare `agent-<n>`) — proof of two things at once:
+  the model never received the iframe's real password value (redaction
+  crossed the frame boundary correctly), *and* the cross-frame `targetId`
+  prefix was correctly parsed back to route the (blocked) action attempt
+  to the right frame in the first place.
+
+### Optional: cross-origin iframe (`?xorigin=1`)
+
+Everything above only needs the one `python -m http.server 5500` from
+step 3. This part is separate and optional — it's the one case
+(`window.frameElement` is null cross-origin; there is no
+cross-origin-accessible geometry API on `Window` at all) that the
+`postMessage` token + `MessageEvent.source` matching in `content.js`
+exists specifically to solve, and it is otherwise completely unexercised
+by the same-origin test above.
+
+1. In a **second** terminal, serve the cross-origin child on a **different
+   port**:
+   ```bash
+   cd demo/cross-origin
+   python -m http.server 5501
+   ```
+2. Load the main page with the query string:
+   ```
+   http://localhost:5500/frames-test.html?xorigin=1
+   ```
+   A different port is a different origin per the browser's Same-Origin
+   Policy — this is genuinely cross-origin, not simulated. `manifest.json`'s
+   `host_permissions: ["http://localhost/*", ...]` already covers any
+   port on `localhost` implicitly (Phase 4's own Ruling 4: port wildcards
+   like `http://localhost:*/` are invalid manifest syntax; the unqualified
+   form matches every port already), so no extension changes are needed.
+3. A fourth card appears with its own `<iframe>`. Its badges and the
+   `geo-readout` box behave exactly as documented above, with Failure
+   Mode E as the one new thing to watch for if the second server isn't
+   running.
+
+---
+
 ## Troubleshooting
 
 - **`ANALYZE_ERROR` with `status: 0` and a "Failed to fetch"-style

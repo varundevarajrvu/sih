@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Dhristi -- same-origin iframe child (TIER 1 verification)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 14px 16px 20px;
+    color: #1a1a1a;
+    background: #fff7e8; /* warm tint -- visually distinct from the parent page so
+                             Varun can always tell "I am looking at the iframe's own
+                             content" at a glance, without needing devtools. */
+    border: 3px solid #d98c19;
+    box-sizing: border-box;
+  }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #8a5a0a; margin: 0 0 8px; }
+  p.note { font-size: 12px; color: #6b4a10; margin: 4px 0 14px; line-height: 1.5; }
+  code { background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .field-row { margin-bottom: 14px; }
+  label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    max-width: 360px;
+    box-sizing: border-box;
+    padding: 7px 9px;
+    font-size: 13px;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+  }
+  .hint { font-size: 11px; color: #6b4a10; margin: 4px 0 0; }
+  .badge {
+    display: inline-block;
+    margin-top: 5px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10.5px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 600;
+    background: #e2e2e2;
+    color: #555;
+    border: 1px solid #ccc;
+  }
+  .badge.on { background: #e6f6e9; color: #256d34; border-color: #b7e0bf; }
+  input.field-filled { border-color: #2a9d4a; background: #eefbf0; }
+</style>
+</head>
+<body>
+  <h2>&#8593; This entire box is a same-origin &lt;iframe&gt; (frames-iframe.html)</h2>
+  <p class="note">
+    Loaded into <code>frames-test.html</code>'s "Same-origin iframe" card via a
+    plain <code>&lt;iframe src="frames-iframe.html"&gt;</code>. Because
+    <code>manifest.json</code> sets <code>all_frames: true</code>, this document
+    gets its <strong>own, independent</strong> content-script instance --
+    <code>dom-scanner.js</code> and <code>action-executor.js</code> run again,
+    from scratch, against THIS document, exactly as they do on the top page.
+    Everything they find here (bboxes, agentIds) is in THIS frame's own
+    coordinate space until the top frame offsets it -- see the parent page's
+    ruler + geometry panel for the visual check.
+  </p>
+
+  <div class="field-row">
+    <label for="frPw">Password (real PII, flagged + must be redacted)</label>
+    <input type="password" id="frPw" name="password" autocomplete="current-password" value="Ifr@meSecret2026!" />
+    <p class="hint">
+      Flagged via <code>type=password</code>. Expect <code>data-agent-sensitive</code>
+      to be stamped on THIS input by THIS frame's own scan (see badge below --
+      that stamping happens inside <code>scanThisFrame()</code>, before anything
+      leaves this frame). Its bbox is frame-local until the top frame adds this
+      iframe's own on-screen offset at merge time.
+    </p>
+    <span id="frPwIdBadge" class="badge">agentId: (scan not seen yet)</span>
+    <span id="frPwSensBadge" class="badge">data-agent-sensitive: not set</span>
+  </div>
+
+  <div class="field-row">
+    <label for="frNote">Safe note (NOT PII -- actionable, exercises the cross-frame ACT path)</label>
+    <input type="text" id="frNote" name="note" placeholder="Empty, non-PII -- the agent may type here" />
+    <p class="hint">
+      This field exercises the OTHER half of TIER 1: not just scanning a
+      subframe, but the top frame relaying an action <em>into</em> a subframe
+      by prefixed agentId (<code>RUN_ACTION_IN_FRAME</code>, frameId parsed
+      back out of <code>agent-f&lt;N&gt;-&lt;n&gt;</code>). If the agent loop
+      types into this field, the border turns green below and this iframe's
+      own inline script (mirroring <code>test-page.html</code>'s pattern) proves
+      a real DOM <code>input</code> event fired.
+    </p>
+    <span id="frNoteIdBadge" class="badge">agentId: (scan not seen yet)</span>
+  </div>
+
+  <div class="field-row">
+    <h2 style="margin-top:4px;">Open Shadow DOM NESTED inside this iframe</h2>
+    <div id="frNestedShadowHost"></div>
+    <p class="hint">
+      An <code>attachShadow({mode:"open"})</code> host created BY THIS iframe's
+      own inline script, containing an autofilled-looking value with
+      <strong>no <code>type</code>/<code>autocomplete</code> signal at all</strong>
+      -- same "value regex only" case as <code>test-page.html</code>'s
+      Government ID field, but now composed one level inside BOTH a shadow
+      root AND an iframe at once. Proves dom-scanner's shadow-piercing walk
+      (which doesn't know or care that it's running inside a subframe) and the
+      frame-coordination merge (which doesn't know or care that its nodes came
+      from inside a shadow root) compose correctly -- neither mechanism special-
+      cases the other.
+    </p>
+    <span id="frNestedIdBadge" class="badge">agentId: (scan not seen yet)</span>
+    <span id="frNestedSensBadge" class="badge">data-agent-sensitive: not set</span>
+  </div>
+
+  <script>
+    // ---- Build the nested open shadow root (runs on normal parse, well
+    // after shadow-detect.js's document_start MAIN-world patch is already
+    // installed -- see CLAUDE.md TIER 1 for why that ordering is guaranteed). ----
+    var nestedHost = document.getElementById("frNestedShadowHost");
+    var nestedRoot = nestedHost.attachShadow({ mode: "open" });
+    nestedRoot.innerHTML =
+      '<div style="padding:8px;border:1px dashed #d98c19;border-radius:6px;background:#fffaf0;">' +
+      '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:3px;" for="frNestedContact">Contact on file (value-regex-only PII)</label>' +
+      '<input type="text" id="frNestedContact" value="jordan.jamieson@shadowmail.example" style="width:100%;max-width:340px;box-sizing:border-box;padding:7px 9px;font-size:13px;border:1px solid #bbb;border-radius:4px;" />' +
+      "</div>";
+
+    // ---- Safe-field visible proof, mirroring test-page.html's pattern. ----
+    var frNote = document.getElementById("frNote");
+    frNote.addEventListener("input", function () {
+      if (frNote.value && frNote.value.trim().length > 0) {
+        frNote.classList.add("field-filled");
+        frNote.readOnly = true;
+      }
+    });
+
+    // ---- Devtools-free self-check badges: these poll the SHARED DOM tree
+    // (not the extension's internal JS state, which this page cannot see)
+    // for the exact attributes content.js/action-executor.js/dom-scanner.js
+    // stamp on live elements. Setting a DOM attribute is visible across the
+    // isolated-world/page-world boundary because it mutates the real,
+    // shared DOM -- same principle shadow-detect.js's own header comment
+    // relies on for its closed-shadow marker. This is genuinely
+    // independent verification, not a re-statement of extension output. ----
+    function refreshBadges() {
+      var pw = document.getElementById("frPw");
+      var pwId = pw.getAttribute("data-agent-id");
+      var idBadge = document.getElementById("frPwIdBadge");
+      idBadge.textContent = "agentId: " + (pwId || "(scan not seen yet)");
+      idBadge.className = "badge" + (pwId ? " on" : "");
+
+      var sensBadge = document.getElementById("frPwSensBadge");
+      var sensitive = pw.getAttribute("data-agent-sensitive") === "true";
+      sensBadge.textContent = "data-agent-sensitive: " + (sensitive ? "true (STAMPED)" : "not set");
+      sensBadge.className = "badge" + (sensitive ? " on" : "");
+
+      var note = document.getElementById("frNote");
+      var noteId = note.getAttribute("data-agent-id");
+      var noteBadge = document.getElementById("frNoteIdBadge");
+      noteBadge.textContent = "agentId: " + (noteId || "(scan not seen yet)");
+      noteBadge.className = "badge" + (noteId ? " on" : "");
+
+      var nested = document.getElementById("frNestedContact");
+      if (nested) {
+        var nestedId = nested.getAttribute("data-agent-id");
+        var nestedIdBadge = document.getElementById("frNestedIdBadge");
+        nestedIdBadge.textContent = "agentId: " + (nestedId || "(scan not seen yet)");
+        nestedIdBadge.className = "badge" + (nestedId ? " on" : "");
+
+        var nestedSensitive = nested.getAttribute("data-agent-sensitive") === "true";
+        var nestedSensBadge = document.getElementById("frNestedSensBadge");
+        nestedSensBadge.textContent = "data-agent-sensitive: " + (nestedSensitive ? "true (STAMPED)" : "not set");
+        nestedSensBadge.className = "badge" + (nestedSensitive ? " on" : "");
+      }
+    }
+    refreshBadges();
+    setInterval(refreshBadges, 700);
+  </script>
+</body>
+</html>

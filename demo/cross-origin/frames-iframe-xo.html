@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Dhristi -- CROSS-origin iframe child (TIER 1 verification, optional)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 14px 16px 20px;
+    color: #1a1a1a;
+    background: #fde9ec; /* different tint from the same-origin child --
+                             visually distinguishes "which iframe am I
+                             looking at" at a glance. */
+    border: 3px solid #c23b5a;
+    box-sizing: border-box;
+  }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: #8a1f38; margin: 0 0 8px; }
+  p.note { font-size: 12px; color: #6b1a2c; margin: 4px 0 14px; line-height: 1.5; }
+  code { background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+  .field-row { margin-bottom: 10px; }
+  label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+  input[type="password"] {
+    width: 100%;
+    max-width: 360px;
+    box-sizing: border-box;
+    padding: 7px 9px;
+    font-size: 13px;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+  }
+  .hint { font-size: 11px; color: #6b1a2c; margin: 4px 0 0; }
+  .badge {
+    display: inline-block;
+    margin-top: 5px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10.5px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 600;
+    background: #e2e2e2;
+    color: #555;
+    border: 1px solid #ccc;
+  }
+  .badge.on { background: #e6f6e9; color: #256d34; border-color: #b7e0bf; }
+</style>
+</head>
+<body>
+  <h2>&#8593; This box is a CROSS-ORIGIN &lt;iframe&gt; (a different port = a different origin)</h2>
+  <p class="note">
+    If you can read this rendered inside <code>frames-test.html</code>'s
+    optional cross-origin card, this file is being served from a
+    <strong>different port</strong> than the parent page -- see
+    <code>demo/README.md</code>'s "Optional: cross-origin iframe" section for
+    the exact two-server setup. This is the ONLY case where
+    <code>window.frameElement</code> is null and the child genuinely cannot
+    read its own position in the parent (a hard Same-Origin-Policy
+    constraint) -- the <code>postMessage</code> token + <code>MessageEvent.source</code>
+    matching described in <code>content.js</code>'s FRAME COORDINATION block
+    is the mechanism built specifically for this case, and it is otherwise
+    completely unexercised by the same-origin iframe test.
+  </p>
+
+  <div class="field-row">
+    <label for="xoPw">Password (real PII, flagged + must be redacted)</label>
+    <input type="password" id="xoPw" name="password" autocomplete="current-password" value="CrossOrigin$ecret9" />
+    <p class="hint">
+      Same detection path as the same-origin iframe's password field
+      (<code>type=password</code>) -- the only thing under test here is
+      whether the postMessage-token / <code>MessageEvent.source</code> offset
+      resolution ALSO works when the parent cannot reach into this document
+      directly. If it does not, expect this frame's report to show up in the
+      RUN SUMMARY's <code>framesDropped</code> count instead of
+      <code>framesMerged</code> -- see demo/README.md.
+    </p>
+    <span id="xoPwIdBadge" class="badge">agentId: (scan not seen yet)</span>
+    <span id="xoPwSensBadge" class="badge">data-agent-sensitive: not set</span>
+  </div>
+
+  <script>
+    function refreshBadges() {
+      var pw = document.getElementById("xoPw");
+      var pwId = pw.getAttribute("data-agent-id");
+      var idBadge = document.getElementById("xoPwIdBadge");
+      idBadge.textContent = "agentId: " + (pwId || "(scan not seen yet)");
+      idBadge.className = "badge" + (pwId ? " on" : "");
+
+      var sensBadge = document.getElementById("xoPwSensBadge");
+      var sensitive = pw.getAttribute("data-agent-sensitive") === "true";
+      sensBadge.textContent = "data-agent-sensitive: " + (sensitive ? "true (STAMPED)" : "not set");
+      sensBadge.className = "badge" + (sensitive ? " on" : "");
+    }
+    refreshBadges();
+    setInterval(refreshBadges, 700);
+  </script>
+</body>
+</html>
