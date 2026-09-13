@@ -411,7 +411,24 @@ Why this matters: sensitive nodes are not candidate targets. They are load-beari
 
 **Consumption points** (each file carries a HOW TO CONSUME block): `element-ranker` runs after the sensitive-flag merge and before the `/analyze` POST, fed real viewport dims. `action-risk` runs inside `executeAction()` at the same point `guardSensitive()` does, passed the **live DOM element's** attributes — not the lossy `domSnapshot` — for best recall.
 
-### 🔴🔴 CONFIRMED OPEN BUG — IFRAME PII IS NOT REDACTED. Found in-browser 2026-09-13.
+### ✅ RESOLVED & BROWSER-VERIFIED 2026-09-14 — iframe PII is now scanned, merged and redacted.
+
+Re-run on `demo/frames-test.html` after the handshake fix, deterministic across steps:
+```
+framesReported: 1,  framesMerged: 1,  framesDropped: 0
+subframeSensitiveNodes: 2,  subframeActionableNodes: 3
+unscannableRegions: 2
+rank totalCandidates 4 → 7,  redact regions 6 → 8
+```
+Every counter moved the right way. The phantom second frame is gone (registry pruning on navigation), the report merges, and the iframe's two PII fields are found and redacted. Inference held at ~550ms on a 959×4862 stitched image.
+
+**Root cause was a fire-and-forget handshake.** A subframe announced its geometry-correlation token via `postMessage` exactly once, synchronously, when its `content.js` finished evaluating. `postMessage` does not queue for a listener that does not yet exist — the heavier parent page reliably had not registered its handler yet, so the message landed with zero listeners and was gone permanently. Nothing resent it, which is why the failure was deterministic rather than intermittent. Fixed with a retry-until-ACK (200ms, ~6s cap) plus **defensive redaction of any iframe not positively confirmed merged**, mirroring the closed-shadow policy — so the failure mode is now over-redaction, never exposure.
+
+**Two related bugs found on the way:** `background.js` never pruned its `tabId→frameId` registry on navigation (a reload left a dead frameId being polled forever — the phantom second frame), and `chrome.tabs.sendMessage` without `frameId` broadcasts to EVERY frame despite a code comment claiming otherwise, letting a subframe's instant guard-rejection race the top frame's real result back to the popup. Now pinned to `frameId: 0`.
+
+**⚠️ STILL UNCONFIRMED: bbox PLACEMENT.** These counters are exactly what failure signature C produces — perfect numbers with the redaction bar in the wrong place. Only the visual check against the page's ruler/oracle can confirm the frame-offset math. Until someone eyeballs it, "merged" is proven and "merged *correctly*" is not.
+
+#### Historical record — the bug as originally found, 2026-09-13
 
 **The Tier 1 iframe work does NOT work in practice.** Verified on `demo/frames-test.html`, deterministic across consecutive steps:
 ```
