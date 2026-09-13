@@ -85,6 +85,7 @@ describe("describeOutcome", () => {
     const outcomes = [
       "done",
       "stopped",
+      "blocked",
       "stalled",
       "max_steps_reached",
       "capture_failed",
@@ -129,5 +130,44 @@ describe("describeOutcome", () => {
   test("act_failed and section5_violation both render with an error tone (they are genuine failures, not deliberate stops)", () => {
     assert.equal(describeOutcome("act_failed").tone, "error");
     assert.equal(describeOutcome("section5_violation").tone, "error");
+  });
+
+  // REPORTING FIX (coordinator, 2026-09-13): a guard deliberately refusing
+  // an action (SENSITIVE_TARGET_BLOCKED / IRREVERSIBLE_ACTION_BLOCKED) is
+  // the safeguard working, not a failure. Before this fix both a guard
+  // refusal AND a genuine execution failure were folded into one outcome,
+  // "act_failed" -- rendered as "Blocked or failed to act", directly
+  // contradicting the popup's own "a BLOCKED banner means the safeguard
+  // worked" copy. These tests lock in the split: "blocked" reads as a
+  // deliberate, successful stop; "act_failed" stays reserved for a
+  // genuine failure; and the two can never again collapse into each other.
+  describe("'blocked' -- the guard-refusal outcome, split out from 'act_failed'", () => {
+    test("renders with a success tone, never an error tone", () => {
+      assert.equal(describeOutcome("blocked").tone, "success");
+    });
+
+    test("label reads as deliberate protection, never uses the word 'failed'", () => {
+      const { label } = describeOutcome("blocked");
+      assert.ok(label && label.length > 0);
+      assert.ok(!/fail/i.test(label), `"blocked" label must never say "failed" -- got: "${label}"`);
+    });
+
+    test("is distinguishable from 'act_failed' -- distinct label AND distinct tone", () => {
+      const blocked = describeOutcome("blocked");
+      const actFailed = describeOutcome("act_failed");
+      assert.notEqual(blocked.label, actFailed.label);
+      assert.notEqual(blocked.tone, actFailed.tone, "a guard refusal must not render with the same tone as a genuine execution failure");
+    });
+
+    test("act_failed's own label no longer mentions being blocked -- the two outcomes must never be conflated in either direction", () => {
+      const { label } = describeOutcome("act_failed");
+      assert.ok(!/block/i.test(label), `"act_failed" label must not describe a blocked/refused action -- got: "${label}"`);
+    });
+
+    test("is distinguishable from 'done' and 'stopped' by label (even though 'blocked' and 'done' may legitimately share a success tone)", () => {
+      const blocked = describeOutcome("blocked");
+      assert.notEqual(blocked.label, describeOutcome("done").label);
+      assert.notEqual(blocked.label, describeOutcome("stopped").label);
+    });
   });
 });

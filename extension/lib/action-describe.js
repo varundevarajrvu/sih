@@ -97,11 +97,23 @@ export function describeAction(action, domSnapshot) {
 const OUTCOME_LABELS = Object.freeze({
   done: { label: "Done", tone: "success" },
   stopped: { label: "Stopped by you", tone: "neutral" },
+  // REPORTING FIX (coordinator, 2026-09-13): a guard deliberately refusing
+  // an action (SENSITIVE_TARGET_BLOCKED / IRREVERSIBLE_ACTION_BLOCKED) is
+  // this product's safeguard working, not a failure -- content.js now
+  // records this as its own outcome, "blocked", decided on the error CODE
+  // alone (never on message text, per CLAUDE.md's error-code ruling), so
+  // it can never again be lumped in with a genuine execution failure under
+  // "act_failed". Tone "success" is deliberate, not a placeholder: the run
+  // did exactly what it should. Never say "failed" here.
+  blocked: { label: "Stopped safely -- refused an unsafe action", tone: "success" },
   stalled: { label: "Stopped: no progress detected", tone: "warning" },
   max_steps_reached: { label: "Stopped: step limit reached", tone: "warning" },
   capture_failed: { label: "Failed: could not capture/detect the page", tone: "error" },
   analyze_failed: { label: "Failed: server request failed", tone: "error" },
-  act_failed: { label: "Blocked or failed to act", tone: "error" },
+  // act_failed is now reserved EXCLUSIVELY for a genuine execution failure
+  // (target element vanished, dispatch threw, a cross-frame relay errored,
+  // ...) -- a deliberate guard refusal is "blocked", above, never this.
+  act_failed: { label: "Failed: could not complete the action", tone: "error" },
   section5_violation: { label: "Stopped: internal safety check failed", tone: "error" },
   // Not produced by content.js's own instrumentation directly -- this is
   // background.js's own fallback (handleRunAgentLoopFromPopup) for when

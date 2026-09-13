@@ -1239,6 +1239,32 @@ async function executeActionAcrossFrames(action, idMap, options) {
 // ---------------------------------------------------------------------
 const MAX_STEPS = 25;
 
+// REPORTING FIX (coordinator, 2026-09-13): a guard refusing an action
+// (SENSITIVE_TARGET_BLOCKED / IRREVERSIBLE_ACTION_BLOCKED -- action-executor.js's
+// two fail-closed policy codes, Phase 3 + TIER 2 rulings) is this product's
+// safeguard working exactly as designed, not a failure. Before this fix,
+// BOTH a deliberate guard refusal AND a genuine execution failure (target
+// element vanished, dispatch threw, a relay to another frame errored, ...)
+// were folded into one outcome, "act_failed" -- so the popup's own outcome
+// banner said "Blocked or failed to act" directly under a sentence telling
+// the user a BLOCKED banner means the safeguard worked. Same bug shape as
+// "stopped"/"stalled" needing their own outcome values instead of hiding
+// inside "max_steps_reached" -- see TIER 4's STOP work above.
+//
+// The split is decided on the error CODE below, NEVER on err.message text
+// -- CLAUDE.md Section 7 rule 5's whole point (echoed by the
+// IRREVERSIBLE_ACTION_BLOCKED ruling itself: "so Phase 4 instrumentation
+// can count them separately without string-matching prose"). A Set, not a
+// pair of === checks repeated at each call site, so the one place this
+// project's guard-refusal codes are enumerated can't drift out of sync
+// with itself.
+//
+// action-executor.js itself is UNCHANGED -- both codes still throw exactly
+// as before, fail-closed, with the same reasons/messages. This is a
+// reporting-only fix: which OUTCOME STRING content.js's own instrumentation
+// records for a step that already, correctly, refused to act.
+const GUARD_REFUSAL_CODES = new Set(["SENSITIVE_TARGET_BLOCKED", "IRREVERSIBLE_ACTION_BLOCKED"]);
+
 async function runAgentLoop() {
   await loadLibModules();
 
@@ -1860,7 +1886,13 @@ async function runAgentLoop() {
         code: err.code,
       });
       stepResults.push({ step, action, error: err.message, code: err.code });
-      outcome = "act_failed";
+
+      // REPORTING FIX: a guard refusal (see GUARD_REFUSAL_CODES's own
+      // comment, above MAX_STEPS) is a distinct outcome from a genuine
+      // execution failure -- "blocked", never "act_failed". Decided on
+      // err.code alone, never on err.message text.
+      const isGuardRefusal = GUARD_REFUSAL_CODES.has(err.code);
+      outcome = isGuardRefusal ? "blocked" : "act_failed";
 
       // TASK 2 (live progress): "Blocked actions prominently" -- this
       // project's whole value proposition is a guard that visibly refuses
@@ -1870,7 +1902,7 @@ async function runAgentLoop() {
       // own distinct, prominent `lastBlock` field (never merged into the
       // generic `lastError` bucket below) so the popup can render them
       // unmissably rather than as just another error string.
-      if (err.code === "SENSITIVE_TARGET_BLOCKED" || err.code === "IRREVERSIBLE_ACTION_BLOCKED") {
+      if (isGuardRefusal) {
         reportProgress({
           stage: "act",
           lastBlock: {

@@ -174,6 +174,34 @@ describe("finishRun", () => {
     assert.equal(finishRun(base, "stalled").outcome, "stalled");
   });
 
+  // REPORTING FIX (coordinator, 2026-09-13): content.js now reports a
+  // deliberate guard refusal (SENSITIVE_TARGET_BLOCKED /
+  // IRREVERSIBLE_ACTION_BLOCKED) as outcome "blocked", split out from
+  // "act_failed" (now reserved for a genuine execution failure). This
+  // module stores outcome strings verbatim and has no per-string opinion
+  // (see createRunState()'s own doc comment on the `outcome` field) --
+  // these tests prove that passthrough holds for the new value too, and
+  // that it is never silently conflated with the failure outcome it was
+  // split from.
+  test("'blocked' (a guard refusal) is stored verbatim, exactly like any other outcome string", () => {
+    const s0 = startRun("goal", { tabId: 1 });
+    const finished = finishRun(s0, "blocked", { now: 9000 });
+    assert.equal(finished.active, false);
+    assert.equal(finished.outcome, "blocked");
+    assert.equal(finished.finishedAt, 9000);
+  });
+
+  test("'blocked' is never confusable with 'act_failed' -- the two outcomes this fix split apart -- nor with 'done' or 'stalled'", () => {
+    const base = startRun("goal", { tabId: 1 });
+    const blocked = finishRun(base, "blocked").outcome;
+    const actFailed = finishRun(base, "act_failed").outcome;
+    assert.equal(blocked, "blocked");
+    assert.equal(actFailed, "act_failed");
+    assert.notEqual(blocked, actFailed, "a deliberate guard refusal must never be stored as the same outcome as a genuine execution failure");
+    assert.notEqual(blocked, finishRun(base, "done").outcome);
+    assert.notEqual(blocked, finishRun(base, "stalled").outcome);
+  });
+
   test("finishing a run that already had stopRequested:true still finalizes with whatever outcome is passed (the caller decides, not this function)", () => {
     let s = startRun("goal", { tabId: 1 });
     s = requestStop(s);
@@ -264,5 +292,63 @@ describe("full lifecycle: start -> progress -> stop -> finish", () => {
     // popup can still show "last action: clicked Continue" alongside
     // "Outcome: Stopped by you".
     assert.equal(s.lastAction.description, "clicked Continue");
+  });
+});
+
+// ===========================================================================
+// End-to-end transition sequence for the REPORTING FIX (coordinator,
+// 2026-09-13): mirrors exactly what content.js's runAgentLoop() does when a
+// guard refuses an action -- a lastBlock progress patch (content.js's
+// "TASK 2 (live progress)" branch), then finishRun("blocked") in the
+// try/finally, never finishRun("act_failed"). Exercises the full lifecycle
+// so the split is proven through the SAME reducer path background.js
+// actually drives, not just as isolated finishRun() calls above.
+// ===========================================================================
+describe("full lifecycle: start -> progress -> guard refusal -> finish('blocked')", () => {
+  test("end state is inactive, carries the lastBlock evidence, and outcome is 'blocked' -- never 'act_failed', 'done', or 'stalled'", () => {
+    let s = startRun("Complete the checkout by clicking Place Order", { tabId: 5, maxSteps: 25, now: 0 });
+    assert.equal(canStop(s), true);
+
+    s = applyProgress(s, { step: 3, stage: "act" }, { now: 100 });
+    // Exactly the shape content.js's runAgentLoop() sends for a guard
+    // refusal (see its catch block around GUARD_REFUSAL_CODES) -- never
+    // merged into lastError.
+    s = applyProgress(
+      s,
+      {
+        stage: "act",
+        lastBlock: {
+          code: "IRREVERSIBLE_ACTION_BLOCKED",
+          reasons: ['text matches destructive-intent keyword "place order"'],
+          targetId: "agent-6",
+          step: 3,
+          message: "action blocked: text matches destructive-intent keyword \"place order\"",
+        },
+      },
+      { now: 200 }
+    );
+
+    // The run ends right here -- content.js's `break` after recording the
+    // block, then its try/finally reports outcome via finishRun.
+    s = finishRun(s, "blocked", { now: 300 });
+
+    assert.equal(s.active, false, "a guard refusal ends the run -- Stop re-disables, Run Agent Loop re-enables");
+    assert.equal(s.outcome, "blocked");
+    assert.notEqual(s.outcome, "act_failed", "a deliberate refusal must never be reported as a genuine execution failure");
+    assert.notEqual(s.outcome, "done");
+    assert.notEqual(s.outcome, "stalled");
+    // The blocking evidence survives to the final state -- exactly what
+    // TASK 2's "blocked actions prominently, never silently cleared" ruling
+    // requires (see applyProgress's own lastBlock-persistence tests above).
+    assert.deepEqual(s.lastBlock, {
+      code: "IRREVERSIBLE_ACTION_BLOCKED",
+      reasons: ['text matches destructive-intent keyword "place order"'],
+      targetId: "agent-6",
+      step: 3,
+      message: "action blocked: text matches destructive-intent keyword \"place order\"",
+    });
+    // A guard refusal is never reported through the generic lastError
+    // bucket -- content.js's own branching keeps these mutually exclusive.
+    assert.equal(s.lastError, null);
   });
 });

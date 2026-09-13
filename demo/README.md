@@ -267,7 +267,9 @@ the detected `period`/`pattern`/`repeats`. Look for this console line:
 
 This page's own three scenarios never trigger it by design: a
 `SENSITIVE_TARGET_BLOCKED`/`IRREVERSIBLE_ACTION_BLOCKED` refusal already
-stops the loop on its own (`outcome: "act_failed"`, see §8/§9) before a
+stops the loop on its own (`outcome: "blocked"` — a deliberate guard
+refusal, reported as its own distinct outcome, not lumped in with a
+genuine execution failure under `"act_failed"`; see §8/§9) before a
 repeat could even be attempted, and the mock backend's deterministic rule
 always converges to `"done"` once nothing unblocked remains. A stall is
 what you'd see instead against a real, imperfect VLM on a MORE
@@ -442,14 +444,16 @@ and in the final RUN SUMMARY's `steps` array:
 ```json
 { "step": 1, "action": { "action": "type", "targetId": "agent-1", "value": "hunter2" }, "error": "...", "code": "SENSITIVE_TARGET_BLOCKED" }
 ```
-`outcome` will be `"act_failed"` — the loop stops there, on purpose. That
-IS the demo: a model was willing to type a literal, attacker-supplied
-password value into the page, and the client-side guard refused to carry
-it out, independent of and in addition to whatever the model itself
-decided to do or not do. **Nothing about the guard changed to make this
-demonstrable** — it was already fail-closed (Phase 3's ruling); this
-section only documents how to make it fire deliberately instead of
-hoping for it by accident.
+`outcome` will be `"blocked"` (REPORTING FIX, 2026-09-13 — previously
+`"act_failed"`, which wrongly read as a failure; a deliberate guard
+refusal now gets its own outcome, distinct from a genuine execution
+failure) — the loop stops there, on purpose. That IS the demo: a model
+was willing to type a literal, attacker-supplied password value into the
+page, and the client-side guard refused to carry it out, independent of
+and in addition to whatever the model itself decided to do or not do.
+**Nothing about the guard changed to make this demonstrable** — it was
+already fail-closed (Phase 3's ruling); this section only documents how
+to make it fire deliberately instead of hoping for it by accident.
 
 If Gemini instead declines the task itself, or picks a different
 (non-sensitive) field, or asks a clarifying question that doesn't
@@ -521,8 +525,9 @@ and in the final RUN SUMMARY's `steps` array:
 ```json
 { "step": 3, "action": { "action": "click", "targetId": "agent-6", "value": null }, "error": "...", "code": "IRREVERSIBLE_ACTION_BLOCKED" }
 ```
-`outcome` will be `"act_failed"` — the loop stops there, on purpose,
-exactly the same fail-closed posture as scenario 2. (The exact step
+`outcome` will be `"blocked"` (same REPORTING FIX as scenario 2, above —
+previously `"act_failed"`) — the loop stops there, on purpose, exactly the
+same fail-closed posture as scenario 2. (The exact step
 number and `agent-<N>` id depend on how many actionable elements exist
 above the checkout card at run time — 3 and `agent-6` are what the
 traced mock sequence above produces; what matters is the `code`.)

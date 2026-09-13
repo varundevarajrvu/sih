@@ -64,11 +64,17 @@ export function createRunState() {
     lastBlock: null,
     // { summary: string, detail: string, step } | null
     lastError: null,
-    // null while active; "done" | "stopped" | "stalled" | one of
-    // content.js's existing failure-outcome strings once finished. This
-    // module never invents outcome strings of its own -- it only stores
-    // whatever content.js's instrumentation already decided (see
-    // action-describe.js for how those strings become a human label).
+    // null while active; "done" | "stopped" | "stalled" | "blocked" | one
+    // of content.js's genuine-failure outcome strings (e.g. "act_failed",
+    // "analyze_failed") once finished. "blocked" (REPORTING FIX,
+    // 2026-09-13) is a guard deliberately refusing an action
+    // (SENSITIVE_TARGET_BLOCKED / IRREVERSIBLE_ACTION_BLOCKED) -- the
+    // safeguard working, not a failure -- and is stored/passed through
+    // exactly like every other outcome string: this module never invents
+    // outcome strings of its own, nor does it treat any one of them
+    // specially. It only stores whatever content.js's instrumentation
+    // already decided (see action-describe.js for how those strings
+    // become a human label + tone).
     outcome: null,
     startedAt: null,
     finishedAt: null,
