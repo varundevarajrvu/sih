@@ -1,54 +1,134 @@
 /* ==========================================================================
    SIH 26171 — On-Device Visual Perception for Lightweight Browser Agents
-   Showcase site. No frameworks, no CDNs, no remote fonts.
+   Showcase site — glassmorphism redesign per Chief's spec (repo-root brief).
+   No frameworks, no CDNs, no remote fonts. All PII/proof data is real;
+   only the visual language changed here.
+
+   TRACEABILITY: every major block below is commented with the spec section
+   it implements. The brief's original comment example cited photographic
+   references ("img1 destination cards + img2 glass panel") that don't apply
+   here — this project ships no reference photography, so citations instead
+   point at the numbered section of Chief's written spec (§1–§8).
    ========================================================================== */
 
 :root {
-  /* --- color tokens ------------------------------------------------- */
-  --ink:          #0a0c0d;   /* page background — cold near-black */
-  --ink-raised:   #0e1113;
-  --panel:        #14181a;   /* card / section surface */
-  --panel-alt:    #171c1e;
-  --terminal:     #0d1012;   /* terminal / console surface, slightly cooler */
-  --hairline:     #262c2f;
-  --hairline-dim: #1b2022;
-  --paper:        #eae6dc;   /* primary text — warm paper white */
-  --paper-dim:    #cfcabf;
-  --muted:        #8b9199;
-  --muted-dim:    #5d6469;
+  /* --- §1 Global Design Tokens — verbatim from spec ------------------- */
+  --bg-void:              #0B0B0C;
+  --bg-forest:            #16211A;
+  --glass-fill:           rgba(22, 24, 23, 0.50);
+  --glass-fill-strong:    rgba(14, 15, 15, 0.65);
+  --glass-border:         rgba(255, 255, 255, 0.14);
+  --glass-border-bright:  rgba(255, 255, 255, 0.28);
+  --text-primary:         #F6F4EF;
+  --text-secondary:       #C7C4BB;
+  --text-muted:           #8D897D;
+  --accent-bronze:        #AD8A5C;
+  --accent-terracotta:    #A94E3D;
 
-  --redact:       #ff5a3c;   /* blocked / danger — stamp-ink coral */
-  --redact-dim:   #7a2e21;
-  --pass:         #5fd9a4;   /* pass / safe — mint */
-  --pass-dim:     #234a3a;
-  --detect:       #eab308;   /* active / attention — amber */
-  --detect-dim:   #4a3b0c;
-  --link:         #8fb8cf;   /* steel blue — hyperlinks only */
+  /* --- ADAPTATION: two derived tokens, not in the spec's 11 -----------
+     The spec's palette has no way to distinguish "this passed" from "this
+     was blocked" in running text/badges — §1's tokens are structural
+     (fills, borders, two accents), not semantic status colors, and this
+     project's entire content is built on that pass/blocked distinction
+     (SENSITIVE_TARGET_BLOCKED, Section 5 check PASSED, etc). Rather than
+     invent an unrelated hue, both are *derived* from tokens already in the
+     spec:
+     — --accent-moss: a sage-green that shares --bg-forest's undertone,
+       used ONLY for pass/ok/safe semantics.
+     — --accent-terracotta-text: a lightened tint of the spec's own
+       --accent-terracotta, used ONLY where terracotta sits as small text
+       (raw --accent-terracotta measures ~3.6:1 on --bg-void — fine as a
+       border/fill per WCAG's 3:1 non-text minimum, but fails 4.5:1 for
+       text; this tint measures 8.6:1+ in every context it's used, see
+       README verification notes / delivery report).
+     ------------------------------------------------------------------- */
+  --accent-moss:              #8FBF8A;
+  --accent-terracotta-text:   #E39A85;
 
-  /* --- type ------------------------------------------------------------ */
-  --font-display: Iowan Old Style, Palatino Linotype, Palatino, "URW Palladio",
-                  Georgia, "Book Antiqua", serif;
-  --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto,
-                  "Helvetica Neue", Arial, sans-serif;
-  --font-mono:    ui-monospace, "Cascadia Code", "Segoe UI Mono", "SFMono-Regular",
-                  Consolas, "Liberation Mono", Menlo, monospace;
+  /* --- Typography -------------------------------------------------------
+     Display = Fraunces, italic, 400–500 (self-hosted, see §FONTS below).
+     Body/UI = Inter, 400/500/600 (self-hosted).
+     Eyebrow = Inter 500, 11px, uppercase, 0.08em, --text-muted.
+     Mono kept as a system stack — the spec's reference (a travel site) has
+     no code/terminal content to derive a mono choice from, and this page's
+     console replay + JSON payloads need one; a system stack costs nothing
+     to self-host and reads correctly cross-platform. ---------------------- */
+  --font-display: 'Fraunces', ui-serif, Georgia, 'Book Antiqua', serif;
+  --font-body:    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:    ui-monospace, 'Cascadia Code', 'Segoe UI Mono', 'SFMono-Regular',
+                  Consolas, 'Liberation Mono', Menlo, monospace;
 
-  /* --- spacing scale ----------------------------------------------------- */
-  --sp-1: 0.25rem;
-  --sp-2: 0.5rem;
-  --sp-3: 0.75rem;
-  --sp-4: 1rem;
-  --sp-5: 1.5rem;
-  --sp-6: 2rem;
-  --sp-7: 3rem;
-  --sp-8: 4.5rem;
-  --sp-9: 6.5rem;
+  /* --- §1 Spacing scale — verbatim (8/16/24/32/48/64/96) --------------- */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 48px;
+  --space-6: 64px;
+  --space-7: 96px;
 
-  --measure: 42rem;      /* reading column */
-  --measure-wide: 62rem; /* full-bleed panels */
+  --measure:      42rem;   /* reading column */
+  --measure-wide: 62rem;   /* full-bleed prose panels */
+  --container:    1240px;  /* page wrap — pairs with §7's 1200px breakpoint */
 
-  --radius: 3px;
+  /* --- §1 Radius + blur — verbatim ------------------------------------- */
+  --radius-sm:   12px;
+  --radius-lg:   20px;
+  --radius-pill: 999px;
+  --glass-blur:  blur(18px);
+
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* --- Backward-compat aliases ------------------------------------------
+     index.html carries a handful of inline `style="color:var(--muted)"` /
+     `var(--sp-5)` attributes from the pre-redesign build, sitting directly
+     inside real, verbatim content paragraphs. Retyping those paragraphs to
+     swap token names would risk introducing a transcription error into
+     content this project is explicit about never altering — aliasing the
+     old token names to their new equivalents here is the zero-risk fix. */
+  --sp-3: var(--space-2);
+  --sp-4: var(--space-2);
+  --sp-5: var(--space-3);
+  --sp-6: var(--space-4);
+  --sp-7: var(--space-5);
+  --muted:     var(--text-muted);
+  --paper-dim: var(--text-secondary);
+  --pass:      var(--accent-moss);
+  --redact:    var(--accent-terracotta-text);
+}
+
+/* ==========================================================================
+   FONTS — self-hosted, latin-only. ADAPTATION #1 (overrides spec's <link>).
+   The spec calls for a Google Fonts <link>. This project's whole pitch is
+   that nothing leaves the client; a page that phones Google on every load
+   undercuts that. Both files below were fetched once from Google's own
+   CSS2 API (fonts.gstatic.com), restricted to the "latin" unicode-range
+   subset, and are now served from site/fonts/ with zero runtime requests
+   to any third party. Both are variable fonts (wght axis only — Google's
+   CSS2 API trims other axes, incl. Fraunces' opsz/SOFT axes, out of the
+   default delivery) under their original SIL Open Font License.
+   ========================================================================== */
+
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('fonts/fraunces-italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                 U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url('fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                 U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                 U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 /* ==========================================================================
@@ -57,17 +137,20 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-
 html, body { margin: 0; padding: 0; }
 
 body {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--bg-void);
+  color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: 16px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Decorative orbs (§3 Components) use small negative insets for a soft
+     bleed past their panel edge — this guarantees that never produces a
+     page-level horizontal scrollbar, verified at 390px (see delivery report). */
+  overflow-x: hidden;
 }
 
 img { max-width: 100%; display: block; }
@@ -79,16 +162,19 @@ p:last-child { margin-bottom: 0; }
 
 ul, ol { margin: 0; padding: 0; }
 
-a { color: var(--link); }
+a { color: var(--accent-bronze); }
 a:not([class]) { text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+a:not([class]):hover { color: var(--text-primary); }
 
 button { font: inherit; color: inherit; }
 
 table { border-collapse: collapse; width: 100%; }
 
-/* Visible keyboard focus — amber, consistent with the "attention" accent */
+/* Visible keyboard focus — bronze, consistent across the new palette.
+   Non-text contrast (focus ring vs both --bg-void and --bg-forest) verified
+   >=3:1 per WCAG 1.4.11 — see delivery report. */
 :focus-visible {
-  outline: 2px solid var(--detect);
+  outline: 2px solid var(--accent-bronze);
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -98,18 +184,24 @@ table { border-collapse: collapse; width: 100%; }
   position: absolute;
   left: -999px;
   top: 0;
-  background: var(--detect);
-  color: #14120a;
+  background: var(--accent-bronze);
+  color: #16110A;
   padding: 0.6em 1em;
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
+  font-weight: 600;
   font-size: 0.85rem;
-  font-weight: 700;
+  border-radius: 0 0 var(--radius-sm) 0;
   z-index: 1000;
 }
 .skip-link:focus {
-  left: var(--sp-4);
-  top: var(--sp-4);
+  left: var(--space-2);
+  top: var(--space-2);
+  border-radius: var(--radius-sm);
 }
+
+/* ==========================================================================
+   §6 Accessibility — reduced motion / reduced transparency
+   ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -118,6 +210,9 @@ table { border-collapse: collapse; width: 100%; }
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+  /* Scroll-reveal (§5 Animation, enhancement) never hides content when
+     motion is reduced — everything simply starts fully visible. */
+  .reveal { opacity: 1 !important; transform: none !important; }
 }
 
 /* ==========================================================================
@@ -125,51 +220,55 @@ table { border-collapse: collapse; width: 100%; }
    ========================================================================== */
 
 .eyebrow {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
-.eyebrow.on-dark { color: var(--paper-dim); }
-
 .section-number {
-  color: var(--detect);
+  color: var(--accent-bronze);
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
 .display {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-style: italic;
+  font-weight: 450;
   letter-spacing: -0.01em;
-  line-height: 1.08;
-  color: var(--paper);
+  line-height: 1.1;
+  color: var(--text-primary);
 }
 
 .lede {
   font-size: clamp(1.05rem, 0.95rem + 0.4vw, 1.25rem);
-  color: var(--paper-dim);
+  color: var(--text-secondary);
   max-width: var(--measure);
 }
 
 .mono { font-family: var(--font-mono); }
 
 .prose { max-width: var(--measure); }
-.prose p { color: var(--paper-dim); }
-.prose strong { color: var(--paper); }
+.prose p { color: var(--text-secondary); }
+.prose strong { color: var(--text-primary); }
 
 code, kbd {
   font-family: var(--font-mono);
   font-size: 0.88em;
-  background: var(--panel-alt);
-  border: 1px solid var(--hairline);
-  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px;
   padding: 0.1em 0.4em;
+  color: var(--text-primary);
 }
 
 /* ==========================================================================
-   Redaction-bar motif — the recurring visual device
+   Redaction-bar motif — the recurring visual device. Kept intentionally
+   near-black regardless of theme: it represents a literally-blacked-out
+   value, not a decorative accent, so it does not follow the new palette.
    ========================================================================== */
 
 .redaction-bar {
@@ -183,20 +282,87 @@ code, kbd {
   vertical-align: middle;
 }
 
-.redaction-rule {
-  height: 6px;
-  background: repeating-linear-gradient(
-    115deg,
-    #050607, #050607 4px, #000 4px, #000 8px
-  );
-  border-radius: 1px;
-  margin: var(--sp-6) 0;
-}
-
 hr.hairline {
   border: none;
-  border-top: 1px solid var(--hairline);
-  margin: var(--sp-7) 0;
+  border-top: 1px solid var(--glass-border);
+  margin: var(--space-6) 0;
+}
+
+/* ==========================================================================
+   §3 Decorative orb — verbatim recipe, plus one documented color variant.
+   2–3 placed behind glass panels on every non-photo section, per §3/§4.
+   ========================================================================== */
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.35;
+  background: radial-gradient(circle at 35% 35%, var(--accent-bronze), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+/* ADAPTATION: a second orb colorway using the spec's other accent, so
+   sections don't all glow the same amber — same recipe, swapped hue. */
+.orb--terracotta {
+  background: radial-gradient(circle at 35% 35%, var(--accent-terracotta), transparent 70%);
+}
+
+.orb-host {
+  position: relative;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   §1 / §3 Glass core — the shared material for nav, hero shelf, terminal,
+   and every section's "shelf" surface. Applied ONCE per visual region
+   (see PERFORMANCE note below) — individual cards/rows inside a glass
+   shelf use a lighter, non-blurred tint so only one backdrop-filter pass
+   is paid per region.
+
+   PERFORMANCE (§5): backdrop-filter is GPU-heavy. Rather than give every
+   card in a 3- or 4-up grid its own blur (nav + 4 cards = 5 concurrent
+   blurred layers), each grid/table/list is wrapped in ONE .glass surface;
+   children painted on top of it inherit its frosted backdrop for free and
+   only add a solid/translucent tint of their own. Verified: at most 2
+   backdrop-filter regions are ever on-screen together (the nav + the
+   section currently in view) — see delivery report.
+   ========================================================================== */
+
+.glass {
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-top-color: var(--glass-border-bright);
+  border-radius: var(--radius-lg);
+}
+
+.glass-strong {
+  background: var(--glass-fill-strong);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-top-color: var(--glass-border-bright);
+}
+
+/* §6 Accessibility — old browsers AND "reduce transparency" OS settings.
+   Solid fallback at ~85% opacity, no blur, for every element using .glass
+   or .glass-strong (and the elements below that inline the same recipe:
+   nav, mobile drawer). */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass, .glass-strong, .topbar.is-scrolled, .nav-drawer[open] > .topnav {
+    background: rgba(11, 11, 12, 0.85);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .glass-strong, .topbar.is-scrolled, .nav-drawer[open] > .topnav {
+    background: rgba(11, 11, 12, 0.9);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 /* ==========================================================================
@@ -204,135 +370,372 @@ hr.hairline {
    ========================================================================== */
 
 .wrap {
-  max-width: 78rem;
+  max-width: var(--container);
   margin-inline: auto;
-  padding-inline: var(--sp-5);
+  padding-inline: var(--space-3);
 }
 
-section[id] { scroll-margin-top: 4.5rem; }
+section[id] { scroll-margin-top: 5rem; }
 
-.section-pad { padding-block: var(--sp-9); }
+.section-pad {
+  padding-block: var(--space-7);
+  position: relative;
+}
 
 .section-head {
   max-width: var(--measure);
-  margin-bottom: var(--sp-6);
+  margin-bottom: var(--space-4);
+  position: relative;
+  z-index: 1;
 }
 .section-head h2 {
   font-size: clamp(1.6rem, 1.35rem + 1.1vw, 2.4rem);
-  margin-top: var(--sp-2);
+  margin-top: var(--space-1);
 }
 
+/* Generic bordered surface used where a full glass shelf would be
+   redundant with an adjacent one (kept for parity with the old build). */
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
+  position: relative;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
 }
 
 /* ==========================================================================
-   Top bar / nav
+   §2 Nav / top bar — transparent floating over hero; on scroll past hero,
+   transitions to --glass-fill-strong + blur.
    ========================================================================== */
 
 .topbar {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(10, 12, 13, 0.92);
-  backdrop-filter: blur(6px);
-  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background 0.25s var(--ease), border-color 0.25s var(--ease);
+}
+.topbar.is-scrolled {
+  background: var(--glass-fill-strong);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-bottom-color: var(--glass-border);
 }
 
 .topbar-inner {
   display: flex;
   align-items: center;
-  gap: var(--sp-5);
-  padding-block: var(--sp-3);
-  overflow-x: auto;
-  scrollbar-width: thin;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
 }
 
 .brand {
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: var(--paper);
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.05rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-primary);
   white-space: nowrap;
   text-decoration: none;
   flex-shrink: 0;
 }
-.brand span { color: var(--detect); }
+.brand span { color: var(--accent-bronze); }
 
 .topnav {
   display: flex;
-  gap: var(--sp-5);
+  gap: var(--space-4);
   list-style: none;
   white-space: nowrap;
 }
 
 .topnav a {
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  letter-spacing: 0.04em;
-  color: var(--muted);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
   text-decoration: none;
   border-bottom: 1px solid transparent;
   padding-bottom: 2px;
   transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
 }
-.topnav a:hover, .topnav a:focus-visible { color: var(--paper); border-color: var(--detect); }
+.topnav a:hover, .topnav a:focus-visible { color: var(--text-primary); border-color: var(--accent-bronze); }
+
+/* --- Mobile glass drawer (§7 Responsive, <768px) ---------------------
+   Native <details>/<summary> — the "hamburger" IS the disclosure widget,
+   so navigation keeps working with JavaScript fully disabled; script.js
+   only adds an auto-close-on-link-click nicety on top. */
+.nav-drawer { position: relative; }
+.nav-drawer > summary {
+  list-style: none;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: none; /* shown <768px below */
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+}
+.nav-drawer > summary::-webkit-details-marker { display: none; }
+.nav-drawer > summary::marker { content: ''; }
+
+.nav-toggle-bars,
+.nav-toggle-bars::before,
+.nav-toggle-bars::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--text-primary);
+  border-radius: 2px;
+  transition: transform 0.2s var(--ease), opacity 0.2s var(--ease);
+}
+.nav-toggle-bars { position: relative; }
+.nav-toggle-bars::before, .nav-toggle-bars::after { content: ''; position: absolute; left: 0; }
+.nav-toggle-bars::before { top: -6px; }
+.nav-toggle-bars::after { top: 6px; }
+.nav-drawer[open] .nav-toggle-bars { background: transparent; }
+.nav-drawer[open] .nav-toggle-bars::before { transform: translateY(6px) rotate(45deg); }
+.nav-drawer[open] .nav-toggle-bars::after { transform: translateY(-6px) rotate(-45deg); }
+
+@media (max-width: 767px) {
+  .nav-drawer > summary { display: flex; }
+  .nav-drawer > .topnav {
+    position: absolute;
+    top: calc(100% + var(--space-2));
+    right: 0;
+    flex-direction: column;
+    gap: 0;
+    min-width: 13rem;
+    padding: var(--space-2);
+    border-radius: var(--radius-lg);
+    background: var(--glass-fill-strong);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-top-color: var(--glass-border-bright);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .nav-drawer:not([open]) > .topnav { display: none; }
+  .nav-drawer > .topnav a {
+    display: block;
+    padding: var(--space-2);
+    border-bottom: none;
+  }
+  .nav-drawer > .topnav a:hover, .nav-drawer > .topnav a:focus-visible {
+    background: rgba(255,255,255,0.06);
+    border-radius: var(--radius-sm);
+  }
+}
+@media (min-width: 768px) {
+  /* Force the disclosure open regardless of the `open` attribute — at
+     tablet/desktop widths the hamburger never renders, so there is no
+     control left to toggle it closed with anyway. */
+  .nav-drawer > summary { display: none !important; }
+  .nav-drawer > .topnav {
+    display: flex !important;
+    position: static;
+    background: none;
+    border: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    padding: 0;
+    box-shadow: none;
+  }
+}
+@media (min-width: 768px) and (max-width: 1199px) {
+  /* §7: "secondary nav collapses" at tablet width — the full 8-item nav
+     stays reachable (deleting real section links would hurt wayfinding
+     more than it helps), but becomes horizontally scrollable instead of
+     wrapping/crowding the bar. */
+  .topbar-inner { flex-wrap: nowrap; }
+  .topnav { overflow-x: auto; scrollbar-width: thin; max-width: 60vw; }
+}
 
 /* ==========================================================================
-   Hero
+   §2/§4/§6 Hero — full-bleed image (our one real hero-grade asset: the
+   annotated detection screenshot), dark bottom-to-top gradient overlay to
+   ~70%+ black (MANDATORY for contrast, not decorative — see delivery
+   report for measured worst-case contrast at this overlay depth), serif
+   italic headline, sans subhead, pill CTA.
    ========================================================================== */
 
 .hero {
-  padding-block: var(--sp-8) var(--sp-7);
-  border-bottom: 1px solid var(--hairline);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* A real minimum of visible image above the text — measured and fixed
+     after an initial pass placed the headline too high, in the gradient's
+     near-transparent top zone (see delivery report for the failing/passing
+     numbers). Bottom-anchoring the text keeps it inside the darkest band
+     regardless of viewport height or how much copy wraps. */
+  min-height: min(84vh, 44rem);
+  padding-top: calc(var(--space-7) + var(--space-4));
+  overflow: hidden;
+  isolation: isolate;
 }
 
-.hero-eyebrow {
-  margin-bottom: var(--sp-4);
+.hero-media {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
 }
+.hero-media-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 15%;
+  filter: saturate(0.9);
+}
+.hero-media-overlay {
+  position: absolute;
+  inset: 0;
+  /* Bottom-to-top dark gradient, MANDATORY per §2/§6 (not decorative).
+     Concentrated darkness across the bottom ~65% — that's where the
+     bottom-anchored text block below actually lives — rather than a
+     smooth 0-to-100% ramp, which measured too light at the headline's
+     real position on first render. Verified after rendering, not assumed:
+     see delivery report for measured contrast at every text probe. */
+  background: linear-gradient(
+    to top,
+    rgba(5, 6, 6, 0.96) 0%,
+    rgba(5, 6, 6, 0.94) 30%,
+    rgba(6, 7, 7, 0.91) 55%,
+    rgba(6, 7, 7, 0.85) 78%,
+    rgba(7, 8, 8, 0.58) 92%,
+    rgba(7, 8, 8, 0.15) 100%
+  );
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  padding-bottom: var(--space-6);
+}
+
+/* Brighter than a standard eyebrow (which uses --text-muted/--text-secondary
+   elsewhere) — this one sits directly over photography, where the spec
+   treats contrast as mandatory, not decorative. Measured after rendering:
+   see delivery report. */
+.hero-eyebrow { margin-bottom: var(--space-3); color: var(--text-primary); }
 
 .hero h1 {
   font-size: clamp(2.1rem, 1.5rem + 3vw, 3.6rem);
   max-width: 22ch;
 }
 
-.hero .lede { margin-top: var(--sp-5); }
+.hero .lede { margin-top: var(--space-3); color: var(--text-secondary); }
 
-.hero-stats {
+.hero .pill-cta { margin-top: var(--space-5); }
+
+/* --- Hero stat shelf — glass "cards overlapping the hero's bottom edge
+   via negative margin-top" (§2 Layout). One shared .glass surface with
+   internal dividers rather than N separately-blurred cards (perf note
+   above); each stat's exact original bold-number + label text preserved
+   verbatim, just regrouped into a bar instead of loose pills. ---------- */
+.hero-shelf-wrap {
+  position: relative;
+  z-index: 2;
+  margin-top: calc(-1 * var(--space-6));
+}
+.hero-shelf {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-3);
-  margin-top: var(--sp-7);
+  padding: var(--space-2) 0;
 }
-
-.stat-chip {
-  font-family: var(--font-mono);
+.stat-card {
+  flex: 1 1 12rem;
+  padding: var(--space-3) var(--space-4);
+  border-left: 1px solid var(--glass-border);
+}
+.stat-card:first-child { border-left: none; }
+.stat-card-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.stat-card-label b { color: var(--text-primary); font-weight: 600; }
+.stat-card-sub {
+  display: block;
+  margin-top: var(--space-1);
   font-size: 0.78rem;
-  color: var(--paper-dim);
-  border: 1px solid var(--hairline);
-  border-radius: 999px;
-  padding: 0.45em 0.9em;
-  background: var(--panel);
-  max-width: 100%;
-  overflow-wrap: break-word;
+  color: var(--text-muted);
 }
-.stat-chip b { color: var(--pass); font-weight: 700; }
+.stat-card-sub b { color: var(--text-secondary); font-weight: 600; }
+
+@media (max-width: 640px) {
+  .hero-shelf { flex-direction: column; }
+  .stat-card { border-left: none; border-top: 1px solid var(--glass-border); }
+  .stat-card:first-child { border-top: none; }
+}
 
 /* ==========================================================================
-   Evidence card (§1 — the signature element)
+   §3 Pill CTA
+   ========================================================================== */
+
+.pill-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 16px 32px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--glass-border-bright);
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.pill-cta:hover, .pill-cta:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--text-primary);
+}
+.pill-cta-arrow {
+  display: inline-block;
+  transition: transform 0.2s var(--ease);
+}
+.pill-cta:hover .pill-cta-arrow, .pill-cta:focus-visible .pill-cta-arrow {
+  transform: translateX(4px);
+}
+
+/* ==========================================================================
+   §3 Badge
+   ========================================================================== */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  background: var(--glass-fill-strong);
+}
+.badge.blocked { color: var(--accent-terracotta-text); border: 1px solid var(--accent-terracotta); }
+.badge.pass    { color: var(--accent-moss); border: 1px solid var(--accent-moss); }
+.badge.active  { color: var(--accent-bronze); border: 1px solid var(--accent-bronze); }
+
+/* ==========================================================================
+   §1 Evidence card — the signature element (real model mistake as proof)
    ========================================================================== */
 
 .evidence {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
   gap: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
   overflow: hidden;
-  background: var(--panel);
 }
 
 @media (min-width: 860px) {
@@ -340,144 +743,130 @@ section[id] { scroll-margin-top: 4.5rem; }
 }
 
 .evidence-goal {
-  padding: var(--sp-6);
-  border-bottom: 1px solid var(--hairline);
-  min-width: 0; /* grid items default to min-content width; the JSON block below is wide */
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--glass-border);
+  min-width: 0;
 }
 @media (min-width: 860px) {
-  .evidence-goal { border-bottom: none; border-right: 1px solid var(--hairline); }
+  .evidence-goal { border-bottom: none; border-right: 1px solid var(--glass-border); }
 }
 
 .evidence-visual {
-  padding: var(--sp-6);
-  background: var(--panel-alt);
+  padding: var(--space-4);
+  background: rgba(0, 0, 0, 0.15);
   min-width: 0;
 }
 
 .mock-field-label {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--muted);
-  margin-bottom: var(--sp-2);
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
 }
 
 .mock-input {
-  border: 1px solid var(--hairline);
-  border-radius: 2px;
-  background: #0c0e0f;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.35);
   padding: 0.65em 0.8em;
   display: flex;
   align-items: center;
   min-height: 2.6em;
 }
 .mock-input .redaction-bar { width: 9.5em; }
-.mock-input.safe { color: var(--paper-dim); font-family: var(--font-mono); font-size: 0.92rem; }
 
 .goal-quote {
   font-family: var(--font-mono);
   font-size: 1.02rem;
-  color: var(--paper);
-  border-left: 2px solid var(--detect);
-  padding-left: var(--sp-4);
-  margin: var(--sp-4) 0 var(--sp-6);
+  color: var(--text-primary);
+  border-left: 2px solid var(--accent-bronze);
+  padding-left: var(--space-3);
+  margin: var(--space-3) 0 var(--space-4);
 }
 
 .json-block {
-  background: var(--terminal);
-  border: 1px solid var(--hairline);
-  border-radius: 2px;
-  padding: var(--sp-4);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
   font-family: var(--font-mono);
   font-size: 0.86rem;
   overflow-x: auto;
   max-width: 100%;
   white-space: pre;
+  color: var(--text-secondary);
 }
-.json-block .k { color: var(--link); }
-.json-block .s { color: var(--pass); }
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 0.3em 0.65em;
-  border-radius: 2px;
-  text-transform: uppercase;
-}
-.badge.blocked { background: var(--redact-dim); color: #ffcfc2; border: 1px solid var(--redact); }
-.badge.pass { background: var(--pass-dim); color: #cdf5e3; border: 1px solid var(--pass); }
-.badge.active { background: var(--detect-dim); color: #ffe9a8; border: 1px solid var(--detect); }
+.json-block .k { color: var(--accent-bronze); }
+.json-block .s { color: var(--accent-moss); }
 
 .diff-line {
-  margin-top: var(--sp-5);
+  margin-top: var(--space-4);
   display: grid;
-  gap: var(--sp-2);
+  gap: var(--space-1);
   font-family: var(--font-mono);
   font-size: 0.95rem;
 }
-.diff-row { display: flex; gap: var(--sp-3); align-items: baseline; }
-.diff-tag { width: 5.5em; flex-shrink: 0; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
-.diff-wrong { color: var(--redact); }
-.diff-wrong .miss { text-decoration: line-through; text-decoration-color: var(--muted-dim); opacity: 0.55; }
-.diff-right { color: var(--pass); }
-.diff-right .extra { background: rgba(95, 217, 164, 0.18); padding: 0 0.1em; border-radius: 2px; }
+.diff-row { display: flex; gap: var(--space-2); align-items: baseline; }
+.diff-tag { width: 5.5em; flex-shrink: 0; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.diff-wrong { color: var(--accent-terracotta-text); }
+.diff-right { color: var(--accent-moss); }
+.diff-right .extra { background: rgba(143, 191, 138, 0.18); padding: 0 0.1em; border-radius: 2px; }
 
 .evidence-caption {
-  padding: var(--sp-5) var(--sp-6);
-  border-top: 1px solid var(--hairline);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--glass-border);
   font-size: 0.95rem;
-  color: var(--paper-dim);
+  color: var(--text-secondary);
   grid-column: 1 / -1;
 }
-.evidence-caption strong { color: var(--paper); }
+.evidence-caption strong { color: var(--text-primary); }
 
 /* ==========================================================================
-   Pipeline diagram (§2)
+   §2 Pipeline diagram — sequential (numbering here reflects a *real*
+   fixed execution order, so the flow arrows/order stay, per design intent
+   of only encoding real structure).
    ========================================================================== */
 
 .pipeline-controls {
   display: flex;
   align-items: center;
-  gap: var(--sp-4);
-  margin-bottom: var(--sp-5);
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
   font-family: var(--font-mono);
   font-size: 0.8rem;
-  color: var(--muted);
+  color: var(--text-muted);
+  position: relative;
+  z-index: 1;
 }
 
 .ctrl-btn {
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  color: var(--paper);
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.8rem;
   padding: 0.5em 0.9em;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
+  transition: border-color 0.15s var(--ease), color 0.15s var(--ease), background 0.15s var(--ease);
 }
-.ctrl-btn:hover { border-color: var(--detect); color: var(--detect); }
-.ctrl-btn[aria-pressed="true"] { border-color: var(--pass); color: var(--pass); }
-.ctrl-btn:disabled { opacity: 0.5; cursor: not-allowed; border-color: var(--hairline); color: var(--muted); }
-.ctrl-btn:disabled:hover { border-color: var(--hairline); color: var(--muted); }
+.ctrl-btn:hover { border-color: var(--accent-bronze); color: var(--accent-bronze); }
+.ctrl-btn[aria-pressed="true"] { border-color: var(--accent-moss); color: var(--accent-moss); }
+.ctrl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .pipeline-readout {
   font-family: var(--font-mono);
   min-height: 1.4em;
 }
-.pipeline-readout .stage-name { color: var(--detect); }
 
 .pipeline {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 0;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
   overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 900px) {
@@ -485,9 +874,8 @@ section[id] { scroll-margin-top: 4.5rem; }
 }
 
 .pipe-node {
-  background: var(--panel);
-  padding: var(--sp-4) var(--sp-3);
-  border-right: 1px solid var(--hairline);
+  padding: var(--space-3) var(--space-2);
+  border-right: 1px solid var(--glass-border);
   border-bottom: 3px solid transparent;
   position: relative;
   transition: background 0.35s var(--ease), border-color 0.35s var(--ease);
@@ -495,73 +883,61 @@ section[id] { scroll-margin-top: 4.5rem; }
 }
 .pipe-node:last-child { border-right: none; }
 @media (max-width: 900px) {
-  .pipe-node { border-right: none; border-bottom: 1px solid var(--hairline); min-height: 0; padding: var(--sp-4) var(--sp-5); }
+  .pipe-node { border-right: none; border-bottom: 1px solid var(--glass-border); min-height: 0; padding: var(--space-3) var(--space-4); }
   .pipe-node:last-child { border-bottom: none; }
 }
 
-/* The client/server boundary: everything before SEND runs in the browser. */
-.pipe-node[data-stage="send"] { border-left: 1px dashed var(--muted-dim); }
+.pipe-node[data-stage="send"] { border-left: 1px dashed rgba(255,255,255,0.25); }
 @media (max-width: 900px) {
-  .pipe-node[data-stage="send"] { border-left: none; border-top: 1px dashed var(--muted-dim); }
+  .pipe-node[data-stage="send"] { border-left: none; border-top: 1px dashed rgba(255,255,255,0.25); }
 }
 
-.pipe-node.is-active {
-  background: var(--panel-alt);
-  border-bottom-color: var(--detect);
-}
-
-.pipe-node.is-gate.is-active {
-  border-bottom-color: var(--pass);
-}
+.pipe-node.is-active { background: rgba(255, 255, 255, 0.05); border-bottom-color: var(--accent-bronze); }
+.pipe-node.is-gate.is-active { border-bottom-color: var(--accent-moss); }
 
 .pipe-stage {
   font-family: var(--font-mono);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.06em;
-  color: var(--paper);
-  margin-bottom: var(--sp-2);
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
 }
-.pipe-node.is-active .pipe-stage { color: var(--detect); }
-.pipe-node.is-gate.is-active .pipe-stage { color: var(--pass); }
+.pipe-node.is-active .pipe-stage { color: var(--accent-bronze); }
+.pipe-node.is-gate.is-active .pipe-stage { color: var(--accent-moss); }
 
 .pipe-desc {
   font-size: 0.85rem;
-  color: var(--muted);
-  margin-bottom: var(--sp-3);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
 }
 
 .pipe-metric {
   font-family: var(--font-mono);
   font-size: 0.76rem;
-  color: var(--pass-dim);
-  background: transparent;
+  color: var(--text-secondary);
 }
-.pipe-metric b { color: var(--pass); font-weight: 700; display: block; font-size: 0.95rem; }
+.pipe-metric b { color: var(--accent-moss); font-weight: 700; display: block; font-size: 0.95rem; }
 
-.pipe-arrow {
-  display: none;
-}
 @media (min-width: 901px) {
   .pipe-node:not(:last-child)::after {
     content: "\2192";
     position: absolute;
     right: -0.65em;
-    top: var(--sp-4);
-    color: var(--hairline);
+    top: var(--space-2);
+    color: var(--text-muted);
     font-size: 0.9rem;
     z-index: 2;
   }
 }
 
 /* ==========================================================================
-   Terminal / console replay (§3)
+   §3 Terminal / console replay — the centerpiece, restyled in glass.
    ========================================================================== */
 
 .terminal {
-  background: var(--terminal);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
+  position: relative;
+  z-index: 1;
   overflow: hidden;
 }
 
@@ -569,28 +945,25 @@ section[id] { scroll-margin-top: 4.5rem; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-4);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--panel);
-  border-bottom: 1px solid var(--hairline);
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid var(--glass-border);
   font-family: var(--font-mono);
   font-size: 0.76rem;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .terminal-dots { display: flex; gap: 6px; }
-.terminal-dots span {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: var(--hairline);
-}
+.terminal-dots span { width: 9px; height: 9px; border-radius: 50%; background: var(--glass-border-bright); }
 
 .terminal-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.terminal-controls { display: flex; gap: var(--sp-2); flex-shrink: 0; }
+.terminal-controls { display: flex; gap: var(--space-1); flex-shrink: 0; }
 .terminal-controls .ctrl-btn { padding: 0.35em 0.7em; font-size: 0.72rem; }
 
 .terminal-body {
-  padding: var(--sp-5);
+  padding: var(--space-4);
   font-family: var(--font-mono);
   font-size: 0.84rem;
   line-height: 1.7;
@@ -599,26 +972,20 @@ section[id] { scroll-margin-top: 4.5rem; }
   overflow-y: auto;
 }
 
-.term-line {
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--paper-dim);
-  opacity: 1;
-}
+.term-line { white-space: pre-wrap; word-break: break-word; color: var(--text-secondary); }
 .term-line.is-hidden { display: none; }
-.term-line .tag { color: var(--muted-dim); }
-.term-line.pass { color: var(--pass); }
-.term-line.blocked { color: var(--redact); }
-.term-line.ok { color: var(--paper); }
-.term-line.dim { color: var(--muted); }
-.term-line.divider { color: var(--muted-dim); margin: 0.6em 0; }
-.term-line .num { color: var(--detect); }
+.term-line.pass { color: var(--accent-moss); }
+.term-line.blocked { color: var(--accent-terracotta-text); }
+.term-line.ok { color: var(--text-primary); }
+.term-line.dim { color: var(--text-muted); }
+.term-line.divider { color: var(--text-muted); opacity: 0.5; margin: 0.6em 0; }
+.term-line .num { color: var(--accent-bronze); }
 
 .term-cursor {
   display: inline-block;
   width: 0.55em;
   height: 1em;
-  background: var(--pass);
+  background: var(--accent-moss);
   vertical-align: text-bottom;
   animation: blink 1s steps(1) infinite;
 }
@@ -626,87 +993,123 @@ section[id] { scroll-margin-top: 4.5rem; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ==========================================================================
-   Three layers (§4)
+   §4 Three layers — natural 3-up glass shelf (spec's literal grid rule
+   fits this content exactly: three genuinely parallel, equal-weight items).
    ========================================================================== */
 
 .layers {
   display: grid;
-  gap: var(--sp-4);
+  gap: 0;
   grid-template-columns: 1fr;
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
 }
 @media (min-width: 760px) {
   .layers { grid-template-columns: repeat(3, 1fr); }
 }
 
 .layer-card {
-  padding: var(--sp-5);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--glass-border);
+  transition: transform 0.2s var(--ease), background 0.2s var(--ease);
 }
+@media (min-width: 760px) {
+  .layer-card { border-bottom: none; border-right: 1px solid var(--glass-border); }
+  .layer-card:last-child { border-right: none; }
+}
+.layer-card:hover { background: rgba(255, 255, 255, 0.04); }
 
 .layer-index {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--muted);
+  color: var(--text-muted);
   letter-spacing: 0.08em;
 }
 
 .layer-card h3 {
   font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 450;
   font-size: 1.3rem;
-  color: var(--paper);
+  color: var(--text-primary);
 }
+
+.layer-card p { color: var(--text-secondary); }
 
 .layer-fail {
   margin-top: auto;
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--hairline-dim);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--glass-border);
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  color: var(--pass);
+  color: var(--accent-moss);
 }
-.layer-fail b { color: var(--paper-dim); font-weight: 400; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.7rem; display: block; margin-bottom: 0.3em; }
+.layer-fail b { color: var(--text-secondary); font-weight: 400; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.7rem; display: block; margin-bottom: 0.3em; }
 
 .independence-note {
-  margin-top: var(--sp-5);
-  padding: var(--sp-4) var(--sp-5);
-  border-left: 2px solid var(--pass);
-  background: var(--panel);
+  position: relative;
+  z-index: 1;
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--accent-moss);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   font-size: 0.92rem;
-  color: var(--paper-dim);
+  color: var(--text-secondary);
 }
+.independence-note strong { color: var(--text-primary); }
 
 /* ==========================================================================
-   Scenarios (§5)
+   §5 Scenarios — kept as a fixed 2-up matrix rather than the generic 3-up
+   card grid. DEVIATION, documented: these four cards are a real 2x2
+   comparison (useful / safe / both-at-once / safe-beyond-PII) and read as
+   a matrix, not a shelf of interchangeable items — "structure is
+   information" (frontend-design guidance) argues for keeping the pairing
+   visible at every width down to tablet rather than forcing a 3+1 wrap.
    ========================================================================== */
 
 .scenarios {
   display: grid;
-  gap: var(--sp-4);
+  gap: 0;
   grid-template-columns: 1fr;
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
 }
-@media (min-width: 760px) {
+@media (min-width: 700px) {
   .scenarios { grid-template-columns: 1fr 1fr; }
 }
 
 .scenario-card {
-  padding: var(--sp-5);
+  padding: var(--space-4);
   position: relative;
+  border-bottom: 1px solid var(--glass-border);
+  transition: transform 0.2s var(--ease), background 0.2s var(--ease);
 }
-.scenario-card.is-key { border-color: var(--pass); }
+@media (min-width: 700px) {
+  .scenario-card:nth-child(odd) { border-right: 1px solid var(--glass-border); }
+}
+.scenario-card:hover { background: rgba(255, 255, 255, 0.03); }
+.scenario-card.is-key { box-shadow: inset 0 0 0 1px var(--accent-moss); }
 
 .scenario-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-3);
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 .scenario-head h3 {
   font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 450;
   font-size: 1.15rem;
+  color: var(--text-primary);
 }
 
 .scenario-tag {
@@ -714,9 +1117,9 @@ section[id] { scroll-margin-top: 4.5rem; }
   font-size: 0.68rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--pass);
-  border: 1px solid var(--pass-dim);
-  border-radius: 999px;
+  color: var(--accent-moss);
+  border: 1px solid var(--accent-moss);
+  border-radius: var(--radius-pill);
   padding: 0.2em 0.6em;
   white-space: nowrap;
 }
@@ -724,74 +1127,92 @@ section[id] { scroll-margin-top: 4.5rem; }
 .scenario-goal {
   font-family: var(--font-mono);
   font-size: 0.86rem;
-  color: var(--paper-dim);
-  margin-bottom: var(--sp-3);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-2);
 }
-.scenario-goal .q { color: var(--muted); }
+.scenario-goal .q { color: var(--text-muted); }
 
 .scenario-console {
-  background: var(--terminal);
-  border: 1px solid var(--hairline);
-  border-radius: 2px;
-  padding: var(--sp-3) var(--sp-4);
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
   font-family: var(--font-mono);
   font-size: 0.78rem;
   line-height: 1.6;
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--paper-dim);
+  color: var(--text-secondary);
 }
-.scenario-console .blocked { color: var(--redact); }
-.scenario-console .ok { color: var(--pass); }
+.scenario-console .blocked { color: var(--accent-terracotta-text); }
+.scenario-console .ok { color: var(--accent-moss); }
 
-.scenario-take {
-  margin-top: var(--sp-3);
-  font-size: 0.88rem;
-  color: var(--muted);
-}
-.scenario-take strong { color: var(--paper-dim); }
+.scenario-take { margin-top: var(--space-2); font-size: 0.88rem; color: var(--text-muted); }
+.scenario-take strong { color: var(--text-secondary); }
 
 /* ==========================================================================
-   Results table (§6)
+   §6 Results table
    ========================================================================== */
 
-.results-table {
-  font-family: var(--font-mono);
-  font-size: 0.88rem;
+.results-table-wrap {
+  position: relative;
+  z-index: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
+.results-table-wrap .results-table { min-width: 30rem; }
+
+.results-table { font-family: var(--font-mono); font-size: 0.88rem; }
 .results-table th, .results-table td {
   text-align: left;
-  padding: var(--sp-3) var(--sp-4);
-  border-bottom: 1px solid var(--hairline);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--glass-border);
 }
 .results-table th {
-  color: var(--muted);
+  color: var(--text-muted);
   font-weight: 400;
   text-transform: uppercase;
   font-size: 0.7rem;
   letter-spacing: 0.06em;
 }
-.results-table td.figure { color: var(--pass); }
+.results-table td { color: var(--text-secondary); }
+.results-table td.figure { color: var(--accent-moss); }
 .results-table tr:last-child td { border-bottom: none; }
-.results-table-wrap { overflow-x: auto; border: 1px solid var(--hairline); border-radius: var(--radius); }
-.results-table-wrap .results-table { min-width: 30rem; }
 
 .results-foot {
-  margin-top: var(--sp-4);
+  margin-top: var(--space-3);
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-3);
+  gap: var(--space-2);
+  position: relative;
+  z-index: 1;
 }
 
+.stat-chip {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  padding: 0.45em 0.9em;
+  background: rgba(255, 255, 255, 0.03);
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+.stat-chip b { color: var(--accent-moss); font-weight: 700; }
+
 /* ==========================================================================
-   Architecture (§7)
+   §7 Architecture — prose, stack-list glass shelf, and the one repeated
+   "photo" figure (multiply-style gradient, per §4 Imagery treatment).
    ========================================================================== */
 
 .arch-grid {
   display: grid;
-  gap: var(--sp-6);
+  gap: var(--space-4);
   grid-template-columns: 1fr;
+  position: relative;
+  z-index: 1;
 }
 @media (min-width: 860px) {
   .arch-grid { grid-template-columns: 1.1fr 0.9fr; }
@@ -799,172 +1220,185 @@ section[id] { scroll-margin-top: 4.5rem; }
 
 .stack-list {
   list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
+  padding: var(--space-2);
+  overflow: hidden;
 }
 .stack-list li {
-  padding: var(--sp-3) var(--sp-4);
-  border: 1px solid var(--hairline);
-  border-radius: 2px;
-  background: var(--panel);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--glass-border);
 }
+.stack-list li:last-child { border-bottom: none; }
 .stack-list .name {
   font-family: var(--font-mono);
   font-size: 0.85rem;
-  color: var(--paper);
+  color: var(--text-primary);
   display: block;
 }
-.stack-list .desc {
-  font-size: 0.83rem;
-  color: var(--muted);
-}
+.stack-list .desc { font-size: 0.83rem; color: var(--text-muted); }
 
-.backend-row {
-  display: flex;
-  gap: var(--sp-2);
-  flex-wrap: wrap;
-  margin-top: var(--sp-4);
-}
+.backend-row { display: flex; gap: var(--space-1); flex-wrap: wrap; margin-top: var(--space-3); }
 .backend-chip {
   font-family: var(--font-mono);
   font-size: 0.74rem;
   padding: 0.35em 0.7em;
-  border: 1px solid var(--hairline);
-  border-radius: 2px;
-  color: var(--paper-dim);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
 }
-.backend-chip.default { border-color: var(--pass-dim); color: var(--pass); }
+.backend-chip.default { border-color: var(--accent-moss); color: var(--accent-moss); }
 
 /* ==========================================================================
-   Limitations (§8)
+   §8 Limitations
    ========================================================================== */
 
 .limitations {
-  background: var(--panel);
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
+  position: relative;
+  z-index: 1;
   overflow: hidden;
 }
 .limitations-head {
-  padding: var(--sp-4) var(--sp-5);
-  border-bottom: 1px solid var(--hairline);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--glass-border);
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: var(--space-2);
 }
 .limitations-head .redaction-bar { width: 6em; height: 0.9em; }
-.limitations-head span.eyebrow { color: var(--paper-dim); }
+.limitations-head span.eyebrow { color: var(--text-secondary); }
 
-.limitations-list {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-}
+.limitations-list { margin: 0; display: flex; flex-direction: column; }
 .limitations-list > div {
-  padding: var(--sp-4) var(--sp-5);
-  border-bottom: 1px solid var(--hairline-dim);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--glass-border);
   display: grid;
   grid-template-columns: 9rem 1fr;
-  gap: var(--sp-4);
+  gap: var(--space-3);
 }
 .limitations-list > div:last-child { border-bottom: none; }
 @media (max-width: 620px) {
-  .limitations-list > div { grid-template-columns: 1fr; gap: var(--sp-1); }
+  .limitations-list > div { grid-template-columns: 1fr; gap: var(--space-1); }
 }
 .limitations-list dt {
   font-family: var(--font-mono);
   font-size: 0.76rem;
-  color: var(--redact);
+  color: var(--accent-terracotta-text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.limitations-list dd {
-  margin: 0;
-  color: var(--paper-dim);
-  font-size: 0.92rem;
-}
+.limitations-list dd { margin: 0; color: var(--text-secondary); font-size: 0.92rem; }
 
 /* ==========================================================================
-   Photo evidence figure (id-card / annotated detection)
+   §4 Photo figures — the two real images. `.figure-photo` gets the
+   spec's multiply-style dark gradient; the id-card reveal figure keeps
+   its own redaction-bar mechanic instead (adding a second decorative
+   gradient there would compete with a content-critical interaction).
    ========================================================================== */
 
 .figure {
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  background: var(--panel);
+  background: rgba(255, 255, 255, 0.03);
 }
 .figure img { width: 100%; height: auto; }
 .figure figcaption {
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--space-2) var(--space-3);
   font-size: 0.82rem;
-  color: var(--muted);
-  border-top: 1px solid var(--hairline);
+  color: var(--text-muted);
+  border-top: 1px solid var(--glass-border);
+  background: var(--glass-fill-strong);
 }
-.figure figcaption strong { color: var(--paper-dim); }
+.figure figcaption strong { color: var(--text-secondary); }
+.figure figcaption code { font-size: 0.85em; }
+
+/* The one repeated "photo" treatment outside the hero — desaturated,
+   deep shadow, dark multiply-style gradient corner, per §4 Imagery. */
+.figure-photo { position: relative; }
+.figure-photo img { filter: saturate(0.85) contrast(1.03); }
+.figure-photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(11, 15, 12, 0.55) 0%,
+    rgba(11, 15, 12, 0.12) 35%,
+    transparent 60%
+  );
+  pointer-events: none;
+}
 
 .reveal-demo {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: var(--space-2);
   align-items: flex-start;
 }
 .reveal-frame {
   position: relative;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   line-height: 0;
   display: block;
   cursor: pointer;
   width: 100%;
 }
-.reveal-frame img { filter: grayscale(0.15); width: 100%; height: auto; }
+.reveal-frame img { filter: grayscale(0.1) saturate(0.95); width: 100%; height: auto; }
 .reveal-bar {
   position: absolute;
   inset: 0;
   background: repeating-linear-gradient(115deg, #050607, #050607 5px, #000 5px, #000 10px);
   transition: opacity 0.5s var(--ease);
 }
-/* Pure-CSS reveal: a visually-hidden checkbox drives state, no JS required.
-   Hover/focus-within on the demo also previews it, for mouse/keyboard users. */
 .reveal-checkbox:checked ~ .reveal-frame .reveal-bar,
 .reveal-demo:hover .reveal-bar,
 .reveal-demo:focus-within .reveal-bar { opacity: 0; }
-
 .reveal-checkbox:focus-visible ~ .reveal-frame {
-  outline: 2px solid var(--detect);
+  outline: 2px solid var(--accent-bronze);
   outline-offset: 2px;
 }
-
-.reveal-label-btn {
-  display: inline-block;
-}
-
-.reveal-hint {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--muted);
-}
+.reveal-label-btn { display: inline-block; }
 
 /* ==========================================================================
-   Footer
+   Footer — minimal, --bg-void, link columns, no card treatment (§2 Layout).
    ========================================================================== */
 
 .site-footer {
-  border-top: 1px solid var(--hairline);
-  padding-block: var(--sp-6);
+  border-top: 1px solid var(--glass-border);
+  background: var(--bg-void);
+  padding-block: var(--space-6);
 }
 .footer-inner {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  color: var(--muted);
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: 1fr;
 }
-.footer-inner strong { color: var(--paper-dim); }
+@media (min-width: 700px) {
+  .footer-inner { grid-template-columns: 1.4fr 1fr 1fr; }
+}
+.footer-brand {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+.footer-col-title {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+.footer-links { list-style: none; display: flex; flex-direction: column; gap: var(--space-1); }
+.footer-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.88rem; }
+.footer-links a:hover, .footer-links a:focus-visible { color: var(--text-primary); }
+.footer-note { font-size: 0.82rem; color: var(--text-muted); max-width: 34rem; }
+.footer-note code { font-size: 0.85em; }
 
 /* ==========================================================================
    Misc utility
@@ -980,9 +1414,28 @@ section[id] { scroll-margin-top: 4.5rem; }
 
 .grid-2 {
   display: grid;
-  gap: var(--sp-6);
+  gap: var(--space-4);
   grid-template-columns: 1fr;
+  position: relative;
+  z-index: 1;
 }
 @media (min-width: 860px) {
   .grid-2 { grid-template-columns: 1fr 1fr; align-items: start; }
+}
+
+/* ==========================================================================
+   §5 Animation — scroll-reveal fade-up (enhancement, not required).
+   `.js` is only ever added by script.js, so with JavaScript disabled
+   `.reveal` elements simply render at their default, fully-visible state —
+   nothing on this page depends on JS to become visible.
+   ========================================================================== */
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+}
+.js .reveal.is-visible {
+  opacity: 1;
+  transform: none;
 }

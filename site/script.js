@@ -5,6 +5,11 @@
 (function () {
   'use strict';
 
+  /* .js only ever gets added here — styles.css gates the scroll-reveal
+     opacity:0 starting state behind it, so with JS disabled `.reveal`
+     elements simply render at their default, fully-visible state. */
+  document.documentElement.classList.add('js');
+
   var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   /* ---------------------------------------------------------------------
@@ -129,5 +134,80 @@
     if (skipBtn) {
       skipBtn.addEventListener('click', finish);
     }
+  }());
+
+  /* ---------------------------------------------------------------------
+     Nav — §2 Layout: transparent floating over the hero, transitions to
+     --glass-fill-strong + blur once scrolled past it. Pure visual state;
+     the nav is fully usable (and readable) with this script absent.
+     --------------------------------------------------------------------- */
+  (function navScroll() {
+    var topbar = document.getElementById('topbar');
+    var hero = document.getElementById('top');
+    if (!topbar || !hero) return;
+
+    function update() {
+      var threshold = Math.max(hero.offsetHeight - topbar.offsetHeight - 40, 80);
+      topbar.classList.toggle('is-scrolled', window.scrollY > threshold);
+    }
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+  }());
+
+  /* ---------------------------------------------------------------------
+     Mobile glass drawer (§7 Responsive, <768px) — a native <details> IS
+     the disclosure, so this only adds niceties on top: closing after a
+     link is chosen, on outside click, and on Escape (with focus returned
+     to the toggle). None of this is required for the drawer to function.
+     --------------------------------------------------------------------- */
+  (function navDrawer() {
+    var drawer = document.getElementById('nav-drawer');
+    if (!drawer) return;
+    var summary = drawer.querySelector('summary');
+
+    Array.prototype.forEach.call(drawer.querySelectorAll('a'), function (a) {
+      a.addEventListener('click', function () { drawer.removeAttribute('open'); });
+    });
+
+    document.addEventListener('click', function (e) {
+      if (drawer.hasAttribute('open') && !drawer.contains(e.target)) {
+        drawer.removeAttribute('open');
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && drawer.hasAttribute('open')) {
+        drawer.removeAttribute('open');
+        if (summary) summary.focus();
+      }
+    });
+  }());
+
+  /* ---------------------------------------------------------------------
+     Scroll-reveal fade-up (§5 Animation — enhancement, not required).
+     Only touches elements carrying `.reveal`; styles.css already makes
+     that opacity:0 starting state conditional on `.js`, so a no-JS or
+     reduced-motion visitor always sees full content, never a stuck fade.
+     --------------------------------------------------------------------- */
+  (function scrollReveal() {
+    var targets = document.querySelectorAll('.reveal');
+    if (!targets.length) return;
+
+    if (reduceMotion || !('IntersectionObserver' in window)) {
+      Array.prototype.forEach.call(targets, function (t) { t.classList.add('is-visible'); });
+      return;
+    }
+
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+
+    Array.prototype.forEach.call(targets, function (t) { io.observe(t); });
   }());
 }());
