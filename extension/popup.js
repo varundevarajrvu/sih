@@ -277,14 +277,29 @@ function renderRunStatus(payload) {
 
 let runStatusPollTimer = null;
 
+// THE STOP-NEVER-ENABLES BUG, fixed. The Run click handler below calls
+// refreshRunState() to "start polling immediately" -- but at that instant
+// RUN_AGENT_LOOP has not been sent yet, so background.js reports
+// active:false, the `active &&` guard declines to start the timer, and
+// nothing ever re-queries. Stop therefore stayed disabled for the entire
+// run: the button was never broken, it was never enabled.
+//
+// This flag says "a run is starting, keep polling even though the state
+// does not show it yet". It is cleared the moment an active run is
+// actually observed, and by the click handler's finally block, so a
+// failed start cannot leave the timer running forever.
+let expectingRunStart = false;
+
 async function refreshRunState() {
   try {
     const resp = await browser.runtime.sendMessage({ type: "GET_RUN_STATE" });
     renderRunStatus(resp);
     const active = !!(resp && resp.state && resp.state.active);
-    if (active && !runStatusPollTimer) {
+    if (active) expectingRunStart = false;
+    const shouldPoll = active || expectingRunStart;
+    if (shouldPoll && !runStatusPollTimer) {
       runStatusPollTimer = setInterval(refreshRunState, 1000);
-    } else if (!active && runStatusPollTimer) {
+    } else if (!shouldPoll && runStatusPollTimer) {
       clearInterval(runStatusPollTimer);
       runStatusPollTimer = null;
     }
@@ -309,6 +324,12 @@ runAgentLoopBtn.addEventListener("click", async () => {
   // resolve until the WHOLE loop finishes (could be minutes), but
   // background.js's tracked run state updates step-by-step as content.js
   // reports progress, independently of that pending promise.
+  //
+  // expectingRunStart is what makes "immediately" actually true: at this
+  // point RUN_AGENT_LOOP has not been sent, so the state still reads
+  // active:false and refreshRunState() would otherwise decline to start
+  // the timer. That is precisely why Stop never became clickable.
+  expectingRunStart = true;
   refreshRunState();
   try {
     const response = await browser.runtime.sendMessage({ type: "RUN_AGENT_LOOP" });
@@ -325,6 +346,10 @@ runAgentLoopBtn.addEventListener("click", async () => {
   } catch (err) {
     agentLoopResultEl.textContent = `Failed to reach background service worker: ${err.message || err}`;
   } finally {
+    // The run is over (or never started). Clear the flag BEFORE the final
+    // refresh so the poll timer is allowed to stop -- otherwise a run that
+    // failed to start would leave it polling forever.
+    expectingRunStart = false;
     runAgentLoopBtn.disabled = false;
     refreshRunState();
   }
