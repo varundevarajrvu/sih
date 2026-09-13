@@ -90,6 +90,27 @@ Real numbers from browser runs, not estimates.
 
 **Requirements:** Python 3.11+, Node 18+, Chrome.
 
+### One command (Windows)
+
+```powershell
+.\start-demo.ps1              # mock backend — no API key needed
+.\start-demo.ps1 -Backend gemini   # real model (needs GEMINI_API_KEY)
+.\start-demo.ps1 -DebugDump        # also dump transmitted images to disk
+```
+
+Starts all three servers, waits until each actually answers, and prints the URL
+and task goal for every demo scenario. `.\stop-demo.ps1` shuts them down.
+
+Three servers are needed, and the third is not redundant: **a different port is
+a different origin**, which is what makes the cross-origin iframe test genuinely
+cross-origin rather than same-origin wearing a different path.
+
+Then load the extension: `chrome://extensions` → Developer mode → **Load
+unpacked** → select `extension/`. Wait for the popup's green ✓ before running —
+the first inference is slow exactly once.
+
+### Or manually
+
 ```bash
 # 1. Server
 cd server
