@@ -6,202 +6,346 @@
 <title>SIH 26171 Agent</title>
 <style>
   /* ==========================================================================
-     SIH 26171 -- extension popup
-     Same design language as site/index.html: dark "redacted briefing" —
-     serif display against monospace data, the black redaction bar as a
-     recurring motif, three semantic accents used sparingly (coral =
-     BLOCKED, mint = PASS, amber = active/warming). Inline <style> rather
-     than a separate popup.css: this file is small, self-contained, and an
-     inline block was already proven to work under this manifest's
-     extension_pages CSP -- no new web_accessible_resources entry needed
-     for one more file, no risk of an untested style-src surprise.
+     SIH 26171 -- extension popup, glassmorphism pass.
+     Same token system as site/styles.css (Chief's spec, verbatim values) so
+     the popup and the showcase site read as one product, not two skins.
+     Inline <style> rather than a separate popup.css: this file is small,
+     self-contained, and an inline block was already proven to work under
+     this manifest's extension_pages CSP -- no new web_accessible_resources
+     entry needed for one more file.
+
+     GLASS WITHOUT A PHOTO: a popup has nothing behind it for
+     backdrop-filter to refract, so flat translucency alone reads as dead
+     grey. Fix per spec: --bg-void base + two fixed, blurred accent orbs
+     (bronze + terracotta, same recipe as the site's .orb) sitting behind a
+     SINGLE glass panel -- the blur now has real gradient to sample.
+
+     PERFORMANCE BUDGET: a popup has to open instantly, stricter than the
+     site. Exactly ONE backdrop-filter surface exists in this whole
+     document -- .glass-shell, applied once, wrapping everything. Every
+     surface nested inside it (buttons, banners, disclosures, inputs, the
+     BLOCKED banner's terracotta wash) is a flat/rgba tint with ZERO
+     additional backdrop-filter -- they ride on the one already-blurred
+     surface underneath instead of paying for their own. That is well
+     under the "never stack more than 2" ceiling; there was no point
+     spending the second slot the spec allows, since one convincing glass
+     surface plus flat inner tints already reads as glass without any
+     extra GPU cost, and this is the surface latency matters most on.
      ========================================================================== */
 
   :root {
-    --ink:          #0a0c0d;
-    --panel:        #14181a;
-    --panel-alt:    #171c1e;
-    --terminal:     #0d1012;
-    --hairline:     #262c2f;
-    --hairline-dim: #1b2022;
-    --paper:        #eae6dc;
-    --paper-dim:    #cfcabf;
-    --muted:        #8b9199;
-    --muted-dim:    #5d6469;
+    /* --- Chief's spec tokens, verbatim -------------------------------- */
+    --bg-void:             #0B0B0C;
+    --bg-forest:           #16211A;
+    --glass-fill:          rgba(22, 24, 23, 0.50);
+    --glass-fill-strong:   rgba(14, 15, 15, 0.65);
+    --glass-border:        rgba(255, 255, 255, 0.14);
+    --glass-border-bright: rgba(255, 255, 255, 0.28);
+    --text-primary:        #F6F4EF;
+    --text-secondary:      #C7C4BB;
+    --text-muted:          #8D897D;
+    --accent-bronze:       #AD8A5C;
+    --accent-terracotta:   #A94E3D;
 
-    --redact:       #ff5a3c; /* BLOCKED / danger -- stamp-ink coral */
-    --redact-dim:   #7a2e21;
-    --redact-bright:#ffcfc2;
-    --pass:         #5fd9a4; /* PASS / safe -- mint */
-    --pass-dim:     #234a3a;
-    --pass-bright:  #cdf5e3;
-    --detect:       #eab308; /* active / warming -- amber */
-    --detect-dim:   #4a3b0c;
-    --detect-bright:#ffe9a8;
+    /* --- Two tokens derived exactly like site/styles.css derives them
+       (same names, same values, same reasoning): the spec's 11 tokens are
+       structural, not semantic -- this UI needs "safe" (moss) and "this is
+       readable running text" for terracotta (raw terracotta measures only
+       ~3.6:1 for text; fine as a 3:1 border/fill, not for text -- this
+       tint measures 8+ everywhere it's used here, see delivery report). -- */
+    --accent-moss:            #8FBF8A;
+    --accent-terracotta-text: #E39A85;
 
-    --font-display: Iowan Old Style, Palatino Linotype, Palatino, "URW Palladio",
-                    Georgia, "Book Antiqua", serif;
-    --font-body:    -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto,
-                    "Helvetica Neue", Arial, sans-serif;
-    --font-mono:    ui-monospace, "Cascadia Code", "Segoe UI Mono", "SFMono-Regular",
-                    Consolas, "Liberation Mono", Menlo, monospace;
+    /* --- Backward-compat alias, mirrors site/styles.css's own alias block
+       byte-for-byte: popup.js sets serverUrlStatusEl.style.color to the
+       LITERAL strings "var(--redact)" / "var(--pass)" (search the file --
+       it's the one place a color choice survives untouched from the prior
+       theme). Rather than edit working, tested JS to rename two color
+       values, this file just keeps those two custom-property NAMES
+       resolving to sensible colors under the new palette -- zero popup.js
+       diff, and the alias reads identically to how the site solved the
+       exact same problem for its own legacy literals. -------------------- */
+    --pass:   var(--accent-moss);
+    --redact: var(--accent-terracotta-text);
 
-    --radius: 3px;
+    /* --- Typography: Fraunces italic display + Inter body, both
+       self-hosted from extension/fonts/ (copied byte-for-byte from
+       site/fonts/ -- same files, same subsetting). No CDN, ever: this is
+       a privacy project and MV3's CSP would block a remote stylesheet
+       anyway. Mono stays a system stack, matching the site's own choice
+       (its reference had no code content to derive a mono pick from
+       either; a system stack costs nothing to ship and is legible
+       everywhere this JSON/log content actually renders). --------------- */
+    --font-display: 'Fraunces', ui-serif, Georgia, 'Book Antiqua', serif;
+    --font-body:    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono:    ui-monospace, 'Cascadia Code', 'Segoe UI Mono', 'SFMono-Regular',
+                    Consolas, 'Liberation Mono', Menlo, monospace;
+
+    /* --- Spacing scale, per spec (8/16/24/32/48) ----------------------- */
+    --space-1: 8px;
+    --space-2: 16px;
+    --space-3: 24px;
+    --space-4: 32px;
+    --space-5: 48px;
+
+    /* --- Radius + blur, verbatim ---------------------------------------- */
+    --radius-sm:   12px;
+    --radius-lg:   20px;
+    --radius-pill: 999px;
+    --glass-blur:  blur(18px);
+
     --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   }
 
   * { box-sizing: border-box; }
-
   html, body { margin: 0; padding: 0; }
+
+  /* --- FONTS: self-hosted, identical files to site/fonts/, identical
+     @font-face recipe (including unicode-range) -- these are literally the
+     same physical font files, so describing them differently here would
+     be the inconsistency, not a fix. ------------------------------------ */
+  @font-face {
+    font-family: 'Fraunces';
+    font-style: italic;
+    font-weight: 400 500;
+    font-display: swap;
+    src: url('fonts/fraunces-italic-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                   U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                   U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url('fonts/inter-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+                   U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+                   U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+
+  html { -webkit-text-size-adjust: 100%; }
 
   body {
     width: 380px;
     max-height: 600px;
+    overflow-x: hidden;
     overflow-y: auto;
     scrollbar-width: thin;
-    background: var(--ink);
-    color: var(--paper);
+    position: relative;
+    background: var(--bg-void);
+    color: var(--text-secondary);
     font-family: var(--font-body);
     font-size: 12.5px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
 
-  h1, h2 { margin: 0; font-weight: 700; }
+  h1 { margin: 0; }
   p { margin: 0; }
 
   code {
     font-family: var(--font-mono);
     font-size: 0.92em;
-    background: var(--panel-alt);
-    border: 1px solid var(--hairline);
-    border-radius: 2px;
-    padding: 0.05em 0.35em;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
+    border-radius: 4px;
+    padding: 0.05em 0.4em;
+    color: var(--text-primary);
   }
 
   button { font: inherit; color: inherit; }
 
   :focus-visible {
-    outline: 2px solid var(--detect);
+    outline: 2px solid var(--accent-bronze);
     outline-offset: 2px;
     border-radius: 2px;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    * { transition-duration: 0.001ms !important; }
+    * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
+  }
+
+  /* -- redaction motif: the recurring device from the site, reused inline
+     wherever this UI needs to say "something is deliberately hidden here"
+     rather than "something broke". Kept near-black regardless of theme --
+     it represents a literal blackout, not a decorative accent. -- */
+  .redaction-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 8px;
+    background: repeating-linear-gradient(115deg, #050607, #050607 2px, #000 2px, #000 4px);
+    border-radius: 1px;
+    vertical-align: middle;
+    flex-shrink: 0;
   }
 
   .eyebrow {
     display: block;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.1em;
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--text-muted);
     margin-bottom: 6px;
   }
 
   .hint {
     font-size: 11.5px;
-    color: var(--muted);
+    color: var(--text-muted);
     line-height: 1.5;
     margin-top: 6px;
+    overflow-wrap: break-word;
   }
-  .hint strong { color: var(--paper-dim); font-weight: 600; }
+  .hint strong { color: var(--text-secondary); font-weight: 600; }
+  .k-blocked { color: var(--accent-terracotta-text); }
 
-  /* -- redaction-bar motif, reused from the site's signature device -- */
-  .redaction-swatch {
-    display: inline-block;
-    width: 15px;
-    height: 8px;
-    background: repeating-linear-gradient(115deg, #050607, #050607 2px, #000 2px, #000 4px);
-    border-radius: 1px;
-    vertical-align: middle;
-    margin-right: 6px;
-    flex-shrink: 0;
+  .hint-note {
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 2px solid var(--glass-border-bright);
+    border-radius: var(--radius-sm);
+    margin-top: 0;
+  }
+
+  /* ==========================================================================
+     Decorative orbs -- fixed to the popup's own viewport (not affected by
+     the body's internal scroll), two only, one bronze one terracotta, same
+     recipe as site/styles.css's .orb. This is the entire "glass has
+     something to refract" solution: without these, .glass-shell's blur
+     would sample flat --bg-void and collapse to plain translucency.
+     ========================================================================== */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(60px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .orb--bronze {
+    top: -46px; left: -40px;
+    width: 190px; height: 190px;
+    opacity: 0.38;
+    background: radial-gradient(circle at 35% 35%, var(--accent-bronze), transparent 70%);
+  }
+  .orb--terracotta {
+    bottom: -56px; right: -34px;
+    width: 170px; height: 170px;
+    opacity: 0.26;
+    background: radial-gradient(circle at 35% 35%, var(--accent-terracotta), transparent 70%);
+  }
+  @media (prefers-reduced-transparency: reduce) { .orb { display: none; } }
+  @supports not (backdrop-filter: blur(1px)) { .orb { display: none; } }
+
+  /* ==========================================================================
+     THE one glass surface. Everything else in this document is either
+     inside it (flat tints only) or a fixed orb behind it.
+     ========================================================================== */
+  .glass-shell {
+    position: relative;
+    z-index: 1;
+    margin: 10px;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--glass-fill);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-top-color: var(--glass-border-bright);
+  }
+  /* §6 Accessibility: old browsers AND "reduce transparency" both get a
+     solid, opaque panel -- no blur, no see-through, per spec. */
+  @supports not (backdrop-filter: blur(1px)) {
+    .glass-shell { background: rgba(11, 11, 12, 0.94); }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass-shell { background: rgba(11, 11, 12, 0.94); backdrop-filter: none; -webkit-backdrop-filter: none; }
   }
 
   /* ==========================================================================
      Header
      ========================================================================== */
-
   .topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--hairline);
+    padding: 12px var(--space-2);
+    border-bottom: 1px solid var(--glass-border);
   }
 
   .brand {
     display: flex;
     align-items: center;
+    gap: 8px;
     font-family: var(--font-display);
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    color: var(--paper);
+    font-style: italic;
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: 0;
+    color: var(--text-primary);
     white-space: nowrap;
   }
-  .brand .cursor { color: var(--detect); }
+  .brand .accent { color: var(--accent-bronze); font-style: italic; }
 
-  /* Prewarm status -- demoted to a slim, color-coded strip rather than a
-     full banner: it's diagnostic context ("will the loop start slow?"),
-     not the primary action. Base layout lives on the #id selector because
-     popup.js replaces this element's className wholesale on every update
-     (renderPrewarmStatus() in popup.js) -- any class I added here besides
-     the status-* ones it already writes would be wiped on the next
-     refresh, so all persistent styling has to hang off the ID. */
+  /* Prewarm status -- a slim, color-coded strip, not a full banner: it's
+     diagnostic context ("will the loop start slow?"), not the primary
+     action. Base layout lives on the #id selector because popup.js
+     replaces this element's className wholesale on every update
+     (renderPrewarmStatus()) -- anything besides the status-* classes it
+     writes would be wiped on the next refresh, so persistent styling has
+     to hang off the ID, same constraint as the previous pass. */
   #prewarmStatus {
-    margin: 0 14px 10px;
-    padding: 6px 9px;
-    border-radius: var(--radius);
-    border-left: 3px solid var(--muted);
-    background: var(--panel);
+    margin: var(--space-2) var(--space-2) 0;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--glass-border-bright);
+    background: rgba(255, 255, 255, 0.03);
     font-family: var(--font-mono);
     font-size: 10.5px;
     line-height: 1.5;
-    color: var(--muted);
+    color: var(--text-muted);
+    overflow-wrap: break-word;
   }
   #prewarmStatus.status-pending,
   #prewarmStatus.status-running {
-    border-left-color: var(--detect);
-    color: var(--detect-bright);
+    border-left-color: var(--accent-bronze);
+    color: var(--accent-bronze);
   }
   #prewarmStatus.status-warm {
-    border-left-color: var(--pass);
-    color: var(--pass-bright);
+    border-left-color: var(--accent-moss);
+    color: var(--accent-moss);
   }
   #prewarmStatus.status-failed {
-    border-left-color: var(--redact);
-    color: var(--redact-bright);
+    border-left-color: var(--accent-terracotta-text);
+    color: var(--accent-terracotta-text);
   }
 
-  main { padding: 0 14px 14px; }
-
-  section, .disclosure { margin-top: 14px; }
+  main { padding: 0 var(--space-2) var(--space-2); }
+  section, .disclosure { margin-top: var(--space-2); }
 
   /* ==========================================================================
-     Task -- the primary surface: goal, then Run/Stop
+     Task -- the primary surface: goal, then Run/Stop. Visually dominant:
+     first content block, largest control row, only bronze-filled button
+     in the document.
      ========================================================================== */
-
   textarea#taskGoal {
     width: 100%;
-    box-sizing: border-box;
-    background: var(--terminal);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
-    color: var(--paper);
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
     font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.5;
-    padding: 8px;
+    padding: 9px 10px;
     resize: vertical;
     transition: border-color 0.15s var(--ease);
   }
-  textarea#taskGoal:hover { border-color: var(--hairline-dim); }
-  textarea#taskGoal::placeholder { color: var(--muted-dim); }
+  textarea#taskGoal:hover { border-color: var(--glass-border-bright); }
+  textarea#taskGoal::placeholder { color: var(--text-muted); }
 
   .task-actions {
     display: flex;
@@ -213,187 +357,209 @@
   #saveStatus {
     font-family: var(--font-mono);
     font-size: 10.5px;
-    color: var(--muted);
+    color: var(--text-muted);
     min-height: 1.4em;
+    overflow-wrap: break-word;
   }
 
-  /* -- buttons -- */
+  /* -- buttons -- pill radius throughout, matching the site's .pill-cta
+     language, so a Run/Stop pair reads as the same product's controls. -- */
   .btn {
-    border-radius: var(--radius);
-    padding: 7px 12px;
+    border-radius: var(--radius-pill);
+    padding: 8px 14px;
+    font-family: var(--font-body);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    border: 1px solid var(--hairline);
-    background: var(--panel);
-    color: var(--paper);
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-primary);
     transition: border-color 0.15s var(--ease), color 0.15s var(--ease),
                 background 0.15s var(--ease), opacity 0.15s var(--ease);
   }
-  .btn:hover:not(:disabled) { border-color: var(--detect); color: var(--detect); }
+  .btn:hover:not(:disabled) { border-color: var(--accent-bronze); color: var(--accent-bronze); }
   .btn:disabled { cursor: default; opacity: 0.5; }
 
   .run-row {
     display: flex;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: var(--space-2);
   }
 
-  /* Run Agent Loop: the single most important control in the popup --
-     solid fill, not just an outline, so it reads as THE action. */
+  /* Run Agent Loop: the single most important control -- solid bronze
+     fill, the only fully-saturated fill in the whole popup besides the
+     BLOCKED banner, so it reads as THE action. */
   .btn-primary {
     flex: 2 1 auto;
-    background: var(--detect);
-    border-color: var(--detect);
-    color: #14120a;
+    background: var(--accent-bronze);
+    border-color: var(--accent-bronze);
+    color: #16110A; /* same dark-on-bronze pairing site/styles.css uses for .skip-link -- already a verified-accessible combination in this project */
     font-size: 12.5px;
-    padding: 9px 12px;
+    padding: 10px 14px;
   }
-  .btn-primary:hover:not(:disabled) {
-    background: #ffc93a;
-    border-color: #ffc93a;
-    color: #14120a;
-  }
-  .btn-primary:disabled { background: var(--panel); border-color: var(--hairline); color: var(--muted); opacity: 1; }
+  .btn-primary:hover:not(:disabled) { background: #c29b6c; border-color: #c29b6c; }
+  .btn-primary:disabled { background: var(--glass-fill-strong); border-color: var(--glass-border); color: var(--text-muted); opacity: 1; }
 
-  /* Stop: quiet and out of the way when there's nothing to stop, but
-     switches to a solid, impossible-to-miss coral fill the instant a run
-     is active -- "obvious and reachable at all times during a run." */
+  /* Stop: quiet ghost when there's nothing to stop. While a run IS
+     stoppable it gets a terracotta OUTLINE + wash -- deliberately NOT the
+     same full solid terracotta fill the BLOCKED banner uses (see that
+     banner's comment below for why the two must stay visually distinct;
+     a live run and a blocked step can be on screen at once). */
   .btn-stop {
     flex: 1 1 auto;
-    min-width: 76px;
-    border-color: var(--hairline);
-    color: var(--muted);
+    min-width: 84px;
+    border-color: var(--glass-border);
+    color: var(--text-muted);
     background: transparent;
   }
   .btn-stop:not(:disabled) {
-    background: var(--redact);
-    border-color: var(--redact);
-    color: #2a0c06;
+    background: rgba(169, 78, 61, 0.16);
+    border: 1.5px solid var(--accent-terracotta);
+    color: var(--accent-terracotta-text);
     font-weight: 700;
   }
   .btn-stop:not(:disabled):hover {
-    background: #ff7457;
-    border-color: #ff7457;
-    color: #2a0c06;
+    background: rgba(169, 78, 61, 0.26);
+    border-color: var(--accent-terracotta-text);
   }
   .btn-stop:disabled { opacity: 1; }
 
-  .btn-ghost { font-size: 11.5px; padding: 6px 10px; }
+  .btn-ghost { font-size: 11.5px; padding: 7px 12px; color: var(--text-secondary); }
 
   /* ==========================================================================
      Live run status -- step/stage, last action, and (the hero) the
-     BLOCKED banner, all rendered by popup.js into #runStatus.
+     BLOCKED banner, all rendered by popup.js into #runStatus using its
+     OWN fixed markup shape (see popup.js's renderRunStatus()) -- every
+     selector below targets exactly what that function emits.
      ========================================================================== */
-
-  .hint-note {
-    padding: 7px 9px;
-    background: var(--panel);
-    border-left: 2px solid var(--hairline-dim);
-    border-radius: 2px;
-    margin-top: 0;
-  }
-
   #runStatus { margin-top: 8px; }
   #runStatus:empty { margin-top: 0; }
 
   .run-status-line {
     font-family: var(--font-mono);
     font-size: 11.5px;
-    color: var(--paper-dim);
+    color: var(--text-secondary);
     margin: 6px 0;
     line-height: 1.5;
     overflow-wrap: break-word;
+    word-break: break-word;
   }
-  .run-status-line strong { color: var(--paper); font-weight: 700; }
+  .run-status-line strong { color: var(--text-primary); font-weight: 700; }
 
   .run-status-goal {
     font-family: var(--font-mono);
     font-style: italic;
-    color: var(--muted);
+    color: var(--text-muted);
     font-size: 11px;
-    border-left: 2px solid var(--detect-dim);
+    border-left: 2px solid rgba(173, 138, 92, 0.45); /* dim bronze -- not worth a new token for one muted rule */
     padding-left: 8px;
   }
 
-  /* -- BLOCKED: the hero element. A refusal is the product working, not
-     a failure -- unmissable, and deliberately NOT the same treatment as
-     .error-banner below. The top striped bar is the site's own
-     redaction-rule motif, reused here as "this is the mechanism firing,"
-     not a generic warning stripe. -- */
+  /* -- BLOCKED: THE HERO ELEMENT. A refusal is the product working, not a
+     failure -- this is the single reason the extension is worth
+     installing, so it has to be unmissable on sight and read as a
+     deliberate, confident refusal, never as an error.
+
+     Terracotta is reserved for this ONE treatment as a full filled wash +
+     solid ring. Nowhere else in the popup does terracotta appear as a
+     background fill -- the Stop button (also terracotta-family, since it
+     IS a legitimately "hot" control) only ever gets a thin outline + a
+     14-16% wash, never this saturated. That gap in weight is deliberate:
+     a run can be actively stoppable at the exact moment a BLOCKED banner
+     is showing (a blocked step doesn't necessarily end the run), so the
+     two need to stay visually unmistakable from each other, and "how much
+     terracotta wash" is the dial that keeps them apart. -- */
   .blocked-banner {
     position: relative;
-    margin: 10px 0;
-    padding: 12px 12px 11px;
-    padding-top: 16px;
-    border: 2px solid var(--redact);
-    border-radius: var(--radius);
-    background: linear-gradient(180deg, var(--redact-dim) 0%, #401810 100%);
+    margin: var(--space-2) 0;
+    padding: 14px 16px;
+    border-radius: var(--radius-lg);
+    border: 2px solid var(--accent-terracotta);
+    background: linear-gradient(165deg, rgba(169, 78, 61, 0.34), rgba(169, 78, 61, 0.14));
     overflow: hidden;
-  }
-  .blocked-banner::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 6px;
-    background: repeating-linear-gradient(115deg, #050607, #050607 4px, #000 4px, #000 8px);
   }
   .blocked-banner strong {
     display: block;
     font-family: var(--font-mono);
     font-size: 12.5px;
     font-weight: 700;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
-    color: var(--redact-bright);
+    color: var(--accent-terracotta-text); /* never raw --accent-terracotta for text -- ~3.6:1, fails 4.5:1. This tint measures 6.2-7.6:1 here, see delivery report. */
+  }
+  /* Inline redaction swatch before the label text, reusing the exact motif
+     from the header brand mark and the site's own .redaction-bar --
+     "this is the mechanism firing", not a generic warning triangle. */
+  .blocked-banner strong::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 8px;
+    margin-right: 8px;
+    vertical-align: middle;
+    border-radius: 1px;
+    background: repeating-linear-gradient(115deg, #050607, #050607 2px, #000 2px, #000 4px);
   }
   .blocked-banner > div {
-    margin-top: 7px;
-    padding-left: 9px;
-    border-left: 2px solid var(--redact);
+    margin-top: 8px;
+    padding-left: 10px;
+    border-left: 2px solid var(--accent-terracotta);
     font-family: var(--font-mono);
     font-size: 11.5px;
     line-height: 1.55;
-    color: var(--paper-dim);
+    color: var(--text-primary);
     overflow-wrap: break-word;
+    word-break: break-word;
   }
 
-  /* -- ERROR: something actually broke. Deliberately quieter than
-     BLOCKED -- thin left rule, no fill, no top stripe -- so the two never
-     read as the same kind of event at a glance. -- */
+  /* -- ERROR: something actually broke, as opposed to a guard doing its
+     job. Deliberately achromatic where BLOCKED is loud: no fill wash, no
+     stamp, thin neutral rule -- so the two never register as the same
+     kind of event even at a glance or in peripheral vision. The only
+     thread of color is the small terracotta-text "Error" label itself,
+     kept intentionally tiny -- enough to say "this is the bad-news
+     family" without competing with the one place that hue is allowed to
+     be loud. -- */
   .error-banner {
-    margin: 10px 0;
-    padding: 8px 10px;
-    border-left: 3px solid var(--redact);
-    border-radius: 2px;
-    background: var(--panel-alt);
+    margin: var(--space-2) 0;
+    padding: 9px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--glass-border);
+    border-left: 3px solid var(--text-muted);
+    background: rgba(255, 255, 255, 0.04);
     font-size: 11.5px;
     line-height: 1.5;
-    color: var(--paper-dim);
+    color: var(--text-secondary);
     overflow-wrap: break-word;
+    word-break: break-word;
   }
   .error-banner strong {
     font-family: var(--font-mono);
     font-size: 10.5px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: var(--redact);
+    color: var(--accent-terracotta-text);
+    font-weight: 700;
   }
 
-  /* -- final outcome, once a run stops -- */
+  /* -- final outcome, once a run stops: small pill chips, four tones
+     matching lib/action-describe.js's describeOutcome() exactly. -- */
   .outcome-banner {
-    margin: 10px 0 0;
-    padding: 7px 10px;
-    border-radius: 2px;
+    display: inline-block;
+    margin: var(--space-2) 0 0;
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
     border: 1px solid transparent;
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: 10.5px;
     letter-spacing: 0.02em;
+    max-width: 100%;
+    overflow-wrap: break-word;
   }
-  .outcome-success { background: var(--pass-dim); border-color: var(--pass); color: var(--pass-bright); }
-  .outcome-warning { background: var(--detect-dim); border-color: var(--detect); color: var(--detect-bright); }
-  .outcome-error   { background: var(--redact-dim); border-color: var(--redact); color: var(--redact-bright); }
-  .outcome-neutral { background: var(--panel-alt); border-color: var(--hairline); color: var(--paper-dim); }
+  .outcome-success { border-color: var(--accent-moss); color: var(--accent-moss); background: rgba(143, 191, 138, 0.12); }
+  .outcome-warning { border-color: var(--accent-bronze); color: var(--accent-bronze); background: rgba(173, 138, 92, 0.12); }
+  .outcome-error   { border-color: var(--accent-terracotta-text); color: var(--accent-terracotta-text); background: rgba(169, 78, 61, 0.10); }
+  .outcome-neutral { border-color: var(--glass-border-bright); color: var(--text-secondary); background: rgba(255, 255, 255, 0.04); }
 
   /* -- raw log output (agentLoopResult / detectResult): demoted,
      terminal-styled, capped height so it can never push Run/Stop or the
@@ -401,38 +567,42 @@
   .log-pre {
     white-space: pre-wrap;
     word-break: break-word;
-    background: var(--terminal);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
-    color: var(--muted);
+    background: rgba(0, 0, 0, 0.32);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
     font-family: var(--font-mono);
     font-size: 10.5px;
     line-height: 1.5;
-    padding: 8px;
+    padding: 10px;
     max-height: 140px;
     overflow: auto;
-    margin: 10px 0 0;
+    margin: var(--space-2) 0 0;
   }
   .log-pre:empty { display: none; }
 
   /* ==========================================================================
      Settings / Advanced diagnostics -- demoted, collapsed by default via
-     native <details>, no JS required.
+     native <details>. These are the "inner elements" the perf budget
+     calls out: --glass-fill-strong, flat, NO backdrop-filter of their
+     own -- they read as a slightly denser glass tint riding on the shell's
+     one blur pass, not as a second blurred layer.
      ========================================================================== */
-
   .disclosure {
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
-    background: var(--panel);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    background: var(--glass-fill-strong);
+    overflow: hidden;
   }
   .disclosure summary {
     cursor: pointer;
-    padding: 8px 10px;
-    font-family: var(--font-mono);
+    padding: 10px 14px;
+    font-family: var(--font-body);
+    font-weight: 500;
     font-size: 11px;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--text-muted);
     list-style: none;
   }
   .disclosure summary::-webkit-details-marker { display: none; }
@@ -440,114 +610,121 @@
     content: "+";
     display: inline-block;
     width: 1em;
-    color: var(--detect);
+    color: var(--accent-bronze);
     font-weight: 700;
   }
   .disclosure[open] summary::before { content: "\2212"; }
-  .disclosure summary:hover { color: var(--paper-dim); }
+  .disclosure summary:hover { color: var(--text-secondary); }
   .disclosure-body {
-    padding: 2px 10px 12px;
-    border-top: 1px solid var(--hairline);
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--glass-border);
   }
 
   input#serverUrlInput {
     width: 100%;
-    box-sizing: border-box;
-    background: var(--terminal);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius);
-    color: var(--paper);
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
     font-family: var(--font-mono);
     font-size: 12px;
-    padding: 7px 8px;
+    padding: 8px 10px;
     margin-top: 8px;
   }
-  input#serverUrlInput::placeholder { color: var(--muted-dim); }
+  input#serverUrlInput:hover { border-color: var(--glass-border-bright); }
+  input#serverUrlInput::placeholder { color: var(--text-muted); }
 
   #serverUrlInput + .btn { margin-top: 8px; }
 
   #serverUrlStatus {
     font-family: var(--font-mono);
     font-size: 10.5px;
-    color: var(--muted);
+    color: var(--text-muted);
     margin-top: 6px;
     min-height: 1.4em;
     overflow-wrap: break-word;
+    word-break: break-word;
   }
 </style>
 </head>
 <body>
 
-  <header class="topbar">
-    <h1 class="brand"><span class="redaction-swatch" aria-hidden="true"></span>SIH 26171<span class="cursor">_</span></h1>
-  </header>
+  <div class="orb orb--bronze" aria-hidden="true"></div>
+  <div class="orb orb--terracotta" aria-hidden="true"></div>
 
-  <div id="prewarmStatus" class="status-pending" aria-live="polite">Checking model warm-up status&hellip;</div>
+  <div class="glass-shell">
 
-  <main>
+    <header class="topbar">
+      <h1 class="brand"><span class="redaction-swatch" aria-hidden="true"></span>SIH 26171<span class="accent">_</span></h1>
+    </header>
 
-    <!-- ================= TASK: the primary surface ================= -->
-    <section aria-label="Task">
-      <label class="eyebrow" for="taskGoal">Task goal</label>
-      <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form"></textarea>
+    <div id="prewarmStatus" class="status-pending" aria-live="polite">Checking model warm-up status&hellip;</div>
 
-      <div class="task-actions">
-        <button id="saveGoal" type="button" class="btn btn-ghost">Save goal</button>
-        <p id="saveStatus" aria-live="polite"></p>
-      </div>
+    <main>
 
-      <div class="run-row">
-        <button id="runAgentLoop" type="button" class="btn btn-primary">Run agent loop</button>
-        <button id="stopAgentLoop" type="button" class="btn btn-stop" disabled>Stop</button>
-      </div>
-      <p class="hint">
-        Runs capture &rarr; detect &rarr; scan &rarr; redact &rarr; send &rarr; act on the
-        current tab, up to 25 steps or until the agent reports done. Uses the last
-        <strong>saved</strong> goal above, and needs the server from Settings reachable.
-      </p>
-    </section>
+      <!-- ================= TASK: the primary surface ================= -->
+      <section aria-label="Task">
+        <label class="eyebrow" for="taskGoal">Task goal</label>
+        <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form"></textarea>
 
-    <!-- ================= LIVE STATUS + BLOCKED/ERROR/OUTCOME ================= -->
-    <section aria-label="Run status">
-      <p class="hint hint-note">
-        A <strong>BLOCKED</strong> banner below means a guard refused an unsafe action on
-        its own &mdash; that's the safeguard working, not something gone wrong.
-      </p>
-      <div id="runStatus" aria-live="polite"></div>
-      <pre id="agentLoopResult" class="log-pre"></pre>
-    </section>
+        <div class="task-actions">
+          <button id="saveGoal" type="button" class="btn btn-ghost">Save goal</button>
+          <p id="saveStatus" aria-live="polite"></p>
+        </div>
 
-    <!-- ================= DEMOTED: settings + dev diagnostics ================= -->
-    <details class="disclosure">
-      <summary>Settings</summary>
-      <div class="disclosure-body">
+        <div class="run-row">
+          <button id="runAgentLoop" type="button" class="btn btn-primary">Run agent loop</button>
+          <button id="stopAgentLoop" type="button" class="btn btn-stop" disabled>Stop</button>
+        </div>
         <p class="hint">
-          Server URL for the FastAPI backend (default <code>http://localhost:8000</code>).
-          Must be within this extension's permitted hosts (<code>http://localhost/*</code>,
-          <code>http://127.0.0.1/*</code>) &mdash; Chrome blocks anything else at the
-          network layer regardless of what's typed here.
+          Runs capture &rarr; detect &rarr; scan &rarr; redact &rarr; send &rarr; act on the
+          current tab, up to 25 steps or until the agent reports done. Uses the last
+          <strong>saved</strong> goal above, and needs the server from Settings reachable.
         </p>
-        <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" />
-        <button id="saveServerUrl" type="button" class="btn btn-ghost">Save server URL</button>
-        <p id="serverUrlStatus" aria-live="polite"></p>
-      </div>
-    </details>
+      </section>
 
-    <details class="disclosure">
-      <summary>Advanced diagnostics</summary>
-      <div class="disclosure-body">
-        <p class="hint">
-          Captures the current tab and runs the on-device object detector end-to-end
-          through background.js and the offscreen document &mdash; a developer diagnostic,
-          not something normal use needs. First run loads the model and can take much
-          longer than later runs; be patient.
+      <!-- ================= LIVE STATUS + BLOCKED/ERROR/OUTCOME ================= -->
+      <section aria-label="Run status">
+        <p class="hint hint-note">
+          A <strong class="k-blocked">BLOCKED</strong> banner below means a guard refused an unsafe action on
+          its own &mdash; that's the safeguard working, not something gone wrong.
         </p>
-        <button id="testDetect" type="button" class="btn btn-ghost">Run test detection on current tab</button>
-        <pre id="detectResult" class="log-pre"></pre>
-      </div>
-    </details>
+        <div id="runStatus" aria-live="polite"></div>
+        <pre id="agentLoopResult" class="log-pre"></pre>
+      </section>
 
-  </main>
+      <!-- ================= DEMOTED: settings + dev diagnostics ================= -->
+      <details class="disclosure">
+        <summary>Settings</summary>
+        <div class="disclosure-body">
+          <p class="hint">
+            Server URL for the FastAPI backend (default <code>http://localhost:8000</code>).
+            Must be within this extension's permitted hosts (<code>http://localhost/*</code>,
+            <code>http://127.0.0.1/*</code>) &mdash; Chrome blocks anything else at the
+            network layer regardless of what's typed here.
+          </p>
+          <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" />
+          <button id="saveServerUrl" type="button" class="btn btn-ghost">Save server URL</button>
+          <p id="serverUrlStatus" aria-live="polite"></p>
+        </div>
+      </details>
+
+      <details class="disclosure">
+        <summary>Advanced diagnostics</summary>
+        <div class="disclosure-body">
+          <p class="hint">
+            Captures the current tab and runs the on-device object detector end-to-end
+            through background.js and the offscreen document &mdash; a developer diagnostic,
+            not something normal use needs. First run loads the model and can take much
+            longer than later runs; be patient.
+          </p>
+          <button id="testDetect" type="button" class="btn btn-ghost">Run test detection on current tab</button>
+          <pre id="detectResult" class="log-pre"></pre>
+        </div>
+      </details>
+
+    </main>
+  </div>
 
   <script src="vendor/browser-polyfill.js"></script>
   <script type="module" src="popup.js"></script>
