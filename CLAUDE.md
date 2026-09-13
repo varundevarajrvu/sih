@@ -426,7 +426,9 @@ Every counter moved the right way. The phantom second frame is gone (registry pr
 
 **Two related bugs found on the way:** `background.js` never pruned its `tabId→frameId` registry on navigation (a reload left a dead frameId being polled forever — the phantom second frame), and `chrome.tabs.sendMessage` without `frameId` broadcasts to EVERY frame despite a code comment claiming otherwise, letting a subframe's instant guard-rejection race the top frame's real result back to the popup. Now pinned to `frameId: 0`.
 
-**⚠️ STILL UNCONFIRMED: bbox PLACEMENT.** These counters are exactly what failure signature C produces — perfect numbers with the redaction bar in the wrong place. Only the visual check against the page's ruler/oracle can confirm the frame-offset math. Until someone eyeballs it, "merged" is proven and "merged *correctly*" is not.
+**✅ BBOX PLACEMENT CONFIRMED 2026-09-14.** Varun opened the dumped PNG and reported the black bar **sitting on the iframe's password field** — near the bottom of a 959×4862 stitched image, matching `redactedRegions`' `y: 4719.6`. The three-deep transform chain (frame offset → document offset → devicePixelRatio) composes correctly in a real browser. Failure signature C is ruled out.
+
+**This completes the image half of the privacy claim**, which had never actually been verified before this. Worth being precise about why: the famous `hunter2` vs `hunter2Demo!` result proves the model never received the password **in the DOM JSON** — it could not have proved image redaction, because a password input renders as `•••••` whether or not a bar covers it. The Section 5 assertion likewise inspects the payload JSON, not the pixels. Both halves are now independently proven; before this run, only one was.
 
 #### Historical record — the bug as originally found, 2026-09-13
 
