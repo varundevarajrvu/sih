@@ -4,7 +4,8 @@ Pydantic request/response schemas for the /analyze endpoint.
 Contract source: CLAUDE.md Section 4, Phase 2c.
 
     request:  { image: base64 str, domSnapshot: [...], redactedRegions: [...], taskGoal: str }
-    response: { action: "click"|"type"|"scroll"|"done", targetId: str, value: str|None }
+    response: { action: "click"|"type"|"scroll"|"done"|"fill_profile", targetId: str,
+                value: str|None, profileField: "full_name"|"email"|"phone"|None }
 
 CONTRACT GAP (flagged, not invented silently — see report to orchestrator):
 Section 4 leaves the element shape of `domSnapshot` and `redactedRegions`
@@ -64,6 +65,34 @@ Phase 2c RESULT) — binding, implemented in this file:
      should eventually populate this explicitly instead of relying on
      inference — reported to the orchestrator to route, not edited here
      (Phase 2b's file is out of this module's scope).
+  7. FILL_PROFILE (2026-09-14, "fill a user's own details WITHOUT the
+     model ever learning them"). New `ActionType.FILL_PROFILE` +
+     closed `ProfileField` enum (full_name/email/phone) + optional
+     `ActionResponse.profileField`. The model names WHICH local-profile
+     category a field wants; it never sees or supplies the value — the
+     extension looks the real value up from the user's own on-device
+     vault, keyed only by the category name. This is strictly better
+     than ordinary browser autofill, where page script can read what
+     gets typed: here the page (and the model) only ever sees an opaque
+     "fill_profile" action land on an element, never the data itself.
+     🔴 THE SECURITY BOUNDARY: `value` MUST be null when
+     `action == "fill_profile"`. A model (or a prompt-injected page
+     trying to smuggle exfiltrated data back out through the one
+     response channel that's supposed to be data-free) supplying a
+     value there is exactly the thing this design exists to prevent, so
+     it is enforced server-side — not merely documented — by
+     `ActionResponse._enforce_fill_profile_contract` below, which raises
+     the dedicated `ModelSuppliedProfileValue` (never a plain
+     `ValueError`, and never carrying the offending value) so main.py
+     can reject it with its own errorCode
+     ("MODEL_SUPPLIED_PROFILE_VALUE"), distinguishable from the generic
+     "VLM_RESPONSE_SCHEMA_INVALID" 502 the same way `PIILeakDetected` is
+     distinguishable from an ordinary 422 (ruling #4). `profileField`
+     missing on a `fill_profile` action, or present on any other action,
+     are ordinary malformed-response cases (plain `ValueError`, folded
+     into the existing generic 502 path) — the dedicated exception is
+     reserved for the value-carrying case specifically, because that is
+     the one with an actual privacy/egress consequence.
 """
 
 from __future__ import annotations
@@ -248,6 +277,75 @@ class RedactedRegion(BaseModel):
         return self
 
 
+class ProfileField(str, Enum):
+    """Closed set of local-profile categories the model may request via
+    a `fill_profile` ActionResponse (see THE IDEA / ruling #7 in this
+    module's docstring). The model names a category — it never sees,
+    and under this design cannot supply, the underlying value; the
+    extension looks the real value up from the user's own on-device
+    vault, keyed only by this field name.
+
+    Deliberately closed with NO "other" escape hatch, unlike `PiiType`
+    above. That asymmetry is intentional, not an inconsistency:
+    `PiiType` degrades an unrecognized value to `OTHER` because false
+    negatives on PII are the dangerous direction (Section 5) — better
+    to redact-but-unclassify than to silently miss it. Here the
+    danger runs the opposite way: `profileField` only ever names WHERE
+    the extension should look, never a value, so there is no
+    legitimate "unrecognized category, but act on it anyway" case. An
+    unrecognized string is a client/model bug and must hard-reject at
+    the schema boundary, not pass an unglossable category through to
+    the extension for it to guess at.
+    """
+
+    FULL_NAME = "full_name"
+    EMAIL = "email"
+    PHONE = "phone"
+
+
+class ModelSuppliedProfileValue(Exception):
+    """Raised when an ActionResponse has `action == "fill_profile"` but
+    a non-null `value`. This is THE security boundary the fill_profile
+    design exists to enforce (ruling #7): the model must never see, and
+    therefore must never be able to supply, a user's own profile value.
+    A `fill_profile` action carrying a `value` is either a misbehaving/
+    confused model, or a prompt-injected page trying to smuggle
+    exfiltrated data back out through the one response channel that is
+    supposed to be data-free.
+
+    `__init__` deliberately takes NO arguments — there is structurally
+    no way for a caller to pass the offending value into this
+    exception, even by accident. This mirrors PIILeakDetected's stance
+    (Section 7 rule 5: "an error path is a data egress path") but goes
+    one step further: PIILeakDetected at least carries payload-free
+    *violation descriptions*; this exception carries nothing at all,
+    because for this specific boundary even a location description
+    (e.g. echoing the attempted value's length, or a truncated prefix)
+    is more attack surface than the fixed, static message needs.
+
+    Deliberately NOT raised as a plain `ValueError` from within
+    ActionResponse's model_validator: pydantic-core only catches and
+    wraps ValueError/TypeError/AssertionError into a generic
+    `pydantic.ValidationError` (which main.py already maps to the
+    generic 502 "VLM_RESPONSE_SCHEMA_INVALID" errorCode, indistinguishable
+    from any other malformed VLM response). This class is a plain
+    `Exception` subclass instead, which pydantic-core does NOT catch —
+    verified empirically against this project's installed pydantic
+    2.13.5 (see tests/unit/test_schemas.py) — so it propagates straight
+    through `ActionResponse.model_validate()` to a dedicated handler in
+    main.py that returns its own stable errorCode
+    ("MODEL_SUPPLIED_PROFILE_VALUE"), the same "give it its own
+    separately-monitorable identity" treatment PIILeakDetected already
+    gets for the analogous reason (ruling #4).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "fill_profile action carried a non-null value; rejected "
+            "before any value reached this message"
+        )
+
+
 def find_pii_leaks(dom_snapshot: list[DomNode], redacted_regions: list[RedactedRegion]) -> list[str]:
     """Pure function: detect domSnapshot nodes carrying raw values that
     redactedRegions (or the node's own `sensitive` flag) says should have
@@ -407,6 +505,10 @@ class ActionType(str, Enum):
     TYPE = "type"
     SCROLL = "scroll"
     DONE = "done"
+    FILL_PROFILE = "fill_profile"
+    """The model names WHICH local-profile category (see ProfileField)
+    a field wants; it never supplies the value itself. See ruling #7
+    and ModelSuppliedProfileValue for the enforcement."""
 
 
 PAGE_TARGET_ID = "page"
@@ -433,6 +535,13 @@ class ActionResponse(BaseModel):
     `scroll`/`done` actions that don't target a specific element, which
     use the `PAGE_TARGET_ID` sentinel (see above) rather than an empty
     or omitted value.
+
+    `profileField` (ruling #7, added 2026-09-14) is required exactly
+    when `action == "fill_profile"` and forbidden otherwise, enforced
+    by `_enforce_fill_profile_contract` below. The model names a
+    `ProfileField` category (full_name/email/phone); it must NEVER
+    supply the underlying value — see ModelSuppliedProfileValue for
+    what happens if it tries.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -440,3 +549,48 @@ class ActionResponse(BaseModel):
     action: ActionType
     targetId: str = Field(..., min_length=1)
     value: Optional[str] = None
+    profileField: Optional[ProfileField] = Field(
+        default=None,
+        description=(
+            "Category of local-profile data to fill in, REQUIRED when "
+            "action == 'fill_profile' and forbidden otherwise. Names "
+            "WHERE the extension should look, never the value itself."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _enforce_fill_profile_contract(self) -> "ActionResponse":
+        """The fill_profile security boundary (ruling #7):
+
+          1. `action == "fill_profile"` + non-null `value` -> raise
+             ModelSuppliedProfileValue(). THE case this design exists
+             to prevent — see that exception's docstring for why it is
+             a distinct, payload-free exception type rather than a
+             ValueError folded into the generic schema-error path.
+          2. `action == "fill_profile"` + `profileField is None` ->
+             ordinary ValueError (malformed response, not a smuggling
+             attempt) -> pydantic wraps it into the standard
+             ValidationError -> main.py's existing generic 502
+             "VLM_RESPONSE_SCHEMA_INVALID" path, same as any other
+             malformed action.
+          3. any OTHER action with `profileField is not None` -> same
+             ordinary ValueError treatment as (2). profileField only
+             means something in the context of fill_profile; carrying
+             it elsewhere is a contract violation, not a privacy leak
+             (a category name is not sensitive), so it does not need
+             ModelSuppliedProfileValue's stricter handling either.
+
+        Note (2) and (3) hard-reject an *invalid* `profileField` string
+        (e.g. "ssn") too, but not from here: an unrecognized value
+        fails ProfileField's own enum validation at the field level,
+        before this mode="after" validator ever runs — already a
+        standard ValidationError, no extra code needed.
+        """
+        if self.action == ActionType.FILL_PROFILE:
+            if self.value is not None:
+                raise ModelSuppliedProfileValue()
+            if self.profileField is None:
+                raise ValueError("fill_profile action requires a non-null profileField")
+        elif self.profileField is not None:
+            raise ValueError("profileField must be null/absent unless action is 'fill_profile'")
+        return self

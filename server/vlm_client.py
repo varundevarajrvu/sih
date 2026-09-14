@@ -50,11 +50,12 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from schemas import PAGE_TARGET_ID, ActionType, DomNode, RedactedRegion
+from schemas import PAGE_TARGET_ID, ActionType, DomNode, ProfileField, RedactedRegion
 
 
 # ---------------------------------------------------------------------------
@@ -137,11 +138,34 @@ def build_prompt(task_goal: str, dom_snapshot: list[DomNode], redacted_regions: 
     lines.append("")
 
     lines.append(
+        "PROFILE AUTOFILL — READ CAREFULLY: If a field plainly wants the user's "
+        "own full name, email address, or phone number (for example: an empty "
+        "field of type 'email' or 'tel', or a field whose visible label/"
+        "placeholder says something like \"Full Name\"), respond with "
+        "action='fill_profile' and set `profileField` to whichever category "
+        "matches — \"full_name\", \"email\", or \"phone\" — instead of using "
+        "'type' for it. You are never shown the user's actual profile data and "
+        "you MUST NOT guess, invent, or reconstruct a value for a fill_profile "
+        "action: `value` MUST be null whenever action is 'fill_profile'. The "
+        "extension fills in the real value itself, locally, from the user's own "
+        "device, after you return only the category name — you never see it and "
+        "never supply it. A fill_profile action that includes a non-null value "
+        "will be rejected outright, not silently corrected."
+    )
+    lines.append("")
+
+    lines.append(
         "Respond with ONLY a single JSON object, no prose, no markdown fences, "
-        'matching exactly this shape: {"action": "click"|"type"|"scroll"|"done", '
-        '"targetId": "<agentId from the DOM snapshot above>", "value": "<string or null>"}. '
+        'matching exactly this shape: {"action": "click"|"type"|"scroll"|"done"'
+        '|"fill_profile", "targetId": "<agentId from the DOM snapshot above>", '
+        '"value": "<string or null>", "profileField": "full_name"|"email"|'
+        '"phone"|null}. '
         "Use 'type' only for text-entry actions and include the text to type in "
-        "`value` (never a guessed/redacted value). `targetId` is always required, even "
+        "`value` (never a guessed/redacted value). Use 'fill_profile' (see the "
+        "PROFILE AUTOFILL instruction above) instead of 'type' when a field "
+        "plainly wants the user's own name/email/phone — for that action `value` "
+        "must be null and `profileField` must be set; for every OTHER action, "
+        "`profileField` must be null or omitted. `targetId` is always required, even "
         f"for 'scroll' or 'done' — if the action does not target a specific element, use "
         f'the exact string "{PAGE_TARGET_ID}" as targetId. Use \'done\' once the task '
         "goal is complete."
@@ -200,17 +224,72 @@ class MockVLMClient(VLMClient):
     mock is a stand-in for grounding+action-selection behavior, not for
     language understanding):
       1. If domSnapshot is empty -> {"action": "done", "targetId": PAGE_TARGET_ID, "value": None}
-      2. Else if the first non-sensitive node with type in
+      2. Else if the first non-redacted/non-sensitive EMPTY node is
+         obviously profile-shaped (type 'email'/'tel', or a name-ish
+         visible label) -> "fill_profile" on it, naming the matching
+         `profileField` category, `value` always None (ruling #7 —
+         this mock NEVER fabricates a value for fill_profile; that's
+         the entire point of the action existing). Added 2026-09-14 so
+         every demo/CI path can exercise the fill_profile contract with
+         no API key, and so the extension side has a deterministic
+         target to test against.
+      3. Else if the first non-sensitive node with type in
          {"text","email","tel","search","password"} exists -> "type" on it,
          with a canned non-PII placeholder value (never the node's own
          text, and never a value for a redacted node).
-      3. Else -> "click" on the first node's agentId.
+      4. Else -> "click" on the first node's agentId.
     This is intentionally simple: the mock's job is to prove the
     request/response contract and prompt-construction path end-to-end, not
     to simulate real visual reasoning.
     """
 
     PLACEHOLDER_VALUE = "mock-input"
+
+    # Direct type -> category mapping for step 2's structural detection.
+    _PROFILE_TYPE_MAP: dict[str, ProfileField] = {
+        "email": ProfileField.EMAIL,
+        "tel": ProfileField.PHONE,
+    }
+
+    # A "name-ish" visible label: the whole word "name" (so it matches
+    # "Full Name" / "Your Name" / "Name"), but NOT when "user" also
+    # appears (so "Username" is correctly excluded — a username is not
+    # the user's full name).
+    _NAME_LABEL_RE = re.compile(r"\bname\b", re.IGNORECASE)
+
+    @classmethod
+    def _profile_field_for(cls, node: DomNode) -> ProfileField | None:
+        """Purely structural profile-category detection — same
+        philosophy as the rest of this mock (pattern matching on
+        `type`/`text`, not NLP):
+
+          - type == 'email', with no existing value -> ProfileField.EMAIL
+          - type == 'tel', with no existing value   -> ProfileField.PHONE
+          - otherwise, a name-ish VISIBLE label (e.g. "Full Name" /
+            "Your Name") -> ProfileField.FULL_NAME
+
+        "Emptiness" is deliberately checked per-branch, not once up
+        front by the caller, because the two signals mean different
+        things for DomNode.text: for the type-based branches, `text` is
+        the field's current VALUE, and only an empty one is a fill
+        target — a field that already holds something isn't. For the
+        label-based branch, `text` on an unfilled input IS its visible
+        placeholder (DomNode has no separate placeholder/value field —
+        an accepted scope limit, see Phase 2a's DomNode shape); a
+        label match (e.g. text == "Full Name") already means nothing
+        real has been typed there, so gating it on emptiness as well
+        would be self-contradictory — the label IS the non-empty text.
+
+        Returns None when no category plainly applies.
+        """
+        mapped = cls._PROFILE_TYPE_MAP.get(node.type)
+        if mapped is not None:
+            has_value = bool(node.text) and bool(node.text.strip())
+            return None if has_value else mapped
+        label = (node.text or "").strip().lower()
+        if label and cls._NAME_LABEL_RE.search(label) and "user" not in label:
+            return ProfileField.FULL_NAME
+        return None
 
     def analyze(self, context: VLMRequestContext) -> dict[str, Any]:
         redacted_agent_ids = {r.agentId for r in context.redacted_regions if r.agentId}
@@ -220,6 +299,25 @@ class MockVLMClient(VLMClient):
 
         def _is_redacted_or_sensitive(node: DomNode) -> bool:
             return node.agentId in redacted_agent_ids or node.sensitive
+
+        # Step 2: an obviously-profile-shaped field -> fill_profile,
+        # naming the category only. Checked BEFORE the ordinary typeable-
+        # field branch below, so a profile-shaped field is routed here
+        # first rather than getting the generic PLACEHOLDER_VALUE typed
+        # into it. `value` is always None here — never a guessed/
+        # fabricated value; see ModelSuppliedProfileValue for what the
+        # server does if a (real) backend ever gets this wrong.
+        for node in context.dom_snapshot:
+            if _is_redacted_or_sensitive(node):
+                continue
+            profile_field = self._profile_field_for(node)
+            if profile_field is not None:
+                return {
+                    "action": "fill_profile",
+                    "targetId": node.agentId,
+                    "value": None,
+                    "profileField": profile_field.value,
+                }
 
         for node in context.dom_snapshot:
             if _is_redacted_or_sensitive(node):
@@ -310,20 +408,39 @@ ACTION_RESPONSE_JSON_SCHEMA: dict = {
         "action": {"type": "string", "enum": [a.value for a in ActionType]},
         "targetId": {"type": "string"},
         "value": {"type": ["string", "null"]},
+        "profileField": {
+            "type": ["string", "null"],
+            "enum": [f.value for f in ProfileField] + [None],
+        },
     },
-    "required": ["action", "targetId", "value"],
+    "required": ["action", "targetId", "value", "profileField"],
     "additionalProperties": False,
 }
 """Mirrors schemas.ActionResponse, sent to Claude via `output_config` so
 the model is CONSTRAINED at generation time to this exact shape — this is
 the structured-output requirement the whole integration hinges on: a
-model returning prose instead of {action, targetId, value} breaks the
-agent loop. `action`'s enum is derived from schemas.ActionType (single
-source of truth, not a hand-copied duplicate list). `value` is a nullable
-string rather than an "optional" key because JSON-schema structured-
-output modes generally require every property listed in `required` once
-additionalProperties is locked down — there's no separate "optional
-property" concept to reach for."""
+model returning prose instead of {action, targetId, value, profileField}
+breaks the agent loop. `action`'s enum is derived from schemas.ActionType
+and `profileField`'s enum from schemas.ProfileField (single source of
+truth for both, never a hand-copied duplicate list — ruling #7). `value`
+and `profileField` are nullable rather than "optional" keys because
+JSON-schema structured-output modes generally require every property
+listed in `required` once additionalProperties is locked down — there's
+no separate "optional property" concept to reach for. `profileField`'s
+own enum list includes a literal `None` entry (-> JSON `null`) alongside
+the three category strings, since a nullable enum in JSON Schema is
+expressed by listing `null` as one of the allowed enum values, not by
+`type` alone.
+
+NOTE: server-side enforcement of the fill_profile contract (value MUST
+be null when action is fill_profile; profileField required iff
+fill_profile) does NOT live in this JSON Schema — structured-output
+schemas typically can't express that kind of cross-field "iff"
+constraint portably across providers. This schema only shapes what the
+model is capable of emitting per-field; schemas.ActionResponse's
+`_enforce_fill_profile_contract` model_validator is the actual security
+boundary, enforced independently of whether the backend's structured-
+output mode is trusted to have honored it."""
 
 
 class ClaudeCredentialsMissing(Exception):

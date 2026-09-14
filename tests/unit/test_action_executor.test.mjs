@@ -26,6 +26,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { JSDOM, VirtualConsole } from "jsdom";
+import { PROFILE_FIELDS as VAULT_PROFILE_FIELDS } from "../../extension/lib/profile-vault.js";
 
 /**
  * action-executor.js is evaluated INSIDE each jsdom window's own realm
@@ -503,6 +504,202 @@ describe("SAFETY: sensitive-target guard hook (Section 5 -- policy is the orches
     const result = AE.executeAction({ action: "scroll", targetId: "agent-2" }, idMap, {
       scrollElementIntoView: () => {},
     });
+    assert.equal(result.ok, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PROFILE-VAULT FEATURE: fill_profile. The model names a CATEGORY
+// ("full_name"|"email"|"phone"); this extension fills the value in from
+// chrome.storage.local via an injected `options.getProfileValue` closure --
+// never from `actionJson.value`. See action-executor.js's dispatchFillProfile()
+// and guardSensitive()'s FILL_PROFILE CARVE-OUT comment for the full design.
+// ---------------------------------------------------------------------------
+describe("PROFILE-VAULT FEATURE: fill_profile", () => {
+  let dom, window, document, AE, idMap;
+
+  beforeEach(() => {
+    dom = freshDom(PAGE_HTML);
+    window = dom.window;
+    document = window.document;
+    AE = window.ActionExecutor;
+    ({ idMap } = AE.buildDomSnapshot(document));
+  });
+
+  test("AE.PROFILE_FIELDS mirrors profile-vault.js's own PROFILE_FIELDS export (drift guard)", () => {
+    assert.deepEqual(Object.keys(AE.PROFILE_FIELDS).sort(), [...VAULT_PROFILE_FIELDS].sort());
+  });
+
+  test("fills a non-sensitive field from the injected vault getter, dispatching real input+change events", () => {
+    const usernameInput = document.getElementById("username");
+    const inputEvents = [];
+    const changeEvents = [];
+    usernameInput.addEventListener("input", (e) => inputEvents.push(e.target.value));
+    usernameInput.addEventListener("change", () => changeEvents.push(true));
+
+    const result = AE.executeAction(
+      { action: "fill_profile", targetId: "agent-1", value: null, profileField: "full_name" },
+      idMap,
+      { getProfileValue: (field) => (field === "full_name" ? "Priya Sharma" : null) }
+    );
+
+    assert.equal(usernameInput.value, "Priya Sharma");
+    assert.deepEqual(inputEvents, ["Priya Sharma"]);
+    assert.equal(changeEvents.length, 1);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.action, "fill_profile");
+    assert.equal(result.targetId, "agent-1");
+    assert.equal(result.profileField, "full_name");
+    assert.equal("value" in result, false, "the result must never carry the vault-sourced value");
+  });
+
+  test("THE FEATURE: fill_profile bypasses the sensitive guard on a flagged field, while `type` on the SAME field stays blocked (guard unchanged for type)", () => {
+    document.getElementById("password").setAttribute(AE.SENSITIVE_ATTR, "true");
+
+    // `type` (a MODEL-supplied value) into the sensitive field is still
+    // blocked, exactly as before this feature existed -- not relaxed.
+    assert.throws(
+      () => AE.executeAction({ action: "type", targetId: "agent-2", value: "model-guessed-value" }, idMap),
+      (err) => err.code === "SENSITIVE_TARGET_BLOCKED"
+    );
+    assert.equal(document.getElementById("password").value, "hunter2", "the blocked type must not have touched the field");
+
+    // fill_profile into the SAME sensitive field succeeds -- the value came
+    // from the local vault, not the model, so the guard has nothing to
+    // protect against here.
+    const result = AE.executeAction(
+      { action: "fill_profile", targetId: "agent-2", value: null, profileField: "email" },
+      idMap,
+      { getProfileValue: () => "vault-value@example.com" }
+    );
+    assert.equal(result.ok, true);
+    assert.equal(document.getElementById("password").value, "vault-value@example.com");
+  });
+
+  test("actionJson.value is NEVER read for fill_profile -- the vault value wins even when a (bogus) value is also present on the action JSON", () => {
+    const usernameInput = document.getElementById("username");
+    AE.executeAction(
+      { action: "fill_profile", targetId: "agent-1", value: "this-should-be-ignored", profileField: "full_name" },
+      idMap,
+      { getProfileValue: () => "Real Vault Name" }
+    );
+    assert.equal(usernameInput.value, "Real Vault Name");
+  });
+
+  test("PROFILE_FIELD_EMPTY: vault has nothing saved for the category -- fails cleanly, does not type an empty string", () => {
+    const usernameInput = document.getElementById("username");
+    const before = usernameInput.value;
+
+    assert.throws(
+      () =>
+        AE.executeAction(
+          { action: "fill_profile", targetId: "agent-1", value: null, profileField: "full_name" },
+          idMap,
+          { getProfileValue: () => null }
+        ),
+      (err) => err instanceof AE.ActionExecutionError && err.code === "PROFILE_FIELD_EMPTY"
+    );
+    assert.equal(usernameInput.value, before, "an empty vault field must leave the DOM field untouched, never typed as an empty string");
+  });
+
+  test("PROFILE_FIELD_EMPTY also fires when getProfileValue returns an empty/whitespace-only string, not just null/undefined", () => {
+    assert.throws(
+      () =>
+        AE.executeAction(
+          { action: "fill_profile", targetId: "agent-1", value: null, profileField: "full_name" },
+          idMap,
+          { getProfileValue: () => "   " }
+        ),
+      (err) => err.code === "PROFILE_FIELD_EMPTY"
+    );
+  });
+
+  test("INVALID_PROFILE_FIELD: missing profileField throws before touching the DOM", () => {
+    const usernameInput = document.getElementById("username");
+    const before = usernameInput.value;
+    assert.throws(
+      () => AE.executeAction({ action: "fill_profile", targetId: "agent-1", value: null }, idMap, { getProfileValue: () => "x" }),
+      (err) => err instanceof AE.ActionExecutionError && err.code === "INVALID_PROFILE_FIELD"
+    );
+    assert.equal(usernameInput.value, before);
+  });
+
+  test("INVALID_PROFILE_FIELD: a category outside the closed set is rejected, not silently accepted", () => {
+    assert.throws(
+      () =>
+        AE.executeAction(
+          { action: "fill_profile", targetId: "agent-1", value: null, profileField: "ssn" },
+          idMap,
+          { getProfileValue: () => "should never be reached" }
+        ),
+      (err) => err.code === "INVALID_PROFILE_FIELD"
+    );
+  });
+
+  test("PROFILE_VAULT_UNAVAILABLE: no options.getProfileValue injected -- fails cleanly rather than silently no-op-ing or guessing", () => {
+    assert.throws(
+      () => AE.executeAction({ action: "fill_profile", targetId: "agent-1", value: null, profileField: "full_name" }, idMap /* no options */),
+      (err) => err instanceof AE.ActionExecutionError && err.code === "PROFILE_VAULT_UNAVAILABLE"
+    );
+  });
+
+  test('fill_profile against the PAGE_TARGET_ID sentinel throws INVALID_TARGET_FOR_ACTION, same as click/type', () => {
+    assert.throws(
+      () =>
+        AE.executeAction(
+          { action: "fill_profile", targetId: "page", value: null, profileField: "email" },
+          idMap,
+          { getProfileValue: () => "x@example.com" }
+        ),
+      (err) => err.code === "INVALID_TARGET_FOR_ACTION"
+    );
+  });
+
+  test("an unknown targetId throws TARGET_NOT_FOUND, never falling back to a different element", () => {
+    assert.throws(
+      () =>
+        AE.executeAction(
+          { action: "fill_profile", targetId: "agent-999", value: null, profileField: "email" },
+          idMap,
+          { getProfileValue: () => "x@example.com" }
+        ),
+      (err) => err.code === "TARGET_NOT_FOUND"
+    );
+  });
+
+  test("action-risk's irreversible guard still applies UNCHANGED for fill_profile -- a wired-in classifier can still block it", () => {
+    // A deliberately permissive stand-in classifier (unlike the real
+    // action-risk.js, which only ever evaluates click/type) -- this proves
+    // the *wiring* (the call site in executeAction()) is unchanged for
+    // fill_profile, without needing to modify the real, out-of-scope
+    // action-risk.js module itself.
+    const alwaysIrreversible = () => ({ risk: "irreversible", reasons: ["stub: always blocks"] });
+    assert.throws(
+      () =>
+        AE.executeAction(
+          { action: "fill_profile", targetId: "agent-1", value: null, profileField: "full_name" },
+          idMap,
+          { getProfileValue: () => "Priya Sharma", classifyActionRisk: alwaysIrreversible }
+        ),
+      (err) => err instanceof AE.ActionExecutionError && err.code === "IRREVERSIBLE_ACTION_BLOCKED"
+    );
+    assert.equal(document.getElementById("username").value, "", "a blocked fill_profile must not have touched the field");
+  });
+
+  test("the REAL action-risk.js classifyActionRisk (click/type-only) never blocks fill_profile -- confirms it degrades to safe rather than accidentally matching", () => {
+    // Sanity companion to the stub test above: with the project's real
+    // classifier (not a stub), a benign profile fill is never blocked --
+    // proving the previous test's block came from the stub, not a bug.
+    const realLikeClassifier = (domNode, actionJson) => {
+      if (actionJson.action !== "click" && actionJson.action !== "type") return { risk: "safe", reasons: [] };
+      return { risk: "irreversible", reasons: ["would only fire on click/type"] };
+    };
+    const result = AE.executeAction(
+      { action: "fill_profile", targetId: "agent-1", value: null, profileField: "full_name" },
+      idMap,
+      { getProfileValue: () => "Priya Sharma", classifyActionRisk: realLikeClassifier }
+    );
     assert.equal(result.ok, true);
   });
 });

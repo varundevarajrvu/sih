@@ -620,7 +620,10 @@
     border-top: 1px solid var(--glass-border);
   }
 
-  input#serverUrlInput {
+  input#serverUrlInput,
+  input#profileFullName,
+  input#profileEmail,
+  input#profilePhone {
     width: 100%;
     background: rgba(0, 0, 0, 0.28);
     border: 1px solid var(--glass-border);
@@ -631,12 +634,19 @@
     padding: 8px 10px;
     margin-top: 8px;
   }
-  input#serverUrlInput:hover { border-color: var(--glass-border-bright); }
-  input#serverUrlInput::placeholder { color: var(--text-muted); }
+  input#serverUrlInput:hover,
+  input#profileFullName:hover,
+  input#profileEmail:hover,
+  input#profilePhone:hover { border-color: var(--glass-border-bright); }
+  input#serverUrlInput::placeholder,
+  input#profileFullName::placeholder,
+  input#profileEmail::placeholder,
+  input#profilePhone::placeholder { color: var(--text-muted); }
 
   #serverUrlInput + .btn { margin-top: 8px; }
 
-  #serverUrlStatus {
+  #serverUrlStatus,
+  #profileStatus {
     font-family: var(--font-mono);
     font-size: 10.5px;
     color: var(--text-muted);
@@ -719,6 +729,29 @@
             <span>Enable full-page scroll-and-stitch capture</span>
           </label>
           <p id="fullPageCaptureStatus" class="hint" aria-live="polite"></p>
+        </div>
+      </details>
+
+      <!-- ================= PROFILE VAULT: on-device only, never sent to the model ================= -->
+      <details class="disclosure">
+        <summary>Your profile (autofill)</summary>
+        <div class="disclosure-body">
+          <p class="hint">
+            Saved here <strong>stays on this device</strong> in this browser's local extension
+            storage. The model never sees it and it is never sent to the server &mdash; when a page
+            wants one of these fields, the model only ever names <em>which category</em> it wants
+            (e.g. &ldquo;email&rdquo;), and this extension fills the value in locally. That is what
+            lets the agent autofill a field it would otherwise have to refuse (the same guard that
+            blocks a password field) without ever handing your data to the model.
+          </p>
+          <label class="eyebrow" for="profileFullName" style="margin-top: 10px;">Full name</label>
+          <input id="profileFullName" type="text" placeholder="e.g. Priya Sharma" autocomplete="off" />
+          <label class="eyebrow" for="profileEmail" style="margin-top: 10px;">Email</label>
+          <input id="profileEmail" type="text" placeholder="e.g. priya@example.com" autocomplete="off" />
+          <label class="eyebrow" for="profilePhone" style="margin-top: 10px;">Phone</label>
+          <input id="profilePhone" type="text" placeholder="e.g. +91 98765 43210" autocomplete="off" />
+          <button id="saveProfile" type="button" class="btn btn-ghost" style="margin-top: 10px;">Save profile</button>
+          <p id="profileStatus" aria-live="polite"></p>
         </div>
       </details>
 

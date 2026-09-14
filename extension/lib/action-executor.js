@@ -73,6 +73,16 @@
   var AGENT_ID_PATTERN = /^agent-(\d+)$/;
   var SENSITIVE_ATTR = "data-agent-sensitive";
 
+  // PROFILE-VAULT FEATURE: mirrors profile-vault.js's exported
+  // PROFILE_FIELDS array exactly -- duplicated, not imported, for the same
+  // classic-script reason as CLOSED_SHADOW_HOST_ATTR below (this file has
+  // zero import/export statements by design; profile-vault.js is an ES
+  // module). Keep in sync if the field set ever changes; a drift-guard
+  // test in tests/unit/test_action_executor.test.mjs checks this against
+  // profile-vault.js's own export, same pattern as the existing
+  // CLOSED_SHADOW_HOST_ATTR guard.
+  var PROFILE_FIELDS = { full_name: true, email: true, phone: true };
+
   // Mirrors dom-scanner.js's exported CLOSED_SHADOW_HOST_ATTR constant --
   // duplicated, not imported, because this file has zero import/export
   // statements by design (see file header). Keep the literal string in
@@ -124,7 +134,12 @@
    * Codes in use: UNKNOWN_ACTION, MISSING_TARGET_ID,
    * INVALID_TARGET_FOR_ACTION, TARGET_NOT_FOUND, TARGET_DETACHED,
    * SENSITIVE_TARGET_BLOCKED, IRREVERSIBLE_ACTION_BLOCKED,
-   * NO_WINDOW_AVAILABLE, INVALID_ACTION_JSON.
+   * NO_WINDOW_AVAILABLE, INVALID_ACTION_JSON. PROFILE-VAULT FEATURE adds:
+   * INVALID_PROFILE_FIELD (fill_profile's profileField is missing or not
+   * one of the closed PROFILE_FIELDS), PROFILE_VAULT_UNAVAILABLE (caller
+   * never wired in options.getProfileValue), PROFILE_FIELD_EMPTY (the
+   * vault has nothing saved for the requested category -- see
+   * dispatchFillProfile()).
    */
   function ActionExecutionError(code, message, details) {
     var err = new Error(message);
@@ -475,7 +490,7 @@
   // Action execution
   // -------------------------------------------------------------------
 
-  var VALID_ACTIONS = { click: true, type: true, scroll: true, done: true };
+  var VALID_ACTIONS = { click: true, type: true, scroll: true, done: true, fill_profile: true };
 
   function resolveElement(idMap, targetId) {
     var el = idMap.get(targetId);
@@ -551,6 +566,37 @@
    */
   function guardSensitive(el, actionJson, options) {
     var opts = options || {};
+
+    // 🔴 PROFILE-VAULT FEATURE CARVE-OUT -- read this before "fixing" it.
+    // `fill_profile` is EXEMPT from this guard, deliberately, and this is
+    // the ONLY exemption in this function. THE REASONING DOES NOT
+    // GENERALIZE TO `type` -- do not be tempted to relax this guard for
+    // `type` too, ever:
+    //
+    //   This guard exists to stop a MODEL-CHOSEN value from being written
+    //   into a field the client itself has flagged as holding PII. The
+    //   model has no legitimate way to know what belongs in a
+    //   password/email/ID field it was never shown the contents of, so ANY
+    //   value it supplies for such a field is untrusted by construction --
+    //   that is exactly what `type`'s guard blocks below, and that block
+    //   is UNCHANGED by this carve-out: a model-supplied `type` value into
+    //   a sensitive field is still blocked, unconditionally, every time.
+    //
+    //   `fill_profile` cannot violate that invariant because it
+    //   structurally never carries a model-chosen value at all. The model
+    //   only ever names a CATEGORY (actionJson.profileField, one of
+    //   "full_name"/"email"/"phone") -- dispatchFillProfile() below
+    //   resolves the actual string from LOCAL chrome.storage.local (via
+    //   the caller-injected options.getProfileValue) and never once reads
+    //   actionJson.value. There is nothing here for this guard to protect
+    //   against: the value that ends up in the field was never sent to,
+    //   seen by, or chosen by the model in the first place -- it is
+    //   client-local data flowing into a client-local field. Blocking it
+    //   here would just prevent the feature from doing the one thing it
+    //   exists to do (autofill a profile field the field-level guard would
+    //   otherwise, correctly, refuse a MODEL-supplied value for).
+    if (actionJson && actionJson.action === "fill_profile") return;
+
     var isSensitive = opts.isSensitive || defaultIsSensitive;
     if (!isSensitive(el, opts)) return;
 
@@ -780,6 +826,118 @@
     };
   }
 
+  // -------------------------------------------------------------------
+  // PROFILE-VAULT FEATURE: fill_profile.
+  // -------------------------------------------------------------------
+
+  /**
+   * Structural validation ONLY -- does not touch the vault, does not
+   * resolve `el`. Checked as early as possible (before resolveElement())
+   * so a malformed profileField fails loudly before anything else runs,
+   * same "fail fast, fail loud" posture as MISSING_TARGET_ID above.
+   */
+  function validateProfileFieldOrThrow(actionJson) {
+    var field = actionJson.profileField;
+    if (typeof field !== "string" || !PROFILE_FIELDS[field]) {
+      throw new ActionExecutionError(
+        "INVALID_PROFILE_FIELD",
+        "fill_profile requires a valid profileField (one of " +
+          Object.keys(PROFILE_FIELDS).join(", ") +
+          "); got " +
+          JSON.stringify(field),
+        { targetId: actionJson.targetId, profileField: field }
+      );
+    }
+  }
+
+  /**
+   * Fills `el` with a value looked up from the LOCAL profile vault --
+   * never from `actionJson.value` (this function doesn't even accept an
+   * actionJson/value parameter, structurally: there is nothing to
+   * "accidentally" read). `profileField` is the CATEGORY the model named
+   * ("full_name"|"email"|"phone", already validated by
+   * validateProfileFieldOrThrow() before this runs); the caller
+   * (content.js) is the only thing that knows how to turn that category
+   * into a real string, via `options.getProfileValue` -- injected exactly
+   * like `options.classifyActionRisk` is (see that option's own doc
+   * comment) because this file has zero import/export statements and
+   * cannot itself `import` profile-vault.js (an ES module).
+   *
+   * Reuses the SAME native-setter + real-event dispatch dispatchType()
+   * uses (setNativeValue() + input/change Events) so a React-style
+   * controlled field observes a vault fill exactly like it would observe
+   * a real user keystroke or a model-driven `type` -- see setNativeValue()'s
+   * own doc comment for why a plain `.value =` assignment isn't enough.
+   *
+   * FAILS CLEANLY, never silently: PROFILE_VAULT_UNAVAILABLE if the caller
+   * never wired in options.getProfileValue at all (a wiring bug, not a
+   * user-facing state); PROFILE_FIELD_EMPTY if the vault genuinely has
+   * nothing saved for this category. Neither path types an empty string
+   * or falls back to guessing some other value -- an untouched field that
+   * visibly failed is recoverable; a silently-typed empty string looks
+   * like success and could get "submitted" downstream with the rest of a
+   * form.
+   *
+   * 🔴 THE RETURNED RESULT DELIBERATELY OMITS `value` -- unlike
+   * dispatchType()'s result (which echoes back the MODEL's own
+   * already-known string, safe for local caller logging/the RUN SUMMARY).
+   * This function's value came from the vault and must never surface in a
+   * log line, an error message, or content.js's RUN SUMMARY -- see this
+   * file's PROFILE-VAULT FEATURE header and profile-vault.js's own "vault
+   * must never leave the client" note. `profileField` (the CATEGORY name,
+   * e.g. "email") is not sensitive on its own and is safe to include --
+   * it is what action-describe.js's "filled email from your profile"
+   * phrasing reads back out.
+   */
+  function dispatchFillProfile(el, profileField, options) {
+    var opts = options || {};
+    var getProfileValue = opts.getProfileValue;
+    if (typeof getProfileValue !== "function") {
+      throw new ActionExecutionError(
+        "PROFILE_VAULT_UNAVAILABLE",
+        "fill_profile requires options.getProfileValue to be wired in by the caller (content.js loads " +
+          "profile-vault.js and injects a synchronous lookup closure) -- refusing to guess or fall back to any " +
+          "other value source",
+        { targetId: el.getAttribute(AGENT_ID_ATTR), profileField: profileField }
+      );
+    }
+
+    var value = getProfileValue(profileField);
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new ActionExecutionError(
+        "PROFILE_FIELD_EMPTY",
+        'fill_profile: no value saved in your local profile for "' +
+          profileField +
+          '" -- refusing to type an empty string or fall back to the model\'s own value',
+        { targetId: el.getAttribute(AGENT_ID_ATTR), profileField: profileField }
+      );
+    }
+
+    var view = getView(el);
+    if (typeof el.focus === "function") {
+      try {
+        el.focus();
+      } catch (e) {
+        /* not fatal */
+      }
+    }
+    if (el.isContentEditable) {
+      el.textContent = value;
+    } else {
+      setNativeValue(el, value);
+    }
+    el.dispatchEvent(new view.Event("input", { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new view.Event("change", { bubbles: true, cancelable: true }));
+
+    return {
+      ok: true,
+      action: "fill_profile",
+      targetId: el.getAttribute(AGENT_ID_ATTR),
+      profileField: profileField,
+      // NO `value` field -- see this function's doc comment above.
+    };
+  }
+
   /**
    * Interprets the action JSON's optional `value` for a page-level
    * scroll. NOT specified by CLAUDE.md's `{action, targetId, value}`
@@ -842,7 +1000,11 @@
    * resolved ONLY through `idMap` (never raw pixel coordinates -- that
    * is the entire point of Set-of-Mark grounding).
    *
-   * @param {{action: "click"|"type"|"scroll"|"done", targetId: string, value?: string}} actionJson
+   * @param {{action: "click"|"type"|"scroll"|"done"|"fill_profile", targetId: string, value?: string|null, profileField?: "full_name"|"email"|"phone"|null}} actionJson
+   *   `profileField` is required iff `action === "fill_profile"`; `value`
+   *   is ignored entirely for that action (see dispatchFillProfile()) --
+   *   this file never reads it for fill_profile, by construction, not just
+   *   by convention.
    * @param {Map<string, Element>} idMap from buildDomSnapshot/assignAgentIds
    * @param {{
    *   isSensitive?: function(Element, object): boolean,
@@ -854,6 +1016,7 @@
    *   classifyActionRiskOptions?: object,
    *   allowIrreversibleActions?: boolean,
    *   onIrreversibleAction?: function(Element, object, {risk:string,reasons:string[]}): boolean,
+   *   getProfileValue?: function(string): string|null,
    *   window?: Window,
    *   scrollWindowBy?: function(Window, number): void,
    *   scrollElementIntoView?: function(Element): void,
@@ -867,17 +1030,28 @@
    *   `allowIrreversibleActions`/`onIrreversibleAction` mirror
    *   `allowSensitiveTargets`/`onSensitiveTarget` and are DISABLED unless
    *   explicitly set, same fail-closed-by-default posture.
-   * @returns {object} a small result-description object (never the raw
-   *   value being typed, for consistency with Section 5's "an error path
-   *   is a data egress path" lesson -- results here are for local
-   *   caller logging, not network transmission, but keeping them value-
-   *   light costs nothing and avoids a footgun if that assumption ever
-   *   changes).
+   *   `getProfileValue` (PROFILE-VAULT FEATURE): a synchronous
+   *   `profileField -> string|null` lookup, injected by the caller
+   *   (content.js, after dynamically importing profile-vault.js and
+   *   fetching the profile ONCE -- see that file's "HOW TO CONSUME" block
+   *   for why this must be synchronous). Required for `fill_profile` to
+   *   succeed; its absence throws PROFILE_VAULT_UNAVAILABLE rather than
+   *   silently no-op-ing. Irrelevant to every other action.
+   * @returns {object} a small result-description object. Never the raw
+   *   value for a MODEL-supplied `type` beyond what was already
+   *   known/sent by the model itself (kept for local caller logging, per
+   *   Section 5's "an error path is a data egress path" lesson -- see
+   *   dispatchType()). For `fill_profile` this goes further: the result
+   *   NEVER includes the vault-sourced value at all, under any
+   *   circumstances -- see dispatchFillProfile()'s own doc comment. Only
+   *   `profileField` (the category name, not the value) is included.
    * @throws {ActionExecutionError} on any of: unrecognized action,
-   *   missing targetId, PAGE_TARGET_ID used with click/type, unknown
-   *   targetId, a removed/detached target element, or a blocked
-   *   sensitive-target guard. NEVER silently no-ops and NEVER falls back
-   *   to acting on a different element.
+   *   missing targetId, PAGE_TARGET_ID used with click/type/fill_profile,
+   *   unknown targetId, a removed/detached target element, a blocked
+   *   sensitive-target guard, an invalid/missing profileField, a missing
+   *   options.getProfileValue, or an empty vault field for fill_profile.
+   *   NEVER silently no-ops and NEVER falls back to acting on a different
+   *   element or a different value source.
    */
   function executeAction(actionJson, idMap, options) {
     if (!actionJson || typeof actionJson !== "object") {
@@ -906,7 +1080,7 @@
       );
     }
 
-    if (action === "click" || action === "type") {
+    if (action === "click" || action === "type" || action === "fill_profile") {
       if (targetId === PAGE_TARGET_ID) {
         throw new ActionExecutionError(
           "INVALID_TARGET_FOR_ACTION",
@@ -914,20 +1088,32 @@
           { action: action, targetId: targetId }
         );
       }
+      // PROFILE-VAULT FEATURE: structural validation only (profileField
+      // shape), before resolveElement() -- see validateProfileFieldOrThrow()'s
+      // own doc comment for why this runs this early.
+      if (action === "fill_profile") {
+        validateProfileFieldOrThrow(actionJson);
+      }
       var el = resolveElement(idMap, targetId);
       // RULING #3: guardSensitive() (the project's core, more specific
       // invariant) runs FIRST and, if it blocks, has already folded in
       // classifyActionRisk()'s reasons for this same element (see
       // buildSensitiveBlockedError()). guardIrreversible() only ever
       // gets a turn when guardSensitive() did NOT throw -- i.e. the
-      // element isn't sensitive at all, or a sensitive-target override
-      // explicitly authorized acting on it anyway -- so a "Confirm
-      // Payment" button next to card fields is reported as
-      // SENSITIVE_TARGET_BLOCKED (with both sets of reasons), never as
-      // two separate errors.
+      // element isn't sensitive at all, a sensitive-target override
+      // explicitly authorized acting on it anyway, or (PROFILE-VAULT
+      // FEATURE) this is a fill_profile action, which guardSensitive()
+      // exempts unconditionally -- see that function's FILL_PROFILE
+      // CARVE-OUT comment for exactly why that's safe. guardIrreversible()
+      // is UNCHANGED and still runs for fill_profile exactly like it does
+      // for click/type -- action-risk.js's classifyActionRisk() itself
+      // only evaluates click/type, so this is a defense-in-depth call, not
+      // a behavior change to that module.
       guardSensitive(el, actionJson, options);
       guardIrreversible(el, actionJson, options);
-      return action === "click" ? dispatchClick(el) : dispatchType(el, value);
+      if (action === "click") return dispatchClick(el);
+      if (action === "type") return dispatchType(el, value);
+      return dispatchFillProfile(el, actionJson.profileField, options);
     }
 
     if (action === "scroll") {
@@ -956,6 +1142,7 @@
     AGENT_ID_ATTR: AGENT_ID_ATTR,
     SENSITIVE_ATTR: SENSITIVE_ATTR,
     CLOSED_SHADOW_HOST_ATTR: CLOSED_SHADOW_HOST_ATTR,
+    PROFILE_FIELDS: PROFILE_FIELDS,
     ActionExecutionError: ActionExecutionError,
 
     assignAgentIds: assignAgentIds,

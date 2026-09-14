@@ -39,6 +39,47 @@ describe("describeAction", () => {
     assert.equal(result, "typed into Email");
   });
 
+  test("fill_profile: 'filled <category> from your profile', reading only action.profileField", () => {
+    const result = describeAction({ action: "fill_profile", targetId: "agent-1", value: null, profileField: "email" }, []);
+    assert.equal(result, "filled email from your profile");
+  });
+
+  test("fill_profile: 'full_name' humanizes to 'full name' (underscore replaced with a space)", () => {
+    const result = describeAction({ action: "fill_profile", targetId: "agent-1", value: null, profileField: "full_name" }, []);
+    assert.equal(result, "filled full name from your profile");
+  });
+
+  test("fill_profile: 'phone' reads naturally", () => {
+    const result = describeAction({ action: "fill_profile", targetId: "agent-3", value: null, profileField: "phone" }, []);
+    assert.equal(result, "filled phone from your profile");
+  });
+
+  test("fill_profile: NEVER echoes the vault value, even if one is (incorrectly) present on action.value", () => {
+    const result = describeAction(
+      { action: "fill_profile", targetId: "agent-1", value: "vault-secret@example.com", profileField: "email" },
+      []
+    );
+    assert.ok(!result.includes("vault-secret@example.com"), "the vault-sourced value must never appear in the description, under any circumstances");
+    assert.equal(result, "filled email from your profile");
+  });
+
+  test("fill_profile: ignores domSnapshot/label entirely -- the category name is the whole story regardless of the target field's own label", () => {
+    const domSnapshot = [{ agentId: "agent-1", tag: "input", type: "email", text: "Work Email Address" }];
+    const result = describeAction({ action: "fill_profile", targetId: "agent-1", value: null, profileField: "email" }, domSnapshot);
+    assert.equal(result, "filled email from your profile");
+  });
+
+  test("fill_profile: a missing/malformed profileField degrades to 'a field' rather than throwing or showing 'undefined'", () => {
+    assert.equal(describeAction({ action: "fill_profile", targetId: "agent-1", value: null }, []), "filled a field from your profile");
+    assert.equal(describeAction({ action: "fill_profile", targetId: "agent-1", value: null, profileField: null }, []), "filled a field from your profile");
+    assert.equal(describeAction({ action: "fill_profile", targetId: "agent-1", value: null, profileField: 42 }, []), "filled a field from your profile");
+  });
+
+  test("fill_profile: an unrecognized-but-string profileField still renders legibly (underscore-to-space fallback)", () => {
+    const result = describeAction({ action: "fill_profile", targetId: "agent-1", value: null, profileField: "some_future_field" }, []);
+    assert.equal(result, "filled some future field from your profile");
+  });
+
   test("falls back to role, then tag, when text is empty", () => {
     const byRole = describeAction({ action: "click", targetId: "a1" }, [{ agentId: "a1", role: "button", text: "" }]);
     assert.equal(byRole, "clicked button");

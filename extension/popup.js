@@ -17,6 +17,7 @@
 
 import { validateServerUrl } from "./lib/server-url.js";
 import { describeOutcome } from "./lib/action-describe.js";
+import { getProfile, setProfile } from "./lib/profile-vault.js";
 
 const taskGoalEl = document.getElementById("taskGoal");
 const saveGoalBtn = document.getElementById("saveGoal");
@@ -33,6 +34,11 @@ const saveServerUrlBtn = document.getElementById("saveServerUrl");
 const serverUrlStatusEl = document.getElementById("serverUrlStatus");
 const fullPageCaptureToggle = document.getElementById("fullPageCaptureToggle");
 const fullPageCaptureStatusEl = document.getElementById("fullPageCaptureStatus");
+const profileFullNameInput = document.getElementById("profileFullName");
+const profileEmailInput = document.getElementById("profileEmail");
+const profilePhoneInput = document.getElementById("profilePhone");
+const saveProfileBtn = document.getElementById("saveProfile");
+const profileStatusEl = document.getElementById("profileStatus");
 
 const DEFAULT_SERVER_URL = "http://localhost:8000";
 
@@ -198,6 +204,53 @@ fullPageCaptureToggle.addEventListener("change", async () => {
     fullPageCaptureToggle.checked = !enabled; // revert the visual state -- the write didn't actually happen
     fullPageCaptureStatusEl.textContent = `Failed to save: ${err.message || err}`;
     fullPageCaptureStatusEl.style.color = "var(--redact)";
+  }
+});
+
+// =======================================================================
+// PROFILE VAULT (fill_profile feature). See extension/lib/profile-vault.js's
+// own header for the full "model names a category, this extension supplies
+// the value" design -- these three fields are the ONLY place that value is
+// ever typed in by a human, and getProfile()/setProfile() are the ONLY code
+// path that reads/writes it. It is read here (to populate the form) and
+// written here (on Save) via chrome.storage.local -- exactly the same
+// direct-storage pattern this file already uses for serverUrl/
+// fullPageCapture just above, no background.js relay needed (storage.local
+// is shared across every extension context already).
+//
+// 🔴 This value is NEVER sent anywhere by this file: no
+// browser.runtime.sendMessage() call in this block, no network request --
+// getProfile()/setProfile() only ever talk to browser.storage.local, which
+// is on-device.
+// =======================================================================
+getProfile(browser.storage.local).then((profile) => {
+  profileFullNameInput.value = profile.full_name;
+  profileEmailInput.value = profile.email;
+  profilePhoneInput.value = profile.phone;
+});
+
+saveProfileBtn.addEventListener("click", async () => {
+  profileStatusEl.textContent = "Saving...";
+  saveProfileBtn.disabled = true;
+  try {
+    const saved = await setProfile(browser.storage.local, {
+      full_name: profileFullNameInput.value,
+      email: profileEmailInput.value,
+      phone: profilePhoneInput.value,
+    });
+    // Reflect back the sanitized (trimmed) values -- setProfile() never
+    // echoes anything ELSE back (no network response to parse, nothing
+    // beyond what was just typed into this very form).
+    profileFullNameInput.value = saved.full_name;
+    profileEmailInput.value = saved.email;
+    profilePhoneInput.value = saved.phone;
+    profileStatusEl.textContent = "Saved on this device. Never sent to the server or the model.";
+    profileStatusEl.style.color = "var(--pass)";
+  } catch (err) {
+    profileStatusEl.textContent = `Failed to save: ${err.message || err}`;
+    profileStatusEl.style.color = "var(--redact)";
+  } finally {
+    saveProfileBtn.disabled = false;
   }
 });
 

@@ -280,11 +280,30 @@ def test_request_output_config_carries_json_schema_mirroring_action_response():
     assert fmt["schema"] == ACTION_RESPONSE_JSON_SCHEMA
 
 
-def test_action_response_json_schema_is_a_strict_enum_of_four_actions():
+def test_action_response_json_schema_is_a_strict_enum_of_five_actions():
+    """fill_profile joined the action enum 2026-09-14 (ruling #7) —
+    updated from the original four-action assertion, not weakened: still
+    a closed, exhaustive set, still additionalProperties=False."""
     props = ACTION_RESPONSE_JSON_SCHEMA["properties"]
-    assert set(props["action"]["enum"]) == {"click", "type", "scroll", "done"}
+    assert set(props["action"]["enum"]) == {"click", "type", "scroll", "done", "fill_profile"}
     assert ACTION_RESPONSE_JSON_SCHEMA["additionalProperties"] is False
-    assert set(ACTION_RESPONSE_JSON_SCHEMA["required"]) == {"action", "targetId", "value"}
+    assert set(ACTION_RESPONSE_JSON_SCHEMA["required"]) == {
+        "action",
+        "targetId",
+        "value",
+        "profileField",
+    }
+
+
+def test_action_response_json_schema_profile_field_enum_matches_schemas_profilefield():
+    """profileField's JSON-schema enum is derived from schemas.ProfileField
+    (single source of truth, ruling #7) — not a hand-copied duplicate list,
+    and includes a literal null so the nullable case is expressible."""
+    from schemas import ProfileField
+
+    prop = ACTION_RESPONSE_JSON_SCHEMA["properties"]["profileField"]
+    assert set(prop["enum"]) == {f.value for f in ProfileField} | {None}
+    assert prop["type"] == ["string", "null"]
 
 
 # ---------------------------------------------------------------------------

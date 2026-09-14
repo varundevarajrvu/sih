@@ -65,6 +65,11 @@ let ActionDescribe = null;
 // document-offset math -- see extension/lib/capture-plan.js's own header
 // for the coordinate-problem this closes. Same dynamic-import pattern.
 let CapturePlan = null;
+// PROFILE-VAULT FEATURE: get/set/validate the local-only user profile
+// fill_profile fills FROM -- see that file's own header for the full
+// "model names a category, this extension supplies the value" design.
+// Same dynamic-import pattern as every other ES-module lib file above.
+let ProfileVault = null;
 
 async function loadLibModules() {
   if (!DomScanner) {
@@ -91,6 +96,43 @@ async function loadLibModules() {
   if (!CapturePlan) {
     CapturePlan = await import(browser.runtime.getURL("lib/capture-plan.js"));
   }
+  if (!ProfileVault) {
+    ProfileVault = await import(browser.runtime.getURL("lib/profile-vault.js"));
+  }
+}
+
+// ---------------------------------------------------------------------
+// PROFILE-VAULT FEATURE: builds the SYNCHRONOUS `getProfileValue` closure
+// action-executor.js's dispatchFillProfile() requires (see that file's
+// "HOW TO CONSUME" block on profile-vault.js for why it must be
+// synchronous -- executeAction() itself is a sync function with no
+// import/export statements, so it cannot await a chrome.storage.local
+// read itself). Fetches the profile from storage ONCE per call site,
+// mirroring how taskGoal/fullPageCaptureEnabled are each read once rather
+// than once per lookup -- the profile is small, local, and not expected to
+// change mid-step.
+//
+// 🔴 Never logs, never returns, never includes the fetched profile object
+// itself anywhere outside this closure's own scope -- only the RESULT of
+// looking up one field, and even that only ever flows into
+// dispatchFillProfile(), which itself never echoes it back out (see that
+// function's own doc comment). This is the one place in content.js a real
+// vault value ever exists in memory; it is never assigned to any variable
+// this file logs, reports via reportProgress(), or includes in
+// instr.mark()/stepResults/the RUN SUMMARY.
+// ---------------------------------------------------------------------
+async function buildProfileValueGetter() {
+  await loadLibModules();
+  let profile;
+  try {
+    profile = await ProfileVault.getProfile(browser.storage.local);
+  } catch (err) {
+    console.error("[agent-loop] failed to read the local profile vault (fill_profile will report PROFILE_VAULT_UNAVAILABLE / PROFILE_FIELD_EMPTY this run):", err?.message || err);
+    profile = null;
+  }
+  return function getProfileValue(field) {
+    return ProfileVault.getProfileFieldValue(profile, field);
+  };
 }
 
 // =======================================================================
@@ -418,6 +460,41 @@ if (!IS_TOP_FRAME) {
     };
   }
 
+  /**
+   * PROFILE-VAULT FEATURE: this subframe's own copy of the top frame's
+   * getProfileValue wiring (see buildProfileValueGetter() and its call
+   * site in runAgentLoop()) -- a subframe has NO access to the top
+   * frame's module-level closure (separate JS realm entirely), so it
+   * fetches its own copy of the profile straight from
+   * chrome.storage.local, which (unlike a live DOM/Element reference) IS
+   * shared and readable across every frame of the extension. Async
+   * because this handler is invoked from the RUN_ACTION_IN_FRAME
+   * listener below, which can await it -- action-executor.js's
+   * executeAction() itself stays synchronous either way.
+   */
+  async function runActionInThisFrame(action) {
+    const getProfileValue = await buildProfileValueGetter();
+    try {
+      const result = ActionExecutor.executeAction(action, lastFrameScan.idMap, {
+        sensitiveAgentIds: lastFrameScan.sensitiveAgentIds,
+        getProfileValue,
+        // WIRING PASS TASK 2: same classifyActionRisk injection as the
+        // top frame's own executeActionAcrossFrames() call below --
+        // action-risk.js is loaded by this frame's own loadLibModules()
+        // call inside scanThisFrame(), which always runs (and sets
+        // lastFrameScan) before RUN_ACTION_IN_FRAME can ever be relayed
+        // here (see the `if (!lastFrameScan)` guard below). The `&&`
+        // guard is defensive only -- if that invariant is ever wrong,
+        // this degrades to "guard not wired" (classifyIrreversible's own
+        // no-op default), never a crash.
+        classifyActionRisk: ActionRisk && ActionRisk.classifyActionRisk,
+      });
+      return { ok: true, result };
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err), code: err?.code };
+    }
+  }
+
   browser.runtime.onMessage.addListener((message) => {
     if (!message || typeof message.type !== "string") return undefined;
 
@@ -432,24 +509,11 @@ if (!IS_TOP_FRAME) {
           error: "RUN_ACTION_IN_FRAME received before this frame ever completed a SCAN_THIS_FRAME -- refusing to guess an idMap",
         });
       }
-      try {
-        const result = ActionExecutor.executeAction(message.action, lastFrameScan.idMap, {
-          sensitiveAgentIds: lastFrameScan.sensitiveAgentIds,
-          // WIRING PASS TASK 2: same classifyActionRisk injection as the
-          // top frame's own executeActionAcrossFrames() call below --
-          // action-risk.js is loaded by this frame's own loadLibModules()
-          // call inside scanThisFrame(), which always runs (and sets
-          // lastFrameScan) before RUN_ACTION_IN_FRAME can ever be relayed
-          // here (see the `if (!lastFrameScan)` guard above). The `&&`
-          // guard is defensive only -- if that invariant is ever wrong,
-          // this degrades to "guard not wired" (classifyIrreversible's own
-          // no-op default), never a crash.
-          classifyActionRisk: ActionRisk && ActionRisk.classifyActionRisk,
-        });
-        return Promise.resolve({ ok: true, result });
-      } catch (err) {
-        return Promise.resolve({ ok: false, error: err?.message || String(err), code: err?.code });
-      }
+      return runActionInThisFrame(message.action).catch((err) => ({
+        ok: false,
+        error: err?.message || String(err),
+        code: err?.code,
+      }));
     }
 
     return undefined; // not our message type -- ignore (RUN_AGENT_LOOP included: a subframe never runs the loop)
@@ -1705,6 +1769,13 @@ async function runAgentLoop() {
   // the storage read itself fails.
   const fullPageCaptureEnabled = await isFullPageCaptureEnabled();
 
+  // PROFILE-VAULT FEATURE: fetched ONCE per run, not per step -- see
+  // buildProfileValueGetter()'s own comment for why a synchronous closure
+  // is required and why the profile itself never escapes it. A mid-run
+  // Settings edit to the profile takes effect on the NEXT run, same
+  // "read once per run" posture as fullPageCaptureEnabled just above.
+  const getProfileValue = await buildProfileValueGetter();
+
   let outcome = "max_steps_reached";
 
   // TASK 2 (live progress): the loop's own "I have started" marker --
@@ -2251,6 +2322,25 @@ async function runAgentLoop() {
     }
     const action = analyzeResp.action;
 
+    // PROFILE-VAULT SAFETY (belt-and-suspenders, defense in depth): the
+    // contract pinned by the orchestrator is that the server REJECTS any
+    // fill_profile carrying a non-null `value` (action-executor.js's
+    // dispatchFillProfile() also never reads it, by construction -- see
+    // that function). Neither of those facts is something THIS file can
+    // verify about a response it didn't produce. Forcing value to null
+    // here, once, before `action` is used for execution, stepResults, or
+    // the RUN SUMMARY below means even a buggy/misbehaving server response
+    // can never put a stray value into a log line for this action type --
+    // "an error path is a data egress path" applies just as much to a
+    // response we merely LOG as to one we act on.
+    if (action && action.action === "fill_profile" && action.value != null) {
+      console.warn(
+        `[agent-loop] step ${step}: server response carried a non-null value on a fill_profile action -- ` +
+          "ignoring it (contract violation; never used for execution, and never logged)."
+      );
+      action.value = null;
+    }
+
     // TASK 1 (Stop): the LAST checkpoint before a real DOM action is
     // dispatched -- "never leave a half-dispatched action" means a Stop
     // that lands after the /analyze response but before the click/type is
@@ -2285,6 +2375,10 @@ async function runAgentLoop() {
         // same policy as the pre-existing sensitive-target guard (Phase 3
         // ruling: "Phase 4 must NOT enable them for the demo").
         classifyActionRisk: ActionRisk.classifyActionRisk,
+        // PROFILE-VAULT FEATURE: the synchronous vault lookup
+        // dispatchFillProfile() requires -- see buildProfileValueGetter()
+        // above. Harmless/unused for every action other than fill_profile.
+        getProfileValue,
       });
       actResult = actOutcome.result;
       relayedToFrameId = actOutcome.relayedToFrameId;

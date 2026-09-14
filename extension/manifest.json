@@ -59,7 +59,8 @@
         "lib/action-describe.js",
         "lib/error-messages.js",
         "lib/server-url.js",
-        "lib/capture-plan.js"
+        "lib/capture-plan.js",
+        "lib/profile-vault.js"
       ],
       "matches": ["<all_urls>"]
     }

@@ -40,7 +40,7 @@ def test_analyze_valid_request_returns_valid_action_json(load_fixture):
     resp = client.post("/analyze", json=data)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["action"] in {"click", "type", "scroll", "done"}
+    assert body["action"] in {"click", "type", "scroll", "done", "fill_profile"}
     assert isinstance(body["targetId"], str) and body["targetId"] != ""
     assert "value" in body
 
@@ -50,7 +50,7 @@ def test_analyze_valid_request_with_redaction_returns_valid_action_json(load_fix
     resp = client.post("/analyze", json=data)
     assert resp.status_code == 200
     body = resp.json()
-    assert body["action"] in {"click", "type", "scroll", "done"}
+    assert body["action"] in {"click", "type", "scroll", "done", "fill_profile"}
     # Mock must never target the redacted password field with a guessed value.
     assert not (body["targetId"] == "agent-1" and body["action"] == "type")
 
@@ -94,7 +94,7 @@ def test_vision_region_overlapping_benign_button_is_not_flagged_as_pii_leak(load
 
     assert resp.status_code == 200, f"false positive not fixed: {resp.content!r}"
     body = resp.json()
-    assert body["action"] in {"click", "type", "scroll", "done"}
+    assert body["action"] in {"click", "type", "scroll", "done", "fill_profile"}
 
 
 def test_analyze_response_is_json_not_prose(load_fixture):
@@ -105,7 +105,10 @@ def test_analyze_response_is_json_not_prose(load_fixture):
     resp = client.post("/analyze", json=data)
     assert resp.headers["content-type"].startswith("application/json")
     body = resp.json()
-    assert set(body.keys()) == {"action", "targetId", "value"}
+    # profileField joined the response shape 2026-09-14 (fill_profile /
+    # ruling #7) — always present (null unless action == "fill_profile"),
+    # per ActionResponse's field-inclusion default (no exclude_none).
+    assert set(body.keys()) == {"action", "targetId", "value", "profileField"}
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +168,66 @@ def test_ordinary_malformed_request_response_bytes_never_echo_planted_value(load
     assert SENTINEL.encode() not in resp.content, (
         f"ordinary validation-error response echoed a planted value: {resp.content!r}"
     )
+
+
+def test_fill_profile_with_value_rejected_with_502_and_dedicated_error_code(load_fixture):
+    """Ruling #7 (2026-09-14): 'the model says which category a field
+    wants -> the extension fills it from local storage.' A backend that
+    returns a fill_profile action carrying a value is either a
+    misbehaving model or a page trying to smuggle data back out through
+    the action channel — this must be rejected with its OWN errorCode
+    (MODEL_SUPPLIED_PROFILE_VALUE), distinguishable from the generic
+    VLM_RESPONSE_SCHEMA_INVALID 502 used for ordinary malformed actions.
+    """
+    import main as main_module
+
+    class ProfileSmugglingClient:
+        def analyze(self, context):
+            return {
+                "action": "fill_profile",
+                "targetId": "agent-2",
+                "value": SENTINEL,
+                "profileField": "email",
+            }
+
+    app.dependency_overrides[main_module.get_vlm_client] = lambda: ProfileSmugglingClient()
+    try:
+        data = load_fixture("valid_request.json")
+        resp = client.post("/analyze", json=data)
+        assert resp.status_code == 502
+        body = resp.json()
+        assert body["errorCode"] == "MODEL_SUPPLIED_PROFILE_VALUE"
+    finally:
+        app.dependency_overrides.pop(main_module.get_vlm_client, None)
+
+
+def test_fill_profile_with_value_response_bytes_never_contain_the_sentinel_value(load_fixture):
+    """The byte-level half of the assertion above (Section 7 rule 5: 'an
+    error path is a data egress path') — this is the actual security
+    property, not just the status code/errorCode shape. Checked against
+    resp.content (raw wire bytes), same discipline as every other
+    rejection-path test in this file."""
+    import main as main_module
+
+    class ProfileSmugglingClient:
+        def analyze(self, context):
+            return {
+                "action": "fill_profile",
+                "targetId": "agent-2",
+                "value": SENTINEL,
+                "profileField": "email",
+            }
+
+    app.dependency_overrides[main_module.get_vlm_client] = lambda: ProfileSmugglingClient()
+    try:
+        data = load_fixture("valid_request.json")
+        resp = client.post("/analyze", json=data)
+        assert SENTINEL.encode() not in resp.content, (
+            "fill_profile rejection echoed the smuggled value back in the response body: "
+            f"{resp.content!r}"
+        )
+    finally:
+        app.dependency_overrides.pop(main_module.get_vlm_client, None)
 
 
 def test_vlm_response_schema_error_bytes_never_echo_backend_output(load_fixture):

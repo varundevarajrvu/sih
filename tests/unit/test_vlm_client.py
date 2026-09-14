@@ -40,8 +40,13 @@ def test_mock_client_done_on_empty_dom():
 
 
 def test_mock_client_types_into_first_typeable_non_redacted_node():
+    """Uses type='search' deliberately, NOT 'email' — an empty email
+    field is now routed to fill_profile instead (2026-09-14, ruling #7;
+    see the fill_profile-specific tests below). 'search' stays in the
+    ordinary typeable set but is never profile-shaped, so this still
+    exercises the original generic-typing fallback path unchanged."""
     nodes = [
-        DomNode(agentId="agent-1", tag="input", type="email", text=""),
+        DomNode(agentId="agent-1", tag="input", type="search", text=""),
         DomNode(agentId="agent-2", tag="button", type="submit", text="Go"),
     ]
     client = MockVLMClient()
@@ -92,6 +97,115 @@ def test_mock_client_clicks_when_no_typeable_node():
     client = MockVLMClient()
     result = client.analyze(_context(nodes))
     assert result == {"action": "click", "targetId": "agent-1", "value": None}
+
+
+# ---------------------------------------------------------------------------
+# fill_profile emission (2026-09-14, ruling #7): "the model says which
+# category a field wants -> the extension fills it from local storage."
+# MockVLMClient emits this deterministically so the fill_profile contract
+# is exercisable end-to-end with no API key — every demo/CI path, and the
+# extension side's own testing.
+# ---------------------------------------------------------------------------
+
+
+def test_mock_client_emits_fill_profile_for_empty_email_field():
+    nodes = [
+        DomNode(agentId="agent-1", tag="input", type="email", text=""),
+        DomNode(agentId="agent-2", tag="button", type="submit", text="Go"),
+    ]
+    client = MockVLMClient()
+    result = client.analyze(_context(nodes))
+    assert result == {
+        "action": "fill_profile",
+        "targetId": "agent-1",
+        "value": None,
+        "profileField": "email",
+    }
+
+
+def test_mock_client_emits_fill_profile_for_empty_tel_field():
+    nodes = [DomNode(agentId="agent-1", tag="input", type="tel", text=None)]
+    client = MockVLMClient()
+    result = client.analyze(_context(nodes))
+    assert result == {
+        "action": "fill_profile",
+        "targetId": "agent-1",
+        "value": None,
+        "profileField": "phone",
+    }
+
+
+def test_mock_client_emits_fill_profile_for_name_ish_placeholder_label():
+    """An empty text input whose only visible content is a 'Full Name'-
+    shaped placeholder is treated as profile-shaped even though its
+    `type` is the generic 'text', per the mock's structural label check."""
+    nodes = [DomNode(agentId="agent-1", tag="input", type="text", text="Full Name")]
+    client = MockVLMClient()
+    result = client.analyze(_context(nodes))
+    assert result == {
+        "action": "fill_profile",
+        "targetId": "agent-1",
+        "value": None,
+        "profileField": "full_name",
+    }
+
+
+def test_mock_client_does_not_treat_username_label_as_full_name():
+    """'Username' contains the substring 'name' but is NOT the user's
+    full name — the mock's name-ish check must exclude it explicitly,
+    not fire on a naive substring match. Falls through to the ordinary
+    typeable branch instead."""
+    nodes = [DomNode(agentId="agent-1", tag="input", type="text", text="Username")]
+    client = MockVLMClient()
+    result = client.analyze(_context(nodes))
+    assert result["action"] == "type"
+    assert result["targetId"] == "agent-1"
+
+
+def test_mock_client_fill_profile_value_is_always_null():
+    """THE non-negotiable part of the contract, asserted directly: the
+    mock must never put anything but None in `value` for fill_profile,
+    regardless of which profile-shaped node triggered it."""
+    for node in [
+        DomNode(agentId="agent-1", tag="input", type="email", text=""),
+        DomNode(agentId="agent-1", tag="input", type="tel", text=""),
+        DomNode(agentId="agent-1", tag="input", type="text", text="Your Name"),
+    ]:
+        result = MockVLMClient().analyze(_context([node]))
+        assert result["action"] == "fill_profile"
+        assert result["value"] is None
+
+
+def test_mock_client_does_not_emit_fill_profile_for_already_filled_email_field():
+    """Only an EMPTY profile-shaped field routes to fill_profile — a
+    field that already carries a value isn't a fill target, it falls
+    through to the ordinary typeable branch (unchanged pre-existing
+    behavior for a non-empty node)."""
+    nodes = [DomNode(agentId="agent-1", tag="input", type="email", text="already-has-a-value")]
+    client = MockVLMClient()
+    result = client.analyze(_context(nodes))
+    assert result["action"] == "type"
+    assert result["targetId"] == "agent-1"
+
+
+def test_mock_client_skips_redacted_profile_shaped_node():
+    """The fill_profile branch must respect the same redacted/sensitive
+    exclusion as every other branch — a redacted email field must never
+    become a fill_profile target either."""
+    nodes = [
+        DomNode(agentId="agent-1", tag="input", type="email", text="", sensitive=True),
+        DomNode(agentId="agent-2", tag="input", type="tel", text=""),
+    ]
+    regions = [RedactedRegion(type="email", bbox=BBox(x=0, y=0, w=10, h=10), agentId="agent-1")]
+    client = MockVLMClient()
+    result = client.analyze(_context(nodes, regions))
+    assert result["targetId"] != "agent-1"
+    assert result == {
+        "action": "fill_profile",
+        "targetId": "agent-2",
+        "value": None,
+        "profileField": "phone",
+    }
 
 
 def test_mock_client_is_deterministic():

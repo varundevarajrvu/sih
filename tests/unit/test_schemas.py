@@ -17,7 +17,9 @@ from schemas import (
     PAGE_TARGET_ID,
     ActionResponse,
     AnalyzeRequest,
+    ModelSuppliedProfileValue,
     PiiType,
+    ProfileField,
     RedactedRegion,
     find_pii_leaks,
 )
@@ -224,3 +226,156 @@ class TestRedactedRegionSource:
         assert "source" not in data["redactedRegions"][0]  # fixture predates this field
         req = AnalyzeRequest.model_validate(data)  # must not raise
         assert req.redactedRegions[0].source == "dom"  # agentId="agent-1" present -> inferred dom
+
+
+class TestFillProfileContract:
+    """Ruling #7 (2026-09-14): 'the model says which category a field
+    wants -> the extension fills it from local storage.' The model
+    never sees, and under this design must never be able to supply, a
+    user's own profile value. These tests cover the accept/reject
+    matrix schemas.py's docstring promises, plus the specific security
+    assertion the whole design hinges on: a fill_profile carrying a
+    value is rejected via ModelSuppliedProfileValue specifically (not a
+    generic ValidationError), and that exception never carries the
+    offending value anywhere inspectable.
+    """
+
+    @pytest.mark.parametrize("field", ["full_name", "email", "phone"])
+    def test_valid_fill_profile_accepted_for_every_profile_field(self, field):
+        resp = ActionResponse.model_validate(
+            {"action": "fill_profile", "targetId": "agent-1", "value": None, "profileField": field}
+        )
+        assert resp.action.value == "fill_profile"
+        assert resp.profileField.value == field
+        assert resp.value is None
+
+    def test_ordinary_actions_still_accepted_with_profile_field_omitted(self):
+        """Regression: the pre-existing four actions must keep working
+        exactly as before when `profileField` isn't sent at all (the
+        real-world case for every non-fill_profile response)."""
+        resp = ActionResponse.model_validate({"action": "click", "targetId": "agent-1", "value": None})
+        assert resp.profileField is None
+
+    def test_ordinary_actions_still_accepted_with_profile_field_explicit_null(self):
+        resp = ActionResponse.model_validate(
+            {"action": "type", "targetId": "agent-1", "value": "hello", "profileField": None}
+        )
+        assert resp.profileField is None
+        assert resp.value == "hello"
+
+    # -- THE security boundary ------------------------------------------
+
+    SENTINEL = "SENTINEL-PROFILE-VALUE-9d4e21a"
+
+    def test_fill_profile_with_value_raises_model_supplied_profile_value_not_generic_validation_error(self):
+        """The load-bearing distinction: this must be catchable
+        specifically as ModelSuppliedProfileValue, not merely 'some
+        ValidationError' — that's what lets main.py give it its own
+        errorCode instead of folding it into VLM_RESPONSE_SCHEMA_INVALID."""
+        with pytest.raises(ModelSuppliedProfileValue):
+            ActionResponse.model_validate(
+                {
+                    "action": "fill_profile",
+                    "targetId": "agent-1",
+                    "value": self.SENTINEL,
+                    "profileField": "email",
+                }
+            )
+
+    def test_fill_profile_with_value_is_not_a_pydantic_validation_error(self):
+        """Confirms the OTHER half of the distinction: pydantic-core does
+        NOT wrap this into ValidationError (that would defeat the whole
+        point — see schemas.ModelSuppliedProfileValue's docstring)."""
+        from pydantic import ValidationError
+
+        try:
+            ActionResponse.model_validate(
+                {
+                    "action": "fill_profile",
+                    "targetId": "agent-1",
+                    "value": self.SENTINEL,
+                    "profileField": "email",
+                }
+            )
+            pytest.fail("expected ModelSuppliedProfileValue to be raised")
+        except ValidationError:
+            pytest.fail("value-carrying fill_profile must not surface as a generic ValidationError")
+        except ModelSuppliedProfileValue:
+            pass  # expected
+
+    def test_fill_profile_with_empty_string_value_also_rejected(self):
+        """`value` must be null, not merely falsy-but-present — an empty
+        string is still a non-null value and must still be rejected
+        (the model choosing "" over None doesn't change what the
+        contract requires)."""
+        with pytest.raises(ModelSuppliedProfileValue):
+            ActionResponse.model_validate(
+                {"action": "fill_profile", "targetId": "agent-1", "value": "", "profileField": "email"}
+            )
+
+    def test_model_supplied_profile_value_never_carries_the_offending_value(self):
+        """The exception itself must be structurally incapable of
+        leaking the value — not just 'happens not to include it right
+        now'. Checked directly against the exception's own args/message,
+        independent of anything main.py or FastAPI does with it (that
+        HTTP-level check lives in test_api.py)."""
+        with pytest.raises(ModelSuppliedProfileValue) as excinfo:
+            ActionResponse.model_validate(
+                {
+                    "action": "fill_profile",
+                    "targetId": "agent-1",
+                    "value": self.SENTINEL,
+                    "profileField": "email",
+                }
+            )
+        assert self.SENTINEL not in str(excinfo.value)
+        assert all(self.SENTINEL not in str(a) for a in excinfo.value.args)
+        # Structural guarantee, not just an empirical one: __init__ takes
+        # no arguments at all, so there is no parameter a caller could
+        # have passed the value through even by accident.
+        with pytest.raises(TypeError):
+            ModelSuppliedProfileValue(self.SENTINEL)  # type: ignore[call-arg]
+
+    # -- the two ordinary (non-security) malformed-response cases -------
+
+    def test_fill_profile_missing_profile_field_rejected(self, load_fixture):
+        with pytest.raises(ValidationError):
+            ActionResponse.model_validate({"action": "fill_profile", "targetId": "agent-1", "value": None})
+
+    def test_fill_profile_null_profile_field_rejected(self):
+        with pytest.raises(ValidationError):
+            ActionResponse.model_validate(
+                {"action": "fill_profile", "targetId": "agent-1", "value": None, "profileField": None}
+            )
+
+    def test_fill_profile_invalid_profile_field_string_rejected(self):
+        """profileField is a CLOSED enum (no 'other' escape hatch, unlike
+        PiiType) — an unrecognized category is a hard reject, not a
+        graceful degrade. See ProfileField's docstring for why the
+        asymmetry with PiiType is deliberate."""
+        with pytest.raises(ValidationError):
+            ActionResponse.model_validate(
+                {"action": "fill_profile", "targetId": "agent-1", "value": None, "profileField": "ssn"}
+            )
+
+    def test_non_fill_profile_action_with_profile_field_rejected(self):
+        with pytest.raises(ValidationError):
+            ActionResponse.model_validate(
+                {"action": "click", "targetId": "agent-1", "value": None, "profileField": "email"}
+            )
+
+    def test_scroll_with_profile_field_rejected(self):
+        """Same rule, different action — profileField is illegal outside
+        fill_profile regardless of which other action it's attached to."""
+        with pytest.raises(ValidationError):
+            ActionResponse.model_validate(
+                {
+                    "action": "scroll",
+                    "targetId": PAGE_TARGET_ID,
+                    "value": None,
+                    "profileField": "full_name",
+                }
+            )
+
+    def test_profile_field_enum_is_exactly_three_categories(self):
+        assert {f.value for f in ProfileField} == {"full_name", "email", "phone"}

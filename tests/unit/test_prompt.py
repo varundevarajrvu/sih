@@ -124,3 +124,48 @@ def test_task_goal_included_verbatim():
     goal = "Fill in the shipping address and submit the order"
     prompt = build_prompt(goal, [], [])
     assert goal in prompt
+
+
+# ---------------------------------------------------------------------------
+# fill_profile instructions (ruling #7, 2026-09-14): "the model says which
+# category a field wants -> the extension fills it from local storage."
+# These are additive to the existing privacy-notice/redaction instructions
+# above — none of those assertions changed, only new content was appended.
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_mentions_fill_profile_action_and_all_three_profile_fields():
+    prompt = build_prompt("Fill out the form", [], [])
+    assert "fill_profile" in prompt
+    assert "full_name" in prompt
+    assert "email" in prompt
+    assert "phone" in prompt
+    assert "profileField" in prompt
+
+
+def test_prompt_tells_model_it_must_never_supply_a_value_for_fill_profile():
+    prompt = build_prompt("Fill out the form", [], [])
+    lower = prompt.lower()
+    assert "fill_profile" in lower
+    assert "must be null" in lower or "must not guess" in lower or "never" in lower
+    # The specific, load-bearing sentence: value MUST be null for fill_profile.
+    assert "value` must be null" in lower or "value must be null" in lower
+
+
+def test_prompt_tells_model_it_will_never_see_the_actual_profile_data():
+    prompt = build_prompt("Fill out the form", [], [])
+    lower = prompt.lower()
+    assert "never shown" in lower or "never see" in lower or "never supply" in lower
+
+
+def test_prompt_still_carries_original_privacy_language_after_fill_profile_addition():
+    """Regression: the fill_profile instructions are additive — every
+    pre-existing redaction/privacy assertion this module made before
+    ruling #7 must still hold, using the same fixtures as the tests
+    above in this file."""
+    prompt = build_prompt("Log in", _sample_dom_snapshot(), _sample_redacted_regions())
+    lower = prompt.lower()
+    assert "intentionally" in lower
+    assert "privacy" in lower
+    assert "speculate" in lower
+    assert "fill_profile" in lower  # both sets of instructions coexist

@@ -32,6 +32,21 @@ path"):
     echo content the VLM derived from the prompt/image back to the
     caller.
 
+  - A `fill_profile` action carrying a non-null `value` (schemas.py
+    ruling #7, 2026-09-14 — the "model names a category, never sees or
+    supplies the value" design) -> 502 with its OWN stable errorCode
+    "MODEL_SUPPLIED_PROFILE_VALUE", via the schemas.ModelSuppliedProfileValue
+    exception and its handler below. Kept separate from the generic
+    "VLM_RESPONSE_SCHEMA_INVALID" 502 for the same reason PIILeakDetected
+    is kept separate from ordinary 422s: this is a security-relevant
+    event (a misbehaving model or a page trying to smuggle data back out
+    through the action channel), not an ordinary malformed response, and
+    Phase 4 instrumentation should be able to count it distinctly by
+    errorCode. The handler's message is a fixed, static string — it
+    interpolates nothing from the request or the VLM's output, because
+    ModelSuppliedProfileValue itself carries no payload to interpolate
+    (see its docstring).
+
 Run with:
     uvicorn main:app --reload
 """
@@ -47,7 +62,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 import debug_dump
-from schemas import ActionResponse, AnalyzeRequest, PIILeakDetected, find_pii_leaks
+from schemas import ActionResponse, AnalyzeRequest, ModelSuppliedProfileValue, PIILeakDetected, find_pii_leaks
 from vlm_client import VLMClient, VLMRequestContext, build_prompt, get_vlm_client
 
 
@@ -123,6 +138,46 @@ async def handle_pii_leak(request: Request, exc: PIILeakDetected) -> JSONRespons
                 "response. See `violations` for which agentIds are affected."
             ),
             "violations": exc.violations,
+        },
+    )
+
+
+@app.exception_handler(ModelSuppliedProfileValue)
+async def handle_model_supplied_profile_value(
+    request: Request, exc: ModelSuppliedProfileValue
+) -> JSONResponse:
+    """502 + stable errorCode "MODEL_SUPPLIED_PROFILE_VALUE" — the
+    fill_profile security boundary (schemas.py ruling #7). Registered
+    the same way as handle_pii_leak above: ModelSuppliedProfileValue is
+    raised from inside ActionResponse's own model_validator, deliberately
+    as a plain Exception subclass rather than a ValueError (see that
+    validator's and the exception's own docstrings for why pydantic-core
+    does NOT swallow it into a generic ValidationError) — so it
+    propagates straight out of `ActionResponse.model_validate(raw_action)`
+    in analyze() below, past that function's own `except ValidationError`,
+    to this app-wide handler.
+
+    The message below is a FIXED, static string. It interpolates nothing
+    from the request, the VLM's raw output, or the exception instance
+    (which carries no payload to interpolate in the first place — see
+    ModelSuppliedProfileValue's docstring). An error path is a data
+    egress path, and this is precisely the path the fill_profile design
+    exists to close off, so it must not become the leak itself.
+    """
+    return JSONResponse(
+        status_code=502,
+        content={
+            "errorCode": "MODEL_SUPPLIED_PROFILE_VALUE",
+            "message": (
+                "VLM backend returned a fill_profile action carrying a "
+                "non-null value. Rejected: fill_profile must name a "
+                "profileField category only (full_name/email/phone) — the "
+                "actual value is filled in locally by the extension from "
+                "the user's own profile, never supplied by the model. This "
+                "is either a misbehaving model or a page attempting to "
+                "smuggle data back out through the action channel. No "
+                "value is echoed in this response."
+            ),
         },
     )
 

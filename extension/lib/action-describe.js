@@ -20,6 +20,25 @@
 
 const MAX_LABEL_LENGTH = 40;
 
+// PROFILE-VAULT FEATURE: turns a closed profileField category
+// ("full_name"|"email"|"phone") into the phrase action-describe.js reads
+// back to the user -- "filled email from your profile", never "filled
+// someone@example.com from your profile". The category name itself is not
+// sensitive (it's one of three fixed strings, not user data) and is safe
+// to show; the actual vault value never reaches this file at all -- see
+// describeAction()'s own SAFETY NOTE below and profile-vault.js's "vault
+// must never leave the client" header.
+const PROFILE_FIELD_PHRASES = Object.freeze({
+  full_name: "full name",
+  email: "email",
+  phone: "phone",
+});
+
+function humanizeProfileField(field) {
+  if (typeof field !== "string") return "a field";
+  return PROFILE_FIELD_PHRASES[field] || field.replace(/_/g, " ");
+}
+
 /**
  * Best-effort human label for a domSnapshot node: its visible text if any
  * (truncated so one long paragraph can't blow out the popup layout), else
@@ -58,7 +77,17 @@ function labelForNode(node) {
  * persisted to chrome.storage.session, can never itself become a place a
  * value leaks into that wasn't already visible on the page itself.
  *
- * @param {{action?: string, targetId?: string, value?: *}|null} action
+ * This applies with EXTRA force to `fill_profile` (PROFILE-VAULT FEATURE):
+ * that action's value comes from the user's own locally-saved profile, not
+ * from the page or the model, so a leak here would be this popup itself
+ * disclosing local vault data. `action.value` for fill_profile is null by
+ * contract anyway (see server/schemas.py's ActionResponse and
+ * action-executor.js's dispatchFillProfile(), which never even reads it),
+ * but this function does not rely on that -- it only ever reads
+ * `action.profileField` (a category name, e.g. "email" -- one of three
+ * fixed, non-sensitive strings) for this action, never `action.value`.
+ *
+ * @param {{action?: string, targetId?: string, value?: *, profileField?: string}|null} action
  * @param {Array<object>} [domSnapshot] the step's own domSnapshot (post-rank,
  *   post-merge -- whatever content.js actually sent) to resolve a label from.
  * @returns {string}
@@ -75,6 +104,12 @@ export function describeAction(action, domSnapshot) {
   switch (action.action) {
     case "type":
       return label ? `typed into ${label}` : "typed into a field";
+    case "fill_profile":
+      // Deliberately ignores `label`/domSnapshot entirely -- the category
+      // name (action.profileField) is the whole story here, and is
+      // consistent regardless of what the target field happens to be
+      // labeled on the page. See the SAFETY NOTE above.
+      return `filled ${humanizeProfileField(action.profileField)} from your profile`;
     case "click":
       return label ? `clicked ${label}` : "clicked an element";
     case "scroll":

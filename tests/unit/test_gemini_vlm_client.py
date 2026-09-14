@@ -241,11 +241,15 @@ def test_action_response_json_schema_is_shared_single_source_of_truth():
     from vlm_client import ACTION_RESPONSE_JSON_SCHEMA as SCHEMA_REF
 
     assert SCHEMA_REF is ACTION_RESPONSE_JSON_SCHEMA
+    # fill_profile joined the action enum 2026-09-14 (ruling #7) — this
+    # backend reuses the exact same object Claude's client does, so the
+    # updated set proves that sharing still holds, not that it broke.
     assert set(ACTION_RESPONSE_JSON_SCHEMA["properties"]["action"]["enum"]) == {
         "click",
         "type",
         "scroll",
         "done",
+        "fill_profile",
     }
 
 
