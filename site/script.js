@@ -86,6 +86,111 @@
     if (skip) skip.addEventListener("click", finish);
   }
 
+  /* ------------------------------ LIVE PROOF ------------------------------ */
+  /* Polls the local server's counts-only feed. Everything about this degrades
+     to "offline": no server, a deployed page blocked by mixed content, a
+     firewall — all land in the same place, a panel that plainly says it has
+     nothing rather than inventing something. */
+  (function liveProof() {
+    var panel  = document.getElementById("live-panel");
+    var rows   = document.getElementById("live-rows");
+    var statusText = document.getElementById("live-status-text");
+    if (!panel || !rows || !statusText) return;
+
+    var ENDPOINT = "http://127.0.0.1:8000/recent";
+    var FAST = 2000;    // polling while the section is on screen
+    var SLOW = 15000;   // backed off after repeated failures
+    var timer = null, inView = false, misses = 0, lastSeq = 0;
+
+    function setState(cls, text) {
+      panel.classList.remove("is-live", "is-waiting", "is-offline");
+      panel.classList.add(cls);
+      statusText.textContent = text;
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+      });
+    }
+
+    function render(entries) {
+      if (!entries.length) {
+        rows.innerHTML = '<tr class="live-empty"><td colspan="7">' +
+          "Connected — waiting for the first request. Run the agent loop." +
+          "</td></tr>";
+        return;
+      }
+      var html = entries.map(function (e) {
+        var isNew = e.seq > lastSeq;
+        var time = e.at.slice(11, 19);
+        var types = e.regionTypes && e.regionTypes.length ? e.regionTypes.join(" · ") : "—";
+        return '<tr class="' + (isNew ? "live-row-new" : "") + '">' +
+          '<td><span class="live-seq">#' + esc(e.seq) + "</span> " + esc(time) + "</td>" +
+          "<td>" + esc(e.domNodes) + "</td>" +
+          "<td>" + esc(e.sensitiveNodes) + "</td>" +
+          "<td>" + esc(e.redactedRegions) +
+            ' <span class="dim">(' + esc(e.domSourced) + " dom + " + esc(e.visionSourced) + " vision)</span></td>" +
+          '<td class="live-types">' + esc(types) + "</td>" +
+          "<td>" + esc(e.action) + "</td>" +
+          '<td class="live-pass">' + esc(e.leakCheck) + "</td>" +
+          "</tr>";
+      }).join("");
+      rows.innerHTML = html;
+      lastSeq = Math.max.apply(null, entries.map(function (e) { return e.seq; }));
+    }
+
+    function schedule() {
+      if (timer) clearTimeout(timer);
+      if (!inView) return;
+      timer = setTimeout(poll, misses >= 3 ? SLOW : FAST);
+    }
+
+    function poll() {
+      if (!inView) return;
+      // AbortController keeps a hung request from stacking up behind the timer.
+      var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var killer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 1800);
+
+      fetch(ENDPOINT, { signal: ctrl ? ctrl.signal : undefined, cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error("bad status"); return r.json(); })
+        .then(function (data) {
+          clearTimeout(killer);
+          misses = 0;
+          var entries = (data && data.entries) || [];
+          setState(entries.length ? "is-live" : "is-waiting",
+            entries.length ? "Live — " + entries.length + " recent request" + (entries.length === 1 ? "" : "s")
+                           : "Connected — no requests yet");
+          render(entries);
+          schedule();
+        })
+        .catch(function () {
+          clearTimeout(killer);
+          misses++;
+          setState("is-offline", "Server not reachable at 127.0.0.1:8000 — start it to see live requests");
+          if (misses === 1) {
+            rows.innerHTML = '<tr class="live-empty"><td colspan="7">' +
+              "This panel only fills in while the local server is running and the extension is " +
+              "working. It has nothing to show otherwise, and does not pretend to." +
+              "</td></tr>";
+          }
+          schedule();
+        });
+    }
+
+    // Only poll while the section is actually on screen.
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (entries) {
+        inView = entries[0].isIntersecting;
+        if (inView) poll();
+        else if (timer) { clearTimeout(timer); timer = null; }
+      }, { threshold: 0.05 }).observe(panel);
+    } else {
+      inView = true;
+      poll();
+    }
+  })();
+
   /* ----------------------------- SCROLL REVEAL ---------------------------- */
   var targets = document.querySelectorAll(".reveal");
 

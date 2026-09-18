@@ -303,10 +303,42 @@ code { font-family: var(--mono); font-size: 0.88em; }
   position: absolute; top: 120px; left: 66%; transform: translateX(-50%);
   z-index: 2; width: clamp(170px, 20vw, 258px);
 }
-.hero-media img { width: 100%; filter: grayscale(100%) contrast(1.05); }
+.hero-media img {
+  width: 100%;
+  filter: grayscale(100%) contrast(1.05);
+  animation: feedFlicker 7s steps(1, end) infinite;
+}
 .hero-redaction {
   position: absolute; left: 6%; right: 6%; top: 41%;
   height: 14%; background: var(--color-dark);
+  animation: barFlicker 7s steps(1, end) infinite;
+}
+
+/* The bar reads as redaction being applied live rather than as a static
+   graphic. Deliberately restrained and mostly-on: the face is only ever
+   glimpsed in sub-100ms frames, and the loop always settles fully redacted.
+   steps(1, end) keeps it snapping between states like a failing monitor
+   instead of smoothly fading, which would look like a fade-in effect. */
+@keyframes barFlicker {
+  0%, 44%   { opacity: 1; transform: translateX(0); }
+  45%       { opacity: 0.12; transform: translateX(-2px); }
+  46%       { opacity: 1; transform: translateX(1px); }
+  47%       { opacity: 0.35; transform: translateX(0); }
+  48%, 81%  { opacity: 1; transform: translateX(0); }
+  82%       { opacity: 0.08; transform: translateX(2px); }
+  83%       { opacity: 1; transform: translateX(0); }
+  84%       { opacity: 0.5;  transform: translateX(-1px); }
+  85%, 100% { opacity: 1; transform: translateX(0); }
+}
+/* A matching brightness twitch on the photograph itself, so the flicker reads
+   as the whole feed glitching rather than the bar sliding around on top of a
+   stable image. */
+@keyframes feedFlicker {
+  0%, 44%   { filter: grayscale(100%) contrast(1.05) brightness(1); }
+  45%       { filter: grayscale(100%) contrast(1.22) brightness(1.1); }
+  48%, 81%  { filter: grayscale(100%) contrast(1.05) brightness(1); }
+  82%       { filter: grayscale(100%) contrast(1.22) brightness(1.08); }
+  85%, 100% { filter: grayscale(100%) contrast(1.05) brightness(1); }
 }
 
 .hero-statement { position: absolute; left: var(--pad); bottom: 56px; z-index: 3; max-width: 46ch; }
@@ -475,7 +507,52 @@ code { font-family: var(--mono); font-size: 0.88em; }
 .term-cursor.is-hidden { display: none; }
 @keyframes blink { to { visibility: hidden; } }
 
-/* -------------------------------- §4 LAYERS -------------------------------- */
+/* ------------------------------ §4 LIVE PROOF ------------------------------ */
+.live { border-top: 2px solid var(--color-dark); }
+.live-bar {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--space-md); flex-wrap: wrap;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.live-status {
+  display: flex; align-items: center; gap: var(--space-sm);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.live-hint { font-size: 11px; color: var(--color-muted); }
+
+/* State is carried by shape, not colour alone: offline is a hollow ring, live
+   is a filled dot that pulses, waiting is filled and still. Colour is a second
+   signal, never the only one. */
+.live-dot {
+  width: 9px; height: 9px; flex: none;
+  border: 1.5px solid currentColor; border-radius: 50%;
+  background: transparent;
+}
+.live.is-waiting .live-dot { background: currentColor; }
+.live.is-live .live-dot { background: currentColor; animation: livePulse 1.4s ease-in-out infinite; }
+.live.is-live .live-status { color: #2F6B3E; }
+.live.is-offline .live-status { color: var(--color-muted); }
+@keyframes livePulse { 50% { opacity: 0.25; } }
+
+.live-table { font-variant-numeric: tabular-nums; }
+.live-table td { font-size: 13px; }
+.live-table .live-empty td {
+  color: var(--color-muted); font-size: 13px; text-align: left;
+  padding-top: var(--space-lg); padding-bottom: var(--space-lg);
+}
+.live-seq { font-family: var(--mono); font-size: 12px; color: var(--color-muted); }
+.live-types { font-family: var(--mono); font-size: 11px; }
+/* Qualified with the table class on purpose: `.results-table td` is (0,1,1)
+   and a bare `.live-pass` is (0,1,0), so the unqualified rule lost and the
+   green silently never applied. Caught by measuring the rendered colour, not
+   by reading the stylesheet. */
+.live-table td.live-pass { color: #2F6B3E; font-weight: 600; }
+/* A row arriving should be noticeable without being a light show. */
+.live-row-new { animation: liveIn 500ms var(--ease); }
+@keyframes liveIn { from { opacity: 0; transform: translateY(-4px); } }
+
+/* -------------------------------- §5 LAYERS -------------------------------- */
 .layers { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-xl); }
 .layer { padding-top: var(--space-lg); border-top: 2px solid var(--color-dark); }
 .layer-index {
@@ -625,4 +702,8 @@ code { font-family: var(--mono); font-size: 0.88em; }
   }
   .js .reveal { opacity: 1; transform: none; }
   .term-cursor { animation: none; }
+  /* Explicit, not left to the blanket duration override: the hero flicker must
+     come to rest FULLY REDACTED, never mid-glitch with the face showing. */
+  .hero-redaction { animation: none; opacity: 1; transform: none; }
+  .hero-media img { animation: none; filter: grayscale(100%) contrast(1.05); }
 }

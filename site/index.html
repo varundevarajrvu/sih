@@ -22,7 +22,7 @@
   <div class="announce-inner">
     <p class="announce-msg">SIH 26171 — On-Device Visual Perception for Lightweight Browser Agents</p>
     <ul class="announce-links">
-      <li>666 tests green</li>
+      <li>673 tests green</li>
       <li aria-hidden="true" class="announce-sep">|</li>
       <li>0 network calls for inference</li>
     </ul>
@@ -53,6 +53,7 @@
       <nav class="nav-utility" aria-label="Secondary">
         <ul>
           <li><a href="#replay">Replay</a></li>
+          <li><a href="#live">Live</a></li>
           <li><a href="#results">Numbers</a></li>
           <li class="u-hide-sm"><a href="#architecture">Build</a></li>
           <li><a href="#limitations">Limits</a></li>
@@ -81,6 +82,7 @@
   </nav>
   <ul class="mobile-nav-sub">
     <li><a href="#replay">Console replay</a></li>
+    <li><a href="#live">Live proof</a></li>
     <li><a href="#architecture">Architecture</a></li>
     <li><a href="#limitations">Limitations</a></li>
   </ul>
@@ -263,7 +265,7 @@
         A separate run with the mock ID card fully inside the captured viewport measured
         <strong>detections: 3</strong> · <strong>regions: 7</strong> (4 DOM-sourced + 3 vision-sourced) —
         <code>captureVisibleTab</code> only sees the viewport, so what&rsquo;s on-screen when the shutter fires
-        is what the vision half can act on. More on this in §8.
+        is what the vision half can act on. More on this in §9.
       </p>
     </div>
   </section>
@@ -311,18 +313,80 @@
           <div class="term-line dim">"text matches destructive-intent keyword "place order"; id matches destructive-intent keyword "place order""</div>
 
           <div class="term-line divider">————————————————————————————————————</div>
-          <div class="term-line ok">666/666 tests passing · peak JS heap 30–35MB · zero network calls for inference</div>
+          <div class="term-line ok">673/673 tests passing · peak JS heap 30–35MB · zero network calls for inference</div>
           <span class="term-cursor is-hidden" id="term-cursor" aria-hidden="true"></span>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ===================== §4 LAYERS ===================== -->
-  <section id="layers" class="section section--surface">
+  <!-- ===================== §4 LIVE PROOF ===================== -->
+  <section id="live" class="section section--surface">
     <div class="wrap">
       <div class="section-head reveal">
-        <p class="eyebrow"><span class="section-number">§4</span> The three layers</p>
+        <p class="eyebrow"><span class="section-number">§4</span> Live proof</p>
+        <h2 class="section-title">Not a recording. Whatever<br>the server just received.</h2>
+        <p class="lede">
+          §3 is a replay of runs that already happened. This panel is not — it polls the local
+          server and reports what it actually got, request by request, while you run the extension.
+          It stays empty until something real arrives.
+        </p>
+      </div>
+
+      <div class="live reveal" id="live-panel">
+        <div class="live-bar">
+          <p class="live-status" id="live-status" aria-live="polite">
+            <span class="live-dot" id="live-dot" aria-hidden="true"></span>
+            <span id="live-status-text">Connecting to 127.0.0.1:8000…</span>
+          </p>
+          <p class="live-hint">Counts only — this endpoint carries no page text by construction</p>
+        </div>
+
+        <div class="live-body">
+          <div class="table-wrap">
+            <table class="results-table live-table">
+              <thead>
+                <tr>
+                  <th scope="col">Received</th>
+                  <th scope="col">DOM nodes</th>
+                  <th scope="col">Sensitive</th>
+                  <th scope="col">Regions redacted</th>
+                  <th scope="col">Types</th>
+                  <th scope="col">Action</th>
+                  <th scope="col">Egress check</th>
+                </tr>
+              </thead>
+              <tbody id="live-rows">
+                <tr class="live-empty">
+                  <td colspan="7">Waiting for the first request…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <p class="note reveal">
+        <strong>Why this is only counts.</strong> The panel is served cross-origin to a static page,
+        which makes it a data-egress path in exactly the sense §1 is about — the endpoint that reports
+        on redaction must not become the leak. So <code>RequestSummary</code> has no free-text field at
+        all: every value is an integer or a member of a closed enum the schema layer already validates.
+        A test plants a sentinel string in every free-text field of a request and asserts it appears
+        nowhere in the serialized feed. It reports that redaction happened; it cannot report what was
+        redacted.
+      </p>
+      <p class="note reveal">
+        Nothing here works without the local server on <code>127.0.0.1:8000</code> — that is the point.
+        A live panel on a deployed page with no extension behind it would be an animation, not proof.
+      </p>
+    </div>
+  </section>
+
+  <!-- ===================== §5 LAYERS ===================== -->
+  <section id="layers" class="section">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <p class="eyebrow"><span class="section-number">§5</span> The three layers</p>
         <h2 class="section-title">Each one fails<br>safe on its own.</h2>
       </div>
 
@@ -358,11 +422,11 @@
     </div>
   </section>
 
-  <!-- ===================== §5 SCENARIOS ===================== -->
+  <!-- ===================== §6 SCENARIOS ===================== -->
   <section id="scenarios" class="section">
     <div class="wrap">
       <div class="section-head reveal">
-        <p class="eyebrow"><span class="section-number">§5</span> Five scenarios</p>
+        <p class="eyebrow"><span class="section-number">§6</span> Five scenarios</p>
         <h2 class="section-title">The policy discriminates.<br>It doesn&rsquo;t just say no.</h2>
       </div>
 
@@ -418,11 +482,11 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
     </div>
   </section>
 
-  <!-- ===================== §6 RESULTS ===================== -->
+  <!-- ===================== §7 RESULTS ===================== -->
   <section id="results" class="section section--surface">
     <div class="wrap">
       <div class="section-head reveal">
-        <p class="eyebrow"><span class="section-number">§6</span> Measured results</p>
+        <p class="eyebrow"><span class="section-number">§7</span> Measured results</p>
         <h2 class="section-title">Real numbers from browser<br>runs, not estimates.</h2>
       </div>
 
@@ -450,7 +514,7 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
       </p>
 
       <div class="chips reveal">
-        <span class="chip"><b>666</b> tests, all green — 466 Node + 200 pytest</span>
+        <span class="chip"><b>673</b> tests, all green — 466 Node + 207 pytest</span>
         <span class="chip"><b>Xenova/yolos-tiny</b> on WebGPU, WASM fallback</span>
         <span class="chip"><b>0</b> network calls for inference — ONNX runtime + weights bundled locally</span>
         <span class="chip"><b>detections: 3, regions: 7</b> (4 DOM + 3 vision), one full run</span>
@@ -458,11 +522,11 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
     </div>
   </section>
 
-  <!-- ===================== §7 ARCHITECTURE ===================== -->
+  <!-- ===================== §8 ARCHITECTURE ===================== -->
   <section id="architecture" class="section">
     <div class="wrap">
       <div class="section-head reveal">
-        <p class="eyebrow"><span class="section-number">§7</span> Architecture &amp; stack</p>
+        <p class="eyebrow"><span class="section-number">§8</span> Architecture &amp; stack</p>
         <h2 class="section-title">Client does the seeing.<br>Server never gets<br>the chance to.</h2>
       </div>
 
@@ -480,7 +544,7 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
             The content script does two jobs. It stamps a stable <code>data-agent-id</code> on every
             actionable element (Set-of-Mark grounding) so the model refers to elements by ID, never by
             pixel coordinates — an action can&rsquo;t drift between the screenshot the model saw and the
-            DOM it acts on. And it runs the DOM PII scan and the two action guards described in §4.
+            DOM it acts on. And it runs the DOM PII scan and the two action guards described in §5.
           </p>
           <p>
             The server is a single FastAPI endpoint, <code>/analyze</code>, with strict Pydantic request
@@ -525,18 +589,18 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
     </div>
   </section>
 
-  <!-- ===================== §8 LIMITATIONS ===================== -->
+  <!-- ===================== §9 LIMITATIONS ===================== -->
   <section id="limitations" class="section section--dark">
     <div class="wrap">
       <div class="section-head reveal">
-        <p class="eyebrow"><span class="section-number">§8</span> Honest limitations</p>
+        <p class="eyebrow"><span class="section-number">§9</span> Honest limitations</p>
         <h2 class="section-title">Named here first, because<br>judges find them anyway.</h2>
       </div>
 
       <dl class="limits reveal">
         <div class="limit">
           <dt>Viewport only</dt>
-          <dd><code>captureVisibleTab</code> can&rsquo;t see below the fold. Content off-screen is invisible to the vision layer — it&rsquo;s why the ID-card detections in §2/§6 depend on the card being scrolled into view.</dd>
+          <dd><code>captureVisibleTab</code> can&rsquo;t see below the fold. Content off-screen is invisible to the vision layer — it&rsquo;s why the ID-card detections in §2/§7 depend on the card being scrolled into view.</dd>
         </div>
         <div class="limit">
           <dt>One iframe deep</dt>

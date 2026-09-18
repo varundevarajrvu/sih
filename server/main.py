@@ -54,6 +54,7 @@ Run with:
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -62,6 +63,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 import debug_dump
+import live_feed
 from schemas import ActionResponse, AnalyzeRequest, ModelSuppliedProfileValue, PIILeakDetected, find_pii_leaks
 from vlm_client import VLMClient, VLMRequestContext, build_prompt, get_vlm_client
 
@@ -213,6 +215,17 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/recent")
+def recent() -> dict[str, Any]:
+    """Counts-only live feed of recent /analyze requests, for the showcase site.
+
+    Served cross-origin to a static page, so read live_feed.py's docstring
+    before adding a field: RequestSummary is free-text-free BY CONSTRUCTION,
+    and that is the only thing making this endpoint safe to expose at all.
+    """
+    return {"entries": live_feed.feed.recent(), "max": live_feed.MAX_ENTRIES}
+
+
 @app.post("/analyze", response_model=ActionResponse)
 def analyze(
     request: AnalyzeRequest = Depends(get_validated_analyze_request),
@@ -250,7 +263,13 @@ def analyze(
         ) from exc
 
     try:
-        return ActionResponse.model_validate(raw_action)
+        action = ActionResponse.model_validate(raw_action)
+        # Recorded only after the payload cleared find_pii_leaks() and the
+        # action cleared schema validation, so the feed can only ever describe
+        # requests that actually completed. Counts and closed-enum values only
+        # — see live_feed.py's docstring for why that is structural here.
+        live_feed.feed.record(request, action)
+        return action
     except ValidationError as exc:
         # The VLM (or mock) returned something that doesn't match the
         # strict action schema — e.g. an improvised action name. Fail
