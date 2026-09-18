@@ -366,220 +366,7 @@ code { font-family: var(--mono); font-size: 0.88em; }
 
 /* The redacted face, overlapping the typography — the site's own subject
    matter used as its hero image. */
-.hero-media {
-  position: absolute; top: 120px; left: 66%; transform: translateX(-50%);
-  z-index: 2; width: clamp(170px, 20vw, 258px);
-}
 
-/* THE SCAN PASS. Replaces an earlier effect that blinked the whole plate in
-   and out to expose the wordmark behind it. That was removed: a photograph
-   flickering on and off reads as cheap, and it was competing with both the
-   glitch on the same element and the shader behind it — three things moving
-   for attention in one hero.
-   This does the opposite. One slow, deliberate element travels down the
-   portrait: a soft band with a bright leading edge, like a detector pass.
-   It is on-message rather than decorative — scanning a page for what must be
-   hidden is literally what the product does — and it never touches the
-   plate's opacity, so the redaction stays solid at every moment. */
-.hero-scanline {
-  position: absolute;
-  left: -8%; right: -8%; top: 0;
-  height: 24%;
-  z-index: 6;
-  pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    rgba(130, 195, 255, 0)    0%,
-    rgba(130, 195, 255, 0.05) 52%,
-    rgba(165, 215, 255, 0.34) 84%,
-    rgba(225, 242, 255, 0.85) 95%,
-    rgba(225, 242, 255, 0)    100%
-  );
-  mix-blend-mode: screen;
-  animation: scanSweep 4.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-}
-/* Band is 24% of the plate, so -100% parks it just above the top edge and
-   417% carries its leading edge just past the bottom. The pause at the end is
-   deliberate — a continuously cycling line is a barber's pole, not a scan. */
-@keyframes scanSweep {
-  0%       { transform: translateY(-100%); opacity: 0; }
-  6%       { opacity: 1; }
-  62%      { opacity: 1; }
-  70%      { transform: translateY(417%); opacity: 0; }
-  100%     { transform: translateY(417%); opacity: 0; }
-}
-/* ---- The glitched feed -------------------------------------------------
-   Four layers, all driven off one 7s cycle so the hits land together and
-   read as a single fault rather than four unrelated loops:
-     img              base plate — jitters and blows out on a hit
-     ::before/::after displaced slices, tinted cyan and red, screen-blended,
-                      which is what produces the channel-split look on a
-                      grayscale source
-     .hero-redaction  the bar, which tears with everything else
-     .hero-scan       scanlines, always present, slowly rolling
-   Hits are at ~12%, ~45% and ~82% of the cycle; the rest of the time this
-   sits still, because a permanently glitching image is noise, not a glitch. */
-.hero-media img {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  filter: grayscale(100%) contrast(1.05);
-  animation: feedFlicker 4.5s steps(1, end) infinite;
-}
-
-.hero-media::before,
-.hero-media::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-size: 100% 100%, 100% 100%;
-  background-position: center, center;
-  /* The tint is a solid colour MULTIPLIED into the photo, then the result is
-     screened over the base plate. sepia()+hue-rotate() was tried first and
-     washed out: screening a merely-desaturated copy over an already-bright
-     face adds luminance but no visible chroma. Multiplying a saturated colour
-     in first guarantees the slice actually carries colour to split. */
-  background-blend-mode: multiply;
-  mix-blend-mode: screen;
-  opacity: 0;
-  pointer-events: none;
-}
-.hero-media::before {
-  z-index: 2;
-  background-image:
-    linear-gradient(rgba(0, 190, 255, 0.95), rgba(0, 190, 255, 0.95)),
-    url("assets/id-card-face.jpg");
-  animation: glitchA 4.5s steps(1, end) infinite;
-}
-.hero-media::after {
-  z-index: 3;
-  background-image:
-    linear-gradient(rgba(255, 45, 70, 0.95), rgba(255, 45, 70, 0.95)),
-    url("assets/id-card-face.jpg");
-  animation: glitchB 4.5s steps(1, end) infinite;
-}
-
-.hero-scan {
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0) 0px,
-    rgba(0, 0, 0, 0) 2px,
-    rgba(0, 0, 0, 0.30) 3px,
-    rgba(0, 0, 0, 0.30) 4px
-  );
-  opacity: 0.5;
-  animation: scanRoll 5.5s linear infinite;
-}
-@keyframes scanRoll { to { background-position: 0 96px; } }
-
-/* Four hit clusters per 4.5s cycle, at ~10%, ~33%, ~58% and ~86%, each 2-3
-   sub-frames long. Bands deliberately avoid sitting only where the redaction
-   bar is (41-55%) — a slice hidden behind the bar is work nobody sees. */
-
-/* Cyan slice. */
-@keyframes glitchA {
-  0%, 9.9%   { opacity: 0; }
-  10%        { opacity: 0.95; clip-path: inset(8% 0 64% 0);  transform: translateX(-14px); }
-  11.4%      { opacity: 0.8;  clip-path: inset(30% 0 48% 0); transform: translateX(9px); }
-  12.8%      { opacity: 0; }
-  32.9%      { opacity: 0; }
-  33%        { opacity: 0.95; clip-path: inset(58% 0 18% 0); transform: translateX(15px); }
-  34.4%      { opacity: 0.75; clip-path: inset(72% 0 6% 0);  transform: translateX(-8px); }
-  35.6%      { opacity: 0; }
-  57.9%      { opacity: 0; }
-  58%        { opacity: 0.95; clip-path: inset(20% 0 56% 0); transform: translateX(-17px); }
-  59.3%      { opacity: 0.85; clip-path: inset(66% 0 10% 0); transform: translateX(7px); }
-  60.6%      { opacity: 0.7;  clip-path: inset(4% 0 80% 0);  transform: translateX(12px); }
-  61.9%      { opacity: 0; }
-  85.9%      { opacity: 0; }
-  86%        { opacity: 0.9;  clip-path: inset(14% 0 68% 0); transform: translateX(-10px); }
-  87.4%      { opacity: 0; }
-  100%       { opacity: 0; }
-}
-/* Red slice — different bands, opposite displacement. The offset between the
-   two layers is the whole effect. */
-@keyframes glitchB {
-  0%, 9.9%   { opacity: 0; }
-  10%        { opacity: 0.9;  clip-path: inset(62% 0 14% 0); transform: translateX(12px); }
-  11.4%      { opacity: 0.75; clip-path: inset(76% 0 4% 0);  transform: translateX(-9px); }
-  12.8%      { opacity: 0; }
-  32.9%      { opacity: 0; }
-  33%        { opacity: 0.9;  clip-path: inset(10% 0 70% 0); transform: translateX(-13px); }
-  34.4%      { opacity: 0.8;  clip-path: inset(26% 0 58% 0); transform: translateX(10px); }
-  35.6%      { opacity: 0; }
-  57.9%      { opacity: 0; }
-  58%        { opacity: 0.9;  clip-path: inset(68% 0 8% 0);  transform: translateX(16px); }
-  59.3%      { opacity: 0.8;  clip-path: inset(6% 0 76% 0);  transform: translateX(-11px); }
-  60.6%      { opacity: 0.7;  clip-path: inset(34% 0 44% 0); transform: translateX(6px); }
-  61.9%      { opacity: 0; }
-  85.9%      { opacity: 0; }
-  86%        { opacity: 0.9;  clip-path: inset(70% 0 10% 0); transform: translateX(11px); }
-  87.4%      { opacity: 0; }
-  100%       { opacity: 0; }
-}
-.hero-redaction {
-  position: absolute; left: 6%; right: 6%; top: 41%;
-  height: 14%; background: var(--color-dark);
-  z-index: 4;
-  animation: barFlicker 4.5s steps(1, end) infinite;
-}
-
-/* The bar reads as redaction being applied live rather than as a static
-   graphic. Deliberately restrained and mostly-on: the face is only ever
-   glimpsed in sub-100ms frames, and the loop always settles fully redacted.
-   steps(1, end) keeps it snapping between states like a failing monitor
-   instead of smoothly fading, which would look like a fade-in effect. */
-/* The bar tears with the rest of the feed — same hit timings, so it reads as
-   one fault across the whole image. Always returns to fully opaque: the face
-   is only ever uncovered for single sub-100ms frames, never at rest. */
-@keyframes barFlicker {
-  0%, 9.9%   { opacity: 1; transform: none; }
-  10%        { opacity: 0.16; transform: translateX(-7px) skewX(-7deg); }
-  11.4%      { opacity: 1;    transform: translateX(4px); }
-  12.8%      { opacity: 1; transform: none; }
-  32.9%      { opacity: 1; transform: none; }
-  33%        { opacity: 0.1;  transform: translateX(10px) skewX(8deg); }
-  34.4%      { opacity: 0.55; transform: translateX(-5px) skewX(-4deg); }
-  35.6%      { opacity: 1; transform: none; }
-  57.9%      { opacity: 1; transform: none; }
-  58%        { opacity: 0.08; transform: translateX(-12px) skewX(9deg); }
-  59.3%      { opacity: 1;    transform: translateX(6px) skewX(-3deg); }
-  60.6%      { opacity: 0.4;  transform: translateX(-3px); }
-  61.9%      { opacity: 1; transform: none; }
-  85.9%      { opacity: 1; transform: none; }
-  86%        { opacity: 0.2;  transform: translateX(8px) skewX(-6deg); }
-  87.4%      { opacity: 1; transform: none; }
-  100%       { opacity: 1; transform: none; }
-}
-/* A matching brightness twitch on the photograph itself, so the flicker reads
-   as the whole feed glitching rather than the bar sliding around on top of a
-   stable image. */
-/* The base plate: tears sideways and blows out on each hit, sits perfectly
-   still between them. scaleY on the tear frames is what sells it as a signal
-   fault rather than a slide. */
-@keyframes feedFlicker {
-  0%, 9.9%   { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-  10%        { filter: grayscale(100%) contrast(1.45) brightness(1.3); transform: translateX(-5px) scaleY(1.014); }
-  11.4%      { filter: grayscale(100%) contrast(1.2) brightness(0.84); transform: translateX(4px); }
-  12.8%      { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-  32.9%      { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-  33%        { filter: grayscale(100%) contrast(1.55) brightness(1.35); transform: translateX(7px) scaleY(0.986); }
-  34.4%      { filter: grayscale(100%) contrast(1.2) brightness(0.8);  transform: translateX(-6px); }
-  35.6%      { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-  57.9%      { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-  58%        { filter: grayscale(100%) contrast(1.6) brightness(1.4);  transform: translateX(-8px) scaleY(1.018); }
-  59.3%      { filter: grayscale(100%) contrast(1.15) brightness(0.78); transform: translateX(6px) scaleY(0.99); }
-  60.6%      { filter: grayscale(100%) contrast(1.35) brightness(1.15); transform: translateX(-3px); }
-  61.9%      { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-  85.9%      { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-  86%        { filter: grayscale(100%) contrast(1.45) brightness(1.28); transform: translateX(5px) scaleY(1.01); }
-  87.4%      { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-  100%       { filter: grayscale(100%) contrast(1.05) brightness(1); transform: none; }
-}
 
 .hero-statement { position: absolute; left: var(--pad); bottom: 56px; z-index: 3; max-width: 46ch; }
 .hero-statement h1 {
@@ -904,10 +691,8 @@ code { font-family: var(--mono); font-size: 0.88em; }
    centred with translateX(-50%); without composing the two explicitly the
    entrance silently un-centres them and the wordmark runs off the viewport.
    Composed here rather than reaching for a wrapper element. */
-.js .hero-word.enter,
-.js .hero-media.enter { transform: translateX(-50%) translateY(20px); }
-.js .hero-word.enter.is-in,
-.js .hero-media.enter.is-in { transform: translateX(-50%); }
+.js .hero-word.enter { transform: translateX(-50%) translateY(20px); }
+.js .hero-word.enter.is-in { transform: translateX(-50%); }
 
 /* The nav is the one element that does not stagger: a single slide-down from
    y -20, same 0.5s. */
@@ -947,21 +732,18 @@ code { font-family: var(--mono); font-size: 0.88em; }
     padding: var(--space-xl) var(--pad) var(--space-2xl);
     display: flex; flex-direction: column; align-items: flex-start;
   }
-  .hero-copy, .hero-word, .hero-media, .hero-statement, .hero-meta {
+  .hero-copy, .hero-word, .hero-statement, .hero-meta {
     position: static; transform: none;
   }
   /* No centring transform to preserve down here — these are static, so the
      entrance translate stands alone again. */
-  .js .hero-word.enter,
-  .js .hero-media.enter { transform: translateY(20px); }
-  .js .hero-word.enter.is-in,
-  .js .hero-media.enter.is-in { transform: none; }
+  .js .hero-word.enter { transform: translateY(20px); }
+  .js .hero-word.enter.is-in { transform: none; }
   .hero-word {
     width: auto; text-align: left;
     margin: var(--space-xl) 0 var(--space-lg);
     font-size: clamp(40px, 15vw, 72px);
   }
-  .hero-media { width: 62%; align-self: center; margin-bottom: var(--space-xl); }
   .hero-statement { max-width: none; margin-bottom: var(--space-xl); }
   .hero-actions { flex-wrap: wrap; gap: var(--space-md); }
   .hero-meta { text-align: left; }
@@ -993,15 +775,4 @@ code { font-family: var(--mono); font-size: 0.88em; }
   .hero-canvas { animation: none; opacity: 1; }
   .btn:hover, .btn:active { transform: none; }
   .btn:hover .btn-arrow { transform: none; }
-  /* Explicit, not left to the blanket duration override: the whole feed must
-     come to rest CLEAN AND FULLY REDACTED, never parked mid-tear with a
-     displaced slice or an uncovered face. */
-  .hero-redaction { animation: none; opacity: 1; transform: none; }
-  .hero-media img { animation: none; filter: grayscale(100%) contrast(1.05); transform: none; }
-  .hero-media::before,
-  .hero-media::after { animation: none; opacity: 0; }
-  .hero-scan { animation: none; }
-  /* The plate stays put and stays opaque, and the scan pass does not run. */
-  .js .hero-media.is-settled { animation: none; opacity: 1; }
-  .hero-scanline { animation: none; opacity: 0; }
 }
