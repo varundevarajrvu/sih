@@ -213,6 +213,49 @@ class VLMClient(ABC):
 
 
 # ---------------------------------------------------------------------------
+# Observe-only implementation — for running the pipeline against REAL
+# websites without ever touching them.
+# ---------------------------------------------------------------------------
+
+
+class ObserveOnlyVLMClient(VLMClient):
+    """Always returns `done`. Never calls a model, never selects a target.
+
+    WHY THIS EXISTS: every browser verification in this project to date
+    has run against `demo/test-page.html` — a fixture in this repo, built
+    to exercise the paths it tests. The capture/scan/redact pipeline has
+    therefore never met a real website's DOM: hundreds of actionable
+    elements, third-party ad iframes, framework-generated markup, real
+    shadow roots. That is the largest untested surface in the build.
+
+    Pointing the NORMAL loop at a real site is not an acceptable way to
+    find out. `content.js` runs up to MAX_STEPS=25 steps dispatching real
+    clicks and keystrokes; `action-risk.js` is text-based and openly
+    cannot classify an icon-only control; and a live site may be
+    logged-in, transactional, or both. The irreversible-action guard is a
+    safety net, not a licence to let an autonomous agent loose on
+    somebody's account.
+
+    This backend removes the risk at the source rather than relying on a
+    guard to catch it. The client still performs capture -> detect ->
+    scan -> rank -> redact -> assert -> POST in full, so every stage
+    produces real instrumentation on a real page; the server then replies
+    `done`, and the loop exits after exactly ONE step having mutated
+    nothing. Combined with DEBUG_DUMP_DIR, one run yields the transmitted
+    image and the exact transmitted payload for inspection.
+
+    Deliberately returns the PAGE_TARGET_ID sentinel rather than any
+    element id: `done` is ungated by the action guards (it neither writes
+    to nor triggers an element — see CLAUDE.md's Phase 3 safety ruling),
+    and naming no element is what makes "this cannot act" true by
+    construction rather than by policy.
+    """
+
+    def analyze(self, context: VLMRequestContext) -> dict[str, Any]:
+        return {"action": "done", "targetId": PAGE_TARGET_ID, "value": None}
+
+
+# ---------------------------------------------------------------------------
 # Mock implementation — deterministic, no network. Default and test backend.
 # ---------------------------------------------------------------------------
 
@@ -938,6 +981,8 @@ def get_vlm_client() -> VLMClient:
     backend = os.environ.get("VLM_BACKEND", "mock").strip().lower()
     if backend == "mock":
         return MockVLMClient()
+    if backend == "observe":
+        return ObserveOnlyVLMClient()
     if backend == "ollama":
         return OllamaVLMClient()
     if backend == "claude":
@@ -945,5 +990,6 @@ def get_vlm_client() -> VLMClient:
     if backend == "gemini":
         return GeminiVLMClient()
     raise ValueError(
-        f"Unknown VLM_BACKEND: {backend!r} (expected 'mock', 'ollama', 'claude', or 'gemini')"
+        f"Unknown VLM_BACKEND: {backend!r} (expected 'mock', 'observe', 'ollama', "
+        "'claude', or 'gemini')"
     )

@@ -20,7 +20,7 @@
 # =============================================================================
 
 param(
-    [ValidateSet("mock", "gemini", "claude", "ollama")]
+    [ValidateSet("mock", "observe", "gemini", "claude", "ollama")]
     [string]$Backend = "mock",
 
     [switch]$DebugDump
@@ -170,6 +170,14 @@ Write-Host ""
 Write-Host "  =======================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Stop everything:  .\stop-demo.ps1" -ForegroundColor Gray
+if ($Backend -eq "observe") {
+    Write-Host ""
+    Write-Host "  OBSERVE-ONLY BACKEND -- /analyze always replies 'done' on the page" -ForegroundColor Cyan
+    Write-Host "  sentinel, so the loop runs ONE full capture/scan/redact/send cycle" -ForegroundColor Cyan
+    Write-Host "  and then stops WITHOUT clicking or typing anything. This is the" -ForegroundColor Cyan
+    Write-Host "  only safe way to point the extension at a real website." -ForegroundColor Cyan
+    Write-Host "  The demo scenarios above will NOT act under this backend." -ForegroundColor DarkGray
+}
 if ($DebugDump) {
     Write-Host ""
     Write-Host "  DEBUG DUMP IS ON -- server\debug_dumps\ will fill with transmitted" -ForegroundColor Yellow
