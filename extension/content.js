@@ -1746,6 +1746,27 @@ async function runAgentLoop() {
   // not a MockVLMClient-specific hack.
   const actedAgentIds = new Set();
 
+  // PII-LEAK FIX (confirmed leak, see CLAUDE.md): agentId -> profileField,
+  // recorded on every SUCCESSFUL fill_profile act this run -- see the
+  // recording site near GUARD_REFUSAL_CODES's own "Record completed
+  // click/type targets" block, below, for why fill_profile is recorded
+  // HERE and not folded into that block.
+  //
+  // 🔴 Deliberately a SEPARATE run-scoped structure from actedAgentIds
+  // above, not merged into it, even though both exist for the same
+  // "don't re-offer an already-handled field" reason. actedAgentIds
+  // EXCLUDES its members from the next domSnapshot entirely (see that
+  // variable's own comment) -- doing the same for a fill_profile target
+  // would drop the node from the DOM JSON, yes, but would leave the
+  // vault value fully visible, unredacted, in the SCREENSHOT on every
+  // subsequent step: dropping a node from domSnapshot has no effect
+  // whatsoever on what's drawn from allSensitiveNodes/redactionInputNodes
+  // into the image. A vault-filled field must instead be RETAINED as a
+  // sensitive node on every remaining step (not hidden) so it keeps
+  // getting redacted -- see buildProfileVaultSensitiveNodes() in
+  // profile-vault.js, and its call site below, near allSensitiveNodes.
+  const filledProfileAgentIds = new Map();
+
   // WIRING PASS TASK 3: oldest-first action-signature history, fed to
   // stall-detector.js after every successfully executed non-"done" step.
   // See the stall-detection block near the end of the step loop, below.
@@ -1951,7 +1972,33 @@ async function runAgentLoop() {
     const subframeData = IS_TOP_FRAME
       ? await collectAndMergeSubframeReports()
       : { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [], framesReported: 0, framesMerged: 0, droppedFrames: [] };
-    const allSensitiveNodes = sensitiveNodes.concat(subframeData.sensitiveNodes);
+
+    // ---- PII-LEAK FIX (confirmed leak, see CLAUDE.md): a fill_profile
+    // target from a PRIOR step is exactly as sensitive as a page-sourced
+    // PII node and must be treated identically from here on -- stripped
+    // from the DOM JSON AND blacked out in the screenshot. Synthesized in
+    // the SAME shape dom-scanner emits ({selector, bbox, piiType,
+    // agentId}) via buildProfileVaultSensitiveNodes() (profile-vault.js),
+    // which:
+    //   - measures bbox FRESH from THIS step's idMap (the page can scroll
+    //     between steps; a cached bbox would black out the wrong spot on
+    //     THIS step's screenshot -- a wrong bbox is a leak that looks like
+    //     success),
+    //   - dedupes against agentIds dom-scanner/subframes already flagged
+    //     this step (an autocomplete="email"/"tel" field the vault filled
+    //     is normally already in sensitiveNodes on its own), and
+    //   - skips any agentId no longer resolvable in idMap (element
+    //     removed/replaced since the fill).
+    // See filledProfileAgentIds' own comment above runAgentLoop's
+    // declaration for why this is a separate run-scoped Map, never folded
+    // into actedAgentIds. ----
+    const profileVaultSensitiveNodes = ProfileVault.buildProfileVaultSensitiveNodes(
+      filledProfileAgentIds,
+      idMap,
+      new Set(sensitiveNodes.concat(subframeData.sensitiveNodes).map((n) => n.agentId)),
+      { computeSelector: DomScanner.computeSelector }
+    );
+    const allSensitiveNodes = sensitiveNodes.concat(subframeData.sensitiveNodes, profileVaultSensitiveNodes);
     const allUnscannableRegions = [...actionableUnscannable, ...scannerUnscannable, ...subframeData.unscannableRegions];
 
     instr.mark(step, "scan", {
@@ -2219,7 +2266,16 @@ async function runAgentLoop() {
       // wire.
       const payload = { image: redactedImage, domSnapshot: sanitizedDomSnapshot, redactedRegions, taskGoal };
       try {
-        assertNoRawPii(payload, sensitiveNodes, idMap);
+        // PII-LEAK FIX: checked against allSensitiveNodes (dom-scanner's own
+        // findings + any vault-filled nodes from a prior step), not just
+        // sensitiveNodes -- so this belt-and-suspenders check also verifies
+        // a fill_profile target's live raw value never survived sanitization,
+        // exactly like it already does for page-sourced PII. Subframe-sourced
+        // entries still can't resolve via this (top-frame-only) idMap and are
+        // silently skipped here, same as before this fix -- their own
+        // isolated world already ran this same check on its own live
+        // elements (see assertNoRawPii's own comment).
+        assertNoRawPii(payload, allSensitiveNodes, idMap);
       } catch (err) {
         instr.mark(step, "send", { attempt, error: err.message });
         section5Failed = true;
@@ -2451,6 +2507,26 @@ async function runAgentLoop() {
       actResult.targetId !== ActionExecutor.PAGE_TARGET_ID
     ) {
       actedAgentIds.add(actResult.targetId);
+    }
+
+    // PII-LEAK FIX: record a SUCCESSFUL fill_profile's target in its OWN
+    // set (filledProfileAgentIds), never actedAgentIds -- see that
+    // variable's own comment above runAgentLoop's declaration for why
+    // reusing the actedAgentIds gate here would only close HALF the leak
+    // (it would drop the node from the next domSnapshot's TEXT, but leave
+    // the vault value fully visible, unredacted, in the SCREENSHOT on every
+    // subsequent step). `action.profileField` (the CATEGORY name, e.g.
+    // "email") is not sensitive on its own and is safe to record/log here
+    // -- the vault VALUE itself was never available in this scope to begin
+    // with (dispatchFillProfile()'s result deliberately omits it, and
+    // action.value was already forced to null above).
+    if (
+      action.action === "fill_profile" &&
+      actResult &&
+      actResult.targetId &&
+      actResult.targetId !== ActionExecutor.PAGE_TARGET_ID
+    ) {
+      filledProfileAgentIds.set(actResult.targetId, action.profileField);
     }
 
     // ---- 9.5. WIRING PASS TASK 3 -- stall detection. Runs after a

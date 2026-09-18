@@ -158,6 +158,134 @@ export async function setProfile(storage, profile) {
 }
 
 // ---------------------------------------------------------------------------
+// PII-LEAK FIX (confirmed leak, see CLAUDE.md): a vault-filled node has NO
+// regex/autocomplete signature dom-scanner.js can catch on its own -- a
+// bare name has no PII pattern at all, unlike email/phone which dom-scanner
+// already flags independently via autocomplete/regex. Once fill_profile
+// writes a vault value into a field, that field's raw `.value` comes back
+// on the VERY NEXT scan (getAccessibleText() reads `.value`, by design --
+// see action-executor.js's own doc comment on that function), and with no
+// classifier watching for it, a bare name survives all the way into the
+// outgoing /analyze payload.
+//
+// The fix: content.js records every agentId a fill_profile action
+// successfully wrote to (a run-scoped Map<agentId, profileField>, kept
+// SEPARATE from actedAgentIds -- see that variable's own comment in
+// content.js for why merging the two would only close half the leak), and
+// on every subsequent step synthesizes sensitiveNode-shaped entries for
+// them via buildProfileVaultSensitiveNodes() below. Those entries are
+// concatenated into content.js's own `allSensitiveNodes` and get IDENTICAL
+// treatment to a page-sourced PII node from that point on -- stripped from
+// the DOM JSON (redaction.js's sanitizeDomSnapshot) AND blacked out on the
+// screenshot (redaction.js's redact()) -- with ZERO changes required to
+// either of those two existing, already-tested consumers.
+// ---------------------------------------------------------------------------
+
+/**
+ * Closed profileField -> PiiType mapping (server/schemas.py's PiiType is a
+ * CLOSED enum -- inventing a new member is a hard 422, never an option).
+ * "full_name" has no dedicated PiiType member, so it deliberately maps to
+ * "other", the enum's own explicit escape hatch (still flagged, still
+ * redacted, just unclassified -- see PiiType's own docstring). "email" and
+ * "phone" map to the same PiiType values dom-scanner.js already uses for
+ * autocomplete/regex-detected email/tel fields, so a vault-filled field of
+ * either kind reads identically to a page-sourced one downstream.
+ */
+export const PROFILE_FIELD_TO_PII_TYPE = Object.freeze({
+  full_name: "other",
+  email: "email",
+  phone: "tel",
+});
+
+/**
+ * Default bbox reader -- same shape/behavior as dom-scanner.js's own
+ * defaultGetBBox and action-executor.js's own defaultGetBBox (kept as a
+ * third, independent copy rather than importing either: this file has
+ * stayed free of any lib/*.js -> lib/*.js dependency so far, and a single
+ * three-line function isn't worth introducing one). Real geometry in a
+ * browser; all-zero under jsdom (no layout engine) -- inject
+ * `options.getBBox` in tests that need to assert on real geometry.
+ */
+function defaultGetBBox(el) {
+  if (!el || typeof el.getBoundingClientRect !== "function") {
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
+  const rect = el.getBoundingClientRect();
+  return {
+    x: rect.x ?? rect.left ?? 0,
+    y: rect.y ?? rect.top ?? 0,
+    w: rect.width ?? 0,
+    h: rect.height ?? 0,
+  };
+}
+
+/**
+ * Default selector -- deliberately NOT dom-scanner.js's own computeSelector
+ * (importing it would create the same new lib/*.js -> lib/*.js edge noted
+ * above, purely for what dom-scanner.js's own header already calls an
+ * "informational/debug field", never the actual re-location mechanism).
+ * content.js already has DomScanner loaded and should inject
+ * `options.computeSelector: DomScanner.computeSelector` for a richer
+ * selector; this fallback is a plain `data-agent-id` attribute selector,
+ * always resolvable since every entry here comes from a live `idMap`.
+ */
+function defaultComputeSelector(el) {
+  if (!el || typeof el.getAttribute !== "function") return "";
+  const agentId = el.getAttribute("data-agent-id");
+  return agentId ? `[data-agent-id="${agentId}"]` : "";
+}
+
+/**
+ * Build sensitiveNode-shaped entries ({selector, bbox, piiType, agentId} --
+ * byte-for-byte the same shape dom-scanner.js's scanForPii() emits) for
+ * every agentId a fill_profile action successfully wrote a vault value
+ * into, so far this run.
+ *
+ * @param {Map<string, string>} filledProfileAgentIds agentId -> profileField,
+ *   recorded by content.js on every SUCCESSFUL fill_profile act this run.
+ * @param {Map<string, Element>} idMap THIS STEP's live agentId -> Element
+ *   map (action-executor.buildDomSnapshot()'s own idMap) -- used both to
+ *   confirm the element is still resolvable and to measure bbox.
+ * @param {Set<string>|Array<string>} alreadyFlaggedAgentIds agentIds
+ *   dom-scanner (top frame + merged subframe reports) already flagged
+ *   THIS step -- deduped against so an autocomplete="email"/"tel" field
+ *   the vault just filled, which dom-scanner independently flags on its
+ *   own, is never double-added under a second entry.
+ * @param {{getBBox?: function(Element): {x:number,y:number,w:number,h:number},
+ *          computeSelector?: function(Element): string}} [options]
+ *   Both injectable (mirrors dom-scanner.js's own DI pattern) for unit
+ *   tests that need to assert on real geometry/selector without a browser.
+ * @returns {Array<{selector:string, bbox:{x:number,y:number,w:number,h:number}, piiType:string, agentId:string}>}
+ *   `bbox` is measured FRESH on every call, from whatever `idMap` is
+ *   passed for THIS step -- never cache and reuse a bbox from the step the
+ *   fill actually happened on. The page can scroll between steps, and a
+ *   stale bbox would put the black bar in the wrong place on THIS step's
+ *   screenshot -- a wrong bbox is a leak that looks like success.
+ */
+export function buildProfileVaultSensitiveNodes(filledProfileAgentIds, idMap, alreadyFlaggedAgentIds, options = {}) {
+  const out = [];
+  if (!filledProfileAgentIds || typeof filledProfileAgentIds.forEach !== "function") return out;
+
+  const getBBox = options.getBBox || defaultGetBBox;
+  const computeSelector = options.computeSelector || defaultComputeSelector;
+  const flagged =
+    alreadyFlaggedAgentIds instanceof Set ? alreadyFlaggedAgentIds : new Set(alreadyFlaggedAgentIds || []);
+
+  for (const [agentId, profileField] of filledProfileAgentIds) {
+    if (flagged.has(agentId)) continue; // dom-scanner already independently flagged this element (e.g. autocomplete="email") -- do not double-add
+    const el = idMap && typeof idMap.get === "function" ? idMap.get(agentId) : undefined;
+    if (!el) continue; // element no longer resolvable this step (removed/replaced since the fill) -- nothing left on the page to redact
+    out.push({
+      selector: computeSelector(el),
+      bbox: getBBox(el),
+      piiType: PROFILE_FIELD_TO_PII_TYPE[profileField] || "other",
+      agentId,
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // HOW TO CONSUME THIS MODULE:
 //
 //   popup.js (already `<script type="module">`, imports ES modules
@@ -178,6 +306,17 @@ export async function setProfile(storage, profile) {
 //     // step) and inject a plain SYNCHRONOUS getter closure instead:
 //     const getProfileValue = (field) => ProfileVault.getProfileFieldValue(profile, field);
 //     ActionExecutor.executeAction(action, idMap, { ..., getProfileValue });
+//
+//   content.js, PII-LEAK FIX -- after a SUCCESSFUL fill_profile act, record
+//   the target once in a run-scoped Map (never actedAgentIds -- see that
+//   variable's own comment):
+//     filledProfileAgentIds.set(actResult.targetId, action.profileField);
+//   Then, every step, at/after building `allSensitiveNodes`:
+//     const vaultNodes = ProfileVault.buildProfileVaultSensitiveNodes(
+//       filledProfileAgentIds, idMap, new Set(allSensitiveNodes.map((n) => n.agentId)),
+//       { computeSelector: DomScanner.computeSelector }
+//     );
+//     allSensitiveNodes = allSensitiveNodes.concat(vaultNodes);
 //
 //   action-executor.js never imports this file directly (it has zero
 //   import/export statements by design, see its own file header) -- it
