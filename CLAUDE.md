@@ -321,6 +321,64 @@ Rationale: an agent typing into a password field is the exact failure this proje
 - ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
 
+### PROFILE AUTOFILL — `fill_profile` + the vault. Feature built 2026-09-14; **leak found and fixed 2026-09-17**. **663 tests green** (466 JS + 197 server). ✅ **BOTH HALVES BROWSER-VERIFIED.**
+
+*Recorded late: the feature shipped in commit `d73f53e` with no entry here, no README mention, and no demo scenario. It was found undocumented three days later while auditing project state — which is also how the leak below was found. A feature that isn't in the decision record doesn't get reviewed against the decision record.*
+
+**THE FEATURE.** "Fill all my details" previously could not work: the agent only knew what the task goal contained, and typing into an email field is exactly what `guardSensitive()` refuses — because the MODEL chose the value and the model is untrusted. The resolution is that the model never supplies the value. It names a CATEGORY; the extension fills from a local vault:
+```
+model:      { action: "fill_profile", targetId: "agent-7", profileField: "email", value: null }
+extension:  look up "email" in chrome.storage.local -> type it
+```
+Enforced structurally, not by convention, on both sides: server-side `ModelSuppliedProfileValue` takes ZERO constructor arguments so no caller can pass the offending value in even by accident; client-side `dispatchFillProfile()` has no `value` parameter at all, so it cannot use a model-supplied one because it never receives one. A `fill_profile` carrying a non-null value is rejected outright (misbehaving model, or a prompt-injected page smuggling data) with its own error code and no echo. `ProfileField` is a CLOSED enum with no escape hatch — deliberately unlike `PiiType`, which degrades-and-flags because false negatives there are dangerous; a profile category only names where to look, so an unrecognised one must hard-reject. `MockVLMClient` emits `fill_profile` for empty email/tel/name-shaped fields, so the whole path demos with no API key.
+
+**🔴 THE LEAK — confirmed in a browser, then fixed. The guard carve-out was sound; the NEXT step was not.**
+
+The carve-out exempts `fill_profile` from `guardSensitive()`, correctly: there is no model-chosen value to protect against. But the vault value is now *in the live DOM*. On the next loop iteration `getAccessibleText()` returns an input's `.value` (`action-executor.js:391`), so it came back as `DomNode.text`. dom-scanner's value regexes catch a vault EMAIL and a vault PHONE, so `sanitizeDomSnapshot()` stripped those. **A name has no regex signature, and Phase 2a deliberately does not flag name fields — so `full_name` alone survived into the outgoing payload.**
+
+Measured across all three categories against the real modules:
+```
+full_name  flagged=false  -> LEAKS
+email      flagged=true   -> contained
+phone      flagged=true   -> contained
+```
+Browser-confirmed before the fix, mock backend, real demo page. Step 2's payload **as received by the server**:
+```
+agent-4 | input text     | sensitive=False | text='<the vault name>'   <-- transmitted
+agent-1 | input password | sensitive=True  | text=None                 <-- correctly stripped
+```
+In that run the exposure lasted one step only because the mock happened to `type` into the same field next, which put it in `actedAgentIds`. **A backend that moves to a different field would leave the name in every remaining payload of the run.**
+
+**WHY TWO SAFEGUARDS MISSED IT INDEPENDENTLY — the reusable lesson.**
+1. `actedAgentIds` (`content.js:1985`) filters acted-on nodes out of the next snapshot and would have hidden it — but its recording gate (`content.js:2447`) is `action === "type" || action === "click"`. `fill_profile` was added later and never added to that gate. **Any new action type must be evaluated against every existing gate that enumerates action types.**
+2. The containment test (`test_profile_vault.mjs`) re-scanned after the write and asserted on payload bytes — genuinely careful — but its fixture was an `autocomplete="email"` field AND it **HARDCODED `sensitive: true`** at the merge step instead of running the real scanner. Everything it proved was downstream of a flag `full_name` never gets. **A test that hardcodes the classification it is supposed to be exercising proves only the plumbing below that point.** The suite covered the two categories an existing mechanism already protected and skipped the one that needed protecting.
+
+**🔴 THE FIX — ORCHESTRATOR RULING. A vault-filled node is exactly as sensitive as a page-sourced PII node, for the remainder of the run.**
+`buildProfileVaultSensitiveNodes()` (`profile-vault.js`, pure and independently testable per Section 5) synthesizes dom-scanner's own `{selector, bbox, piiType, agentId}` shape and is concatenated into `allSensitiveNodes` (`content.js:1995`). **One insertion point closes both halves**, because that single list already feeds `redactionInputNodes` → `redact()` (image blackout) *and* `sensitiveByAgentId` → `sanitizeDomSnapshot()` (text strip), with zero changes to either consumer. bbox is measured **fresh every step** — the page scrolls between steps, and a cached bbox would black out the wrong region, which is a leak that looks like success. Dedupes against agentIds the scanner already flagged; skips ids no longer resolvable in `idMap`.
+`profileField` → `piiType`: `email`→`email`, `phone`→`tel`, `full_name`→`other` (Phase 2c ruling 5's deliberate escape hatch; `PiiType` is closed and a new member would be a hard 422).
+
+> **Deliberately NOT folded into `actedAgentIds`, and do not "simplify" it later by doing so.** That would drop the node from the DOM JSON — closing the payload half — while leaving the vault value plainly readable in the SCREENSHOT on every subsequent step. Dropping a node from `domSnapshot` has no effect whatsoever on what gets drawn from `allSensitiveNodes`/`redactionInputNodes` into the image. It is half a fix that tests green.
+
+`assertNoRawPii()` now receives `allSensitiveNodes` rather than `sensitiveNodes` — a strict tightening (`content.js:1410`'s `if (!el) continue` means a superset can only catch more, never throw spuriously on unresolvable subframe nodes).
+
+**✅ BROWSER-VERIFIED AFTER THE FIX — both halves, same page, same backend.**
+- **Wire:** the sentinel vault value appears in **zero** payloads. `agent-4` goes `sensitive=True`, `text=None`, with region `('other','agent-4','dom')` appearing the moment it is filled.
+- **Image:** the field is a solid black bar in the transmitted PNG. **The image half of this feature's claim had never been tested before this run** — and it is the half a payload assertion structurally cannot see (the same blind spot that let the Tier 1 iframe bug ship).
+
+**SCOPE — stated rather than implied.** This covers *vault-sourced* names. **Page-sourced names remain unredacted** — the demo ID card's "Jordan A. Demo" is plainly readable in the verified screenshot. That is Phase 2a's existing deliberate ruling (flagging generic name tokens would redact most of a form and leave the agent unable to operate), unchanged here. The same property that makes names unflaggable is what caused this bug; the fix works because vault provenance is *known*, not because names became detectable.
+
+**KNOWN GAP, not fixed:** a `fill_profile` relayed into a **subframe** (agentId shaped `agent-fN-…`) never resolves through the top-frame `idMap`, so it would accumulate an unresolvable entry each step — harmlessly skipped by the existing `if (!el)` guard, matching the subframe-agentId pattern elsewhere in `content.js`, but untested. The confirmed leak was top-frame; scope was deliberately not expanded.
+
+### ⚠️ OPEN — capture can return a stale frame. Observed 2026-09-17, mechanism NOT established.
+
+Two consecutive steps produced **byte-identical screenshots** while the page had scrolled 2,613 px between them (`agent-1` bbox y: `1161.0` → `-1452.0`). Step 2's redaction rectangles were therefore computed against the scrolled DOM and drawn on the *unscrolled* image, at negative y — off-image, redacting nothing.
+
+**No exposure in that run:** at scroll 0 the sensitive fields sat at y≥1161 in a 972 px-tall viewport, below the fold, so the stale image did not contain them. That is luck, not design.
+
+**Asymmetry worth noting:** the loop's viewport-only capture (`background.js:788`, `handleCaptureAndDetect`) is a bare `captureVisibleTab` with **no proactive throttle and no rate-limit retry**. The full-page path — which ships OFF by default — has both (550 ms minimum spacing, 3× retry on `MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND`). The hardening went to the experimental path, not the one everything actually runs on.
+
+**Did NOT reproduce** on a later run at 1920×970 (three distinct hashes); it was observed only at a 265 px-wide window, where the page reflowed to ~3,000 px tall. Nothing was changed, so this is *unobserved*, not fixed. The captures were 761 ms apart — inside what the full-page path's own 550 ms constant assumes is safe — so "Chrome rate-limited it" does not obviously fit. **Whoever picks this up: hash consecutive captures in every browser run; that is how it was caught.**
+
 ### FULL-PAGE SCROLL-AND-STITCH CAPTURE. Recorded 2026-09-13. **526 tests green** (378 JS + 148 server). **Ships OFF by default.**
 
 Setting: `chrome.storage.local["fullPageCapture"]`, boolean, **default `false`** — viewport-only remains the known-good path. Capture sits upstream of detection, redaction and grounding, so a regression there breaks everything at once; the default must stay the proven route.

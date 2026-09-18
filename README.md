@@ -155,6 +155,15 @@ Task goal: `Fill the name as River Jane and email id as riverjane33@demo.com` �
 **4. The agent is safe (destructive actions, not just PII)**
 On `test-page.html?scenario=checkout`, task goal: `Complete the checkout by clicking Place Order` → **`IRREVERSIBLE_ACTION_BLOCKED`**, a distinct code from #2/#3 above. `action-risk.js` classifies "Buy Now"/"Place Order"/"Delete Account"-style controls by their own text/value/aria-label/name/id — no PII involved at all — so an autonomous agent can't complete a purchase or delete an account just because nothing on that button is a password or an email. See `demo/README.md` §9 for the exact console line.
 
+**5. The agent fills your details — and the model still never sees them**
+Save a name/email/phone under **"Your profile (autofill)"** in the popup, then task goal: `fill all my details`. The model cannot supply these values; the sensitive guard would refuse a model-chosen `type` into them anyway. Instead it names a *category* and the extension fills from a local vault:
+
+```json
+{ "action": "fill_profile", "targetId": "agent-4", "profileField": "full_name", "value": null }
+```
+
+`value` must be null — a `fill_profile` carrying one is rejected outright as a misbehaving model or a prompt-injected page trying to smuggle data. The vault never leaves the client, and from the moment a field is filled it is treated as sensitive for the rest of the run: stripped from the DOM JSON **and** blacked out in the screenshot. Both halves are browser-verified — see `CLAUDE.md`'s profile-autofill entry, including the leak this originally shipped with and how it was found.
+
 > **"But what if I want it to fill my email / complete the purchase?"** Both guards are fail-closed *by policy, not by limitation*. `action-executor.js` exposes `onSensitiveTarget(el, action)` and `onIrreversibleAction(el, action, riskResult)` hooks so a real product can prompt for consent and authorize the write. Both are deliberately disabled here — a demo that silently auto-approves sensitive/destructive writes proves nothing.
 
 ---
@@ -174,32 +183,26 @@ Vision boxes are filtered to privacy-relevant COCO classes (`person`, `tv`, `lap
 ```
 extension/        MV3 extension — background SW, offscreen inference, content script, popup
   lib/            dom-scanner.js · redaction.js · action-executor.js · frame-coords.js ·
-                   element-ranker.js · action-risk.js · stall-detector.js (all pure, unit-tested)
+                   element-ranker.js · action-risk.js · stall-detector.js ·
+                   profile-vault.js (all pure, unit-tested)
 server/           FastAPI /analyze — Pydantic schemas, swappable VLM clients
 demo/             test-page.html with password, email, Aadhaar-shaped ID, an ID card, and a
                    guard-test "Place Order" button (?scenario=checkout)
 spike/            Phase 0 research — the WebGPU/offscreen viability investigation
-tests/            393 tests
+tests/            663 tests
 CLAUDE.md         full decision record: every ruling, measurement, and correction
 ```
 
 ## Tests
 
 ```bash
-server/.venv/Scripts/python -m pytest tests/          # 148
-node --test tests/unit/test_dom_scanner.mjs           #  37
-node --test tests/unit/test_redaction.test.mjs        #  32
-node --test tests/unit/test_action_executor.test.mjs  #  40
-node --test tests/unit/test_frame_coords.test.mjs     #  19
-node --test tests/unit/test_element_ranker.mjs        #  44
-node --test tests/unit/test_action_risk.mjs           #  47
-node --test tests/unit/test_wiring.mjs                #  26
+node --test tests/unit/*.mjs                      # 466
+server/.venv/Scripts/python -m pytest tests/      # 197
 ```
 
-245 Node `node:test` + 148 pytest = **393 tests, all green** (this figure
-supersedes the "238"/"367" counts that appear in older commentary
-elsewhere in this repo — see `CLAUDE.md`'s wiring-pass entry for the
-before/after breakdown).
+466 Node `node:test` + 197 pytest = **663 tests, all green**. This figure
+supersedes the "238"/"367"/"393"/"526" counts in older commentary
+elsewhere in this repo; `CLAUDE.md` carries the per-pass breakdown.
 
 Redaction is verified by **sampling actual pixels** inside and outside each rect — including a test asserting the *unscaled* coordinate is NOT painted, which proves the HiDPI scaling is load-bearing rather than merely present.
 
@@ -209,6 +212,8 @@ Redaction is verified by **sampling actual pixels** inside and outside each rect
 
 - **Viewport only.** `captureVisibleTab` can't see below the fold. Content off-screen is invisible to the vision layer.
 - **`yolos-tiny` is a general COCO detector**, not a PII detector. It finds faces via the `person` class; there is no "ID card" class. Modern real-time detectors (RT-DETR, D-FINE) currently crash on onnxruntime-web's WebGPU backend — a missing `ceil_mode` `AveragePool` kernel, not a model defect. Documented in `CLAUDE.md`.
+- **Names in page content are not redacted.** A name has no regex signature, and flagging generic `name` autocomplete tokens would black out most of a form and leave the agent unable to operate — a deliberate, documented tradeoff. The demo ID card's "Jordan A. Demo" is readable in the transmitted screenshot. Values the agent fills *from your vault* are a separate case and **are** redacted, because their provenance is known rather than inferred.
+- **Capture returned a stale frame once.** Two consecutive steps produced byte-identical screenshots while the page had scrolled, so that step's redaction boxes were drawn against an image they didn't match. Nothing was exposed (the sensitive fields were below the fold in the stale frame), it only appeared at a 265px-wide window, and it did not recur at normal width — but the mechanism is not understood and nothing was changed. Tracked in `CLAUDE.md`.
 - **Firefox is untouched.** Scoped from the start as a post-integration pass.
 - **Gemini's free tier may train on submitted data.** Acceptable here precisely because redaction happens client-side first — a provider that trains on this data still never receives a password, an email, or a face. That's the thesis working, not a compromise of it.
 
