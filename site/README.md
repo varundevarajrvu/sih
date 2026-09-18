@@ -3,66 +3,78 @@
 Showcase page for **Dhristi, A Privacy-Preserving Browser Tool** (SIH 26171).
 
 A single static page presenting the project: the redaction proof, the pipeline,
-a live console replay, the safety layers, the four demo scenarios, measured
+a live console replay, the safety layers, the five demo scenarios, measured
 numbers, architecture, and honest limitations. Plain HTML/CSS/JS — no build
 step, no framework, no external CDNs or fonts, no network calls of its own.
 
-Visual language is glassmorphism (dark void/forest palette, frosted glass
-panels, bronze/terracotta accents) per the design spec — see the comment
-block at the top of `styles.css` for the full token system and the
-per-section spec citations throughout. Every number, log line, and status
-code on the page is real, from actual browser runs; the redesign changed
-only the visual language, never the content.
+## Visual language
 
-Files:
+**Monochrome warm-neutral editorial** — flat sections, sharp rectangles, thin
+rules, oversized type, generous whitespace. Hierarchy comes from scale,
+contrast and spacing rather than colour, shadow or decoration. Default border
+radius is `0`.
+
+This replaces the earlier glassmorphism treatment (dark void, frosted panels,
+bronze accents). The content is unchanged in substance — every number, log line
+and status code still comes from a real browser run — but it has been brought
+current, see below.
+
+Only two signal colours survive, and only where they carry meaning: a green for
+`PASS` lines and a muted terracotta for `BLOCKED` ones, inside code blocks and
+the console replay. Everything else is neutral. The §2 pipeline's **assert**
+stage is distinguished by inverting the cell to light-on-dark rather than by
+tinting it — the gate is categorically different from the six steps around it,
+and that reads without spending a colour on it.
+
+## Content brought current
+
+The previous version of this page predated three passes of work:
+
+- **480 → 666 tests** (466 Node + 200 pytest). The old figure appeared in the
+  hero, the console replay and the results chips.
+- **A fifth scenario** — profile autofill (`fill_profile`). The model names a
+  category, never a value; the extension fills from a local vault and the field
+  is treated as sensitive for the rest of the run.
+- **Three added limitations** — names in page content are not redacted, capture
+  returned a stale frame once, and the system has never been run against a real
+  website. All three are genuine findings and are stated rather than omitted.
+
+## Files
+
 ```
 site/
 ├── index.html
 ├── styles.css
 ├── script.js               (progressive enhancement only — page reads fine without it)
 ├── fonts/
-│   ├── fraunces-italic-latin.woff2    (display face — self-hosted, latin subset, SIL OFL)
-│   └── inter-latin.woff2              (body/UI face — self-hosted, latin subset, SIL OFL)
+│   └── inter-latin.woff2   (self-hosted, latin subset, SIL OFL)
 ├── assets/
 │   ├── id-card-face.jpg               (real fixture photo used on the demo page)
-│   └── annotated-webpage-detect.png   (real detection boxes; also the hero's background image)
-└── README.md                (this file)
+│   └── annotated-webpage-detect.png   (real detection boxes from the UI-detector spike)
+└── README.md               (this file)
 ```
+
+`fonts/fraunces-italic-latin.woff2` is now unreferenced — the monochrome system
+uses a single grotesk and no display serif. Left in place rather than deleted;
+remove it if the old treatment is definitively retired.
 
 **Why fonts are vendored instead of linked from Google Fonts:** this project's
 entire pitch is that nothing leaves the client. A page that phones out to
-`fonts.googleapis.com`/`fonts.gstatic.com` on every load undercuts that
-pitch, so both faces were fetched once (restricted to the `latin`
-unicode-range subset), dropped into `fonts/`, and are served via local
-`@font-face` in `styles.css`. Zero third-party requests, confirmed — see
-below.
+`fonts.googleapis.com` on every load undercuts that pitch.
 
 ## Preview locally
 
-Any static file server works. From inside `site/`:
-
 ```bash
-python -m http.server 8000
+python -m http.server 5502
 ```
 
-Then open `http://localhost:8000/`.
-
-Opening `index.html` directly via `file://` also works (everything is relative
-and self-contained), but a local server is closer to how it'll actually be
-served and avoids any browser quirks around `file://` origins.
-
-No install step, no dependencies — it's plain HTML/CSS/JS.
+Then open `http://localhost:5502/`. Opening `index.html` over `file://` also
+works — everything is relative and self-contained.
 
 ## Deploy to GitHub Pages
 
-The repo root has other directories (`extension/`, `server/`, `demo/`, etc.),
-so Pages needs to be told to publish `site/` specifically rather than the
-whole repo. GitHub's branch-based Pages UI only offers `/` or `/docs` as
-publish folders — it can't point at an arbitrary subfolder like `/site` — so
-pick one of these:
-
-**Option A — GitHub Actions (recommended, no files move).**
-Add `.github/workflows/pages.yml` at the repo root:
+The repo root has other directories (`extension/`, `server/`, `demo/`), so Pages
+must publish `site/` specifically. Add `.github/workflows/pages.yml`:
 
 ```yaml
 name: Deploy site to Pages
@@ -92,65 +104,44 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-Then in the repo's **Settings → Pages**, set **Source** to **GitHub Actions**.
-Every push that touches `site/` redeploys automatically.
-
-**Option B — publish from a branch, no Actions.**
-Rename/copy `site/` to `docs/` at the repo root, commit, then in
-**Settings → Pages** choose **Deploy from a branch** → `main` → `/docs`.
-Simplest option if you don't want a workflow file, at the cost of the
-directory not being called `site/` anymore.
-
-Either way, once published, check the live URL against the same things
-verified locally: `styles.css`/`script.js`/both images resolve (no 404s),
-and the console has no errors.
+Then set **Settings → Pages → Source** to **GitHub Actions**.
 
 ## What was verified before shipping this
 
-- HTML tag balance and duplicate-attribute check (a small script parses the
-  file and confirms every tag closes correctly and no attribute repeats).
-- Loaded in a real headless Chromium (Playwright) at **1280px and 390px**:
-  zero console errors, zero failed network requests, both images decode,
-  zero page-level horizontal scroll at either width.
-- **Zero external network requests, confirmed by listing every request the
-  page makes.** All 7 (the HTML, `styles.css`, `script.js`, 2 fonts, 2
-  images) resolve to `localhost` — nothing to Google Fonts or any other
-  third party, which is the whole point of self-hosting the fonts.
-- Checked with JavaScript fully disabled: all content is present and visible
-  (the console replay shows every line already revealed instead of animating
-  in; the id-card reveal still works, because it's a plain CSS
-  checkbox-`:checked` toggle, not a JS handler; the mobile nav is a native
-  `<details>`/`<summary>` disclosure, so it opens and closes without any
-  script too).
-- **Contrast measured after rendering, not assumed** — glassmorphism's
-  known failure mode is text over a translucent surface over an image
-  quietly dropping below threshold while looking fine to the eye. A script
-  temporarily blanks each probed element's text color, screenshots the
-  now-text-free pixel, and computes the real WCAG contrast ratio between
-  the element's actual `color` and what the browser actually composited
-  behind it (image + gradient + backdrop-filter blur + glass fill, all of
-  it). 25 probes across every section, plus the 4 hero text elements
-  re-measured at 390px separately (the hero photo crops differently at
-  that aspect ratio). Every probe clears 4.5:1; most clear 7:1+. First pass
-  did NOT pass — the hero headline and eyebrow initially landed in a
-  near-transparent part of the overlay gradient (2.76:1 and 1.12:1) and had
-  to be fixed by bottom-anchoring the hero text and steepening the gradient
-  before they cleared AA. Worth knowing if you move any hero copy.
-- `prefers-reduced-transparency: reduce` verified with real Chrome DevTools
-  Protocol media emulation (not just eyeballed): `.evidence`'s
-  `backdrop-filter` computes to `none` and its background becomes a solid
-  `rgba(11,11,12,0.9)`, per the fallback rule in `styles.css`.
-- `@supports not (backdrop-filter: blur(1px))` — Chromium supports
-  `backdrop-filter`, so that branch can't be triggered live in this browser;
-  the fallback rule was instead verified by injecting it directly and
-  confirming it produces the same solid, non-blurred result as the
-  reduced-transparency case above (same selectors, same declarations).
-- Mobile hamburger drawer (`<768px`): opens on tap, closes when a nav link
-  is chosen (and the click still navigates), closes on Escape with focus
-  returned to the toggle button.
+Checked in headless Chromium at 1440, 900 and 390px wide:
 
-If you change the copy or add content, it's worth re-running that same kind
-of check — particularly anything with `white-space: pre` or `nowrap` inside a
-grid or flex item (the CSS footgun this page hit twice pre-redesign), and
-anything placed in the hero, where contrast depends on exactly where the
-text lands over the gradient.
+- Zero console errors, zero failed requests, at every breakpoint.
+- Zero horizontal page overflow at every breakpoint — the usual failure mode
+  for a wordmark set at `12.5vw`.
+- **Contrast measured, not assumed.** 55 probes across every text role,
+  each against the background actually composited behind it, checked to WCAG AA
+  with the large-text threshold applied by computed size and weight. All 55
+  pass. This includes every role on the three dark sections (pipeline, console,
+  limitations) and the footer, which is where an inverted palette usually
+  fails quietly.
+- JavaScript disabled: all content renders. The reveal animation starts from
+  `opacity: 0`, so it is gated on a `.js` class set inline in `<head>` —
+  without that gate a scriptless visitor gets an invisible page.
+- Scroll reveal: 30/30 elements reach full opacity on a natural scroll.
+- Console replay: all 20 lines are present and readable *before* the control is
+  pressed (the replay re-hides and re-reveals them, so nothing depends on
+  pressing it); mid-replay is partial; Skip restores all 20 and resets the
+  button.
+- Mobile menu: opens, sets `aria-expanded`, locks body scroll, closes on
+  Escape, closes when a link is chosen, auto-closes if resized past the
+  breakpoint.
+- `prefers-reduced-motion: reduce`: content renders opaque, animation off.
+- Skip link is the first tab stop.
+
+### Known deviation from the source design brief
+
+The brief this visual language came from specifies `#777672` for muted text.
+Measured against the grounds it is actually used on, that yields 3.4:1 at
+10–13px — below the 4.5:1 AA floor. It is darkened one step within the same
+warm neutral hue (`#5C5B58`), which measures 5.1:1 and 6.2:1 while still
+reading as clearly recessive. Where the brief's palette and its own
+accessibility requirement conflict, legibility wins.
+
+If you change copy or add content, re-run the same checks — particularly
+anything placed in the hero, where the oversized wordmark and the `<h1>` share
+a narrow vertical budget and will collide if either grows.
