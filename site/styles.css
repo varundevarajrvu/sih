@@ -370,6 +370,39 @@ code { font-family: var(--mono); font-size: 0.88em; }
   position: absolute; top: 120px; left: 66%; transform: translateX(-50%);
   z-index: 2; width: clamp(170px, 20vw, 258px);
 }
+
+/* THE REVEAL. The plate — photograph and bar together — periodically dips so
+   the wordmark sitting behind it (z-index 1) reads through, and DHRISTI
+   completes itself for a moment before the feed comes back.
+   Smooth on purpose, in contrast to the glitch: the glitch snaps on
+   steps(1,end) because a signal fault is discontinuous, but this is a fade and
+   easing is what makes it read as one rather than as another stutter.
+   Longer period than the 4.5s glitch (and not a multiple of it) so the two
+   drift against each other instead of locking into a visible pattern.
+   Gated on .is-settled so it starts only after the entrance transition has
+   finished — an infinite opacity animation would otherwise override the
+   entrance's own opacity and the plate would never fade in at all.
+   Image and bar dip TOGETHER, at the same rate: the bar never becomes weaker
+   relative to the face it covers, so nothing about the face is revealed —
+   only what is behind the whole plate. */
+.js .hero-media.is-settled {
+  animation: heroReveal 11s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+/* The plateaus matter: without a hold at the bottom the plate passes through
+   its minimum and climbs straight back, and the wordmark is never legible for
+   long enough to actually read. ~0.45s at full reveal, ~0.45s at the shallower
+   one. */
+@keyframes heroReveal {
+  0%,  25%  { opacity: 1; }
+  32%       { opacity: 0.07; }
+  36%       { opacity: 0.07; }
+  44%       { opacity: 1; }
+  65%       { opacity: 1; }
+  71%       { opacity: 0.32; }
+  75%       { opacity: 0.32; }
+  81%       { opacity: 1; }
+  100%      { opacity: 1; }
+}
 /* ---- The glitched feed -------------------------------------------------
    Four layers, all driven off one 7s cycle so the hits land together and
    read as a single fault rather than four unrelated loops:
@@ -963,4 +996,6 @@ code { font-family: var(--mono); font-size: 0.88em; }
   .hero-media::before,
   .hero-media::after { animation: none; opacity: 0; }
   .hero-scan { animation: none; }
+  /* The plate stays put and stays opaque — no dipping reveal either. */
+  .js .hero-media.is-settled { animation: none; opacity: 1; }
 }
