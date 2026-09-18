@@ -371,52 +371,42 @@ code { font-family: var(--mono); font-size: 0.88em; }
   z-index: 2; width: clamp(170px, 20vw, 258px);
 }
 
-/* THE REVEAL. The plate — photograph and bar together — periodically dips so
-   the wordmark sitting behind it (z-index 1) reads through, and DHRISTI
-   completes itself for a moment before the feed comes back.
-   Smooth on purpose, in contrast to the glitch: the glitch snaps on
-   steps(1,end) because a signal fault is discontinuous, but this is a fade and
-   easing is what makes it read as one rather than as another stutter.
-   Longer period than the 4.5s glitch (and not a multiple of it) so the two
-   drift against each other instead of locking into a visible pattern.
-   Gated on .is-settled so it starts only after the entrance transition has
-   finished — an infinite opacity animation would otherwise override the
-   entrance's own opacity and the plate would never fade in at all.
-   Image and bar dip TOGETHER, at the same rate: the bar never becomes weaker
-   relative to the face it covers, so nothing about the face is revealed —
-   only what is behind the whole plate. */
-.js .hero-media.is-settled {
-  animation: heroReveal 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+/* THE SCAN PASS. Replaces an earlier effect that blinked the whole plate in
+   and out to expose the wordmark behind it. That was removed: a photograph
+   flickering on and off reads as cheap, and it was competing with both the
+   glitch on the same element and the shader behind it — three things moving
+   for attention in one hero.
+   This does the opposite. One slow, deliberate element travels down the
+   portrait: a soft band with a bright leading edge, like a detector pass.
+   It is on-message rather than decorative — scanning a page for what must be
+   hidden is literally what the product does — and it never touches the
+   plate's opacity, so the redaction stays solid at every moment. */
+.hero-scanline {
+  position: absolute;
+  left: -8%; right: -8%; top: 0;
+  height: 24%;
+  z-index: 6;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgba(130, 195, 255, 0)    0%,
+    rgba(130, 195, 255, 0.05) 52%,
+    rgba(165, 215, 255, 0.34) 84%,
+    rgba(225, 242, 255, 0.85) 95%,
+    rgba(225, 242, 255, 0)    100%
+  );
+  mix-blend-mode: screen;
+  animation: scanSweep 4.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
 }
-/* FLICKER, then reveal. Two bursts per 5s cycle, so the wordmark opens roughly
-   every 2.5 seconds — the previous version fired once per 11s and was open 4%
-   of the time, which is a rare blink nobody notices, not a flicker.
-   The shape of each burst is: a few fast stutters, a drop, a HOLD long enough
-   to actually read DHRISTI, then a smooth close.
-   Sharpness comes from keyframe SPACING, not from a second timing function:
-   at a 5s cycle 1% = 50ms, so the stutter keyframes below sit 50ms apart and
-   snap regardless of easing, while the 300-450ms ramps either side of the hold
-   ease smoothly. One animation, both characters. */
-@keyframes heroReveal {
-  0%,  18%  { opacity: 1; }
-  19%       { opacity: 0.15; }   /* stutter */
-  20%       { opacity: 1; }
-  21%       { opacity: 0.1; }    /* stutter */
-  22%       { opacity: 0.85; }
-  23%       { opacity: 0.08; }   /* stutter */
-  24%       { opacity: 0.9; }
-  25%       { opacity: 0.07; }   /* drop */
-  34%       { opacity: 0.07; }   /* HOLD — ~450ms, wordmark readable */
-  40%       { opacity: 1; }      /* smooth close */
-  62%       { opacity: 1; }
-  63%       { opacity: 0.2; }    /* stutter */
-  64%       { opacity: 1; }
-  65%       { opacity: 0.12; }   /* stutter */
-  66%       { opacity: 0.9; }
-  67%       { opacity: 0.1; }    /* drop */
-  73%       { opacity: 0.1; }    /* HOLD — ~300ms */
-  79%       { opacity: 1; }      /* smooth close */
-  100%      { opacity: 1; }
+/* Band is 24% of the plate, so -100% parks it just above the top edge and
+   417% carries its leading edge just past the bottom. The pause at the end is
+   deliberate — a continuously cycling line is a barber's pole, not a scan. */
+@keyframes scanSweep {
+  0%       { transform: translateY(-100%); opacity: 0; }
+  6%       { opacity: 1; }
+  62%      { opacity: 1; }
+  70%      { transform: translateY(417%); opacity: 0; }
+  100%     { transform: translateY(417%); opacity: 0; }
 }
 /* ---- The glitched feed -------------------------------------------------
    Four layers, all driven off one 7s cycle so the hits land together and
@@ -1011,6 +1001,7 @@ code { font-family: var(--mono); font-size: 0.88em; }
   .hero-media::before,
   .hero-media::after { animation: none; opacity: 0; }
   .hero-scan { animation: none; }
-  /* The plate stays put and stays opaque — no dipping reveal either. */
+  /* The plate stays put and stays opaque, and the scan pass does not run. */
   .js .hero-media.is-settled { animation: none; opacity: 1; }
+  .hero-scanline { animation: none; opacity: 0; }
 }
