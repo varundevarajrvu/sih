@@ -14,17 +14,40 @@
   var menuClose = document.getElementById("menuClose");
   var mobileNav = document.getElementById("mobileNav");
 
+  var menuExitTimer = null;
+
   function setMenu(open) {
     if (!mobileNav || !menuBtn) return;
-    mobileNav.hidden = !open;
     menuBtn.setAttribute("aria-expanded", String(open));
     document.body.style.overflow = open ? "hidden" : "";
+
+    if (menuExitTimer) { clearTimeout(menuExitTimer); menuExitTimer = null; }
+
     if (open) {
+      mobileNav.hidden = false;
+      mobileNav.classList.remove("is-closing");
       var first = mobileNav.querySelector("a, button");
       if (first) first.focus();
-    } else {
-      menuBtn.focus();
+      return;
     }
+
+    // THE EXIT BUG, fixed rather than carried over. The reference conditionally
+    // rendered this with an `exit` variant but no <AnimatePresence>, so the
+    // fade-out never played — it just unmounted. The vanilla equivalent is
+    // exactly the same defect: setting `hidden` immediately skips the
+    // transition. So play the close, THEN hide.
+    if (reduced) {
+      mobileNav.hidden = true;
+      menuBtn.focus();
+      return;
+    }
+    mobileNav.classList.add("is-closing");
+    menuExitTimer = setTimeout(function () {
+      mobileNav.hidden = true;
+      mobileNav.classList.remove("is-closing");
+      menuExitTimer = null;
+    }, 260);
+    menuBtn.focus();
   }
 
   if (menuBtn)   menuBtn.addEventListener("click", function () { setMenu(true); });
@@ -84,6 +107,55 @@
 
     play.addEventListener("click", run);
     if (skip) skip.addEventListener("click", finish);
+  }
+
+  /* --------------------------- ENTRANCE STAGGER --------------------------- */
+  /* Framework-free translation of the motion spec's variants. Values are
+     carried over exactly:
+       containerVariants: staggerChildren 0.3, delayChildren 0.2
+       itemVariants:      y 20 -> 0, opacity 0 -> 1, 0.5s ease-out
+       nav:               y -20 -> 0, 0.5s, no stagger
+     Each group restarts the sequence independently, as in the reference. */
+  var DELAY_CHILDREN   = 200;
+  var STAGGER_CHILDREN = 300;
+  var ITEM_DURATION    = 500;
+
+  function settle(el) {
+    // Drop will-change once the element has landed. Keeping it forever on
+    // every animated node is its own performance problem.
+    setTimeout(function () { el.classList.add("is-settled"); }, ITEM_DURATION + 60);
+  }
+
+  function land(el) {
+    el.classList.add("is-in");
+    settle(el);
+  }
+
+  var header = document.querySelector(".header");
+
+  if (reduced) {
+    // No stagger, no slide: everything renders at its final state immediately.
+    if (header) { header.classList.add("is-in", "is-settled"); }
+    document.querySelectorAll(".enter").forEach(function (el) {
+      el.classList.add("is-in", "is-settled");
+    });
+  } else {
+    // Nav: single slide-down, no stagger.
+    if (header) requestAnimationFrame(function () { land(header); });
+
+    // Hero groups. Each group runs its own delayChildren + staggerChildren,
+    // so the corner labels and the main content cascade independently rather
+    // than sharing one queue.
+    var groups = {};
+    document.querySelectorAll(".enter[data-enter]").forEach(function (el) {
+      var key = el.getAttribute("data-enter");
+      (groups[key] = groups[key] || []).push(el);
+    });
+    Object.keys(groups).forEach(function (key) {
+      groups[key].forEach(function (el, i) {
+        setTimeout(function () { land(el); }, DELAY_CHILDREN + i * STAGGER_CHILDREN);
+      });
+    });
   }
 
   /* ------------------------------ LIVE PROOF ------------------------------ */
@@ -192,17 +264,22 @@
   })();
 
   /* ----------------------------- SCROLL REVEAL ---------------------------- */
+  /* Below-fold sections use the scroll-triggered equivalent of whileInView,
+     with the same item timing as the hero entrance. Grouped per component —
+     one reveal per block, not one per element. */
   var targets = document.querySelectorAll(".reveal");
 
   if (reduced || !("IntersectionObserver" in window)) {
-    for (var i = 0; i < targets.length; i++) targets[i].classList.add("is-in");
+    for (var i = 0; i < targets.length; i++) {
+      targets[i].classList.add("is-in", "is-settled");
+    }
     return;
   }
 
   var io = new IntersectionObserver(function (entries) {
     entries.forEach(function (entry) {
       if (!entry.isIntersecting) return;
-      entry.target.classList.add("is-in");
+      land(entry.target);
       io.unobserve(entry.target);
     });
   }, { rootMargin: "0px 0px -10% 0px", threshold: 0.06 });

@@ -115,7 +115,18 @@ code { font-family: var(--mono); font-size: 0.88em; }
   text-decoration: none;
   transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
 }
-.btn:hover { background: #2a2a28; transform: translateY(-1px); }
+/* Motion spec: scale 1.05 on hover, 0.95 on press. Replaces the earlier
+   translateY(-1px) lift — the two would fight over `transform`. */
+.btn:hover { background: #2a2a28; transform: scale(1.05); }
+.btn:active { transform: scale(0.95); }
+
+/* The arrow slides independently of the button's own scale, on parent hover. */
+.btn-arrow {
+  display: inline-block;
+  margin-left: 8px;
+  transition: transform 300ms var(--ease);
+}
+.btn:hover .btn-arrow { transform: translateX(4px); }
 .btn-sm { height: 30px; padding: 0 var(--space-md); font-size: 9px; }
 .btn-ghost {
   background: transparent; color: var(--color-dark);
@@ -233,7 +244,9 @@ code { font-family: var(--mono); font-size: 0.88em; }
   padding-bottom: 2px;
   background-image: linear-gradient(var(--color-dark), var(--color-dark));
   background-size: 0 1px; background-position: 0 100%; background-repeat: no-repeat;
-  transition: color var(--dur) var(--ease), background-size var(--dur) var(--ease);
+  /* 150ms on nav specifically — the spec pins nav to the faster default and
+     leaves the 200ms for everything else. */
+  transition: color 150ms var(--ease), background-size 150ms var(--ease);
 }
 .nav-primary a:hover, .nav-utility a:hover { color: var(--color-dark); background-size: 100% 1px; }
 
@@ -249,7 +262,11 @@ code { font-family: var(--mono); font-size: 0.88em; }
   animation: navIn 260ms var(--ease);
 }
 .mobile-nav[hidden] { display: none; }
-@keyframes navIn { from { opacity: 0; transform: translateY(-8px); } }
+/* Exit is a real animation, not an instant unmount — see setMenu() in
+   script.js for why this needed fixing rather than copying. */
+.mobile-nav.is-closing { animation: navOut 260ms var(--ease) forwards; }
+@keyframes navIn  { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes navOut { to   { opacity: 0; } }
 .mobile-nav-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--space-xl); }
 .mobile-nav-list a {
   display: block; padding: var(--space-md) 0;
@@ -267,12 +284,62 @@ code { font-family: var(--mono); font-size: 0.88em; }
 }
 
 /* ---------------------------------- HERO ----------------------------------- */
-.hero { position: relative; background: var(--color-bg); overflow: hidden; }
+/* The hero goes dark for one reason: the ambient shader draws ADDITIVE light,
+   and additive light on a #E1E0DC ground is invisible. A lightning background
+   on a pale page is not a lightning background. The rest of the site keeps the
+   warm-neutral system unchanged — this is the one inverted panel, and it sits
+   alongside the three that were already dark (§2, §9, footer). */
+.hero {
+  position: relative;
+  background: var(--color-dark);
+  color: var(--on-dark);
+  overflow: hidden;
+}
+.hero-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  z-index: 0;
+  /* Background layer fades slower than everything else — 1s against the 0.5s
+     used by the entrance items. */
+  opacity: 0;
+  animation: bgFade 1s var(--ease) forwards;
+}
+@keyframes bgFade { to { opacity: 1; } }
+
+/* MEASURED, not eyeballed. The bolt's core saturates to pure white wherever it
+   passes — the shader's 1.0/dist term blows up near the centre line, so no
+   uIntensity value removes it. Sampling the real drawing buffer under each
+   hero text element across 45 frames found 255,255,255 behind the h1, the
+   wordmark and the "read the limits" link: 1.13:1 against near-white text.
+   Unreadable at the worst instant, and invisible to any static contrast check
+   because the bolt moves.
+   Required scrim: near-white text (L≈0.877) needs the background under it at
+   L≤0.156 for 4.5:1, which is sRGB ≈110 — so a worst case of 255 has to come
+   down by at least 1 - 110/255 ≈ 0.57. 0.62 is that with margin.
+   The lightning still reads clearly; it just no longer reaches white. */
+.hero-scrim {
+  position: absolute; inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: rgba(13, 13, 13, 0.62);
+}
+
+/* Inverted hero text. */
+.hero .hero-eyebrow,
+.hero .eyebrow { color: var(--on-dark-dim); }
+.hero .rule { background: var(--on-dark-dim); }
+.hero-word { color: var(--on-dark) !important; }
+.hero-statement h1 { color: var(--on-dark); }
+.hero .link-underline { color: var(--on-dark); }
+.hero .btn { background: var(--on-dark); color: var(--color-dark); }
+.hero .btn:hover { background: var(--color-white); }
 .hero-inner {
   position: relative;
   max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad);
   height: 648px;
 }
+.hero-inner { z-index: 1; }
 .hero-copy { position: absolute; top: 56px; left: var(--pad); z-index: 3; }
 .hero-eyebrow {
   font-size: 11px; font-weight: 600; line-height: 1.7;
@@ -634,12 +701,50 @@ code { font-family: var(--mono); font-size: 0.88em; }
 .footer-brand span { color: var(--on-dark-dim); }
 .footer-note { font-size: 12px; line-height: 1.7; color: var(--on-dark-dim); max-width: 72ch; }
 
-/* ------------------------------ SCROLL REVEAL ------------------------------ */
-.js .reveal {
-  opacity: 0; transform: translateY(12px);
-  transition: opacity 600ms var(--ease), transform 600ms var(--ease);
+/* --------------------- ENTRANCE + SCROLL REVEAL ---------------------------
+   Timing values carried over 1:1 from the motion spec: items travel y 20 → 0
+   with opacity 0 → 1 over 0.5s ease-out; groups stagger their children by
+   0.3s after a 0.2s lead-in. The hero uses a mount-triggered version (.enter,
+   orchestrated in script.js); everything below the fold uses the scroll-
+   triggered equivalent (.reveal + IntersectionObserver), which is what
+   `whileInView` maps onto without a framework. */
+.js .reveal,
+.js .enter {
+  opacity: 0;
+  transform: translateY(20px);
+  /* Only on elements that actually animate, and dropped once they land —
+     a permanent will-change on dozens of nodes is its own performance bug. */
+  will-change: transform, opacity;
 }
-.js .reveal.is-in { opacity: 1; transform: none; }
+.js .reveal.is-in,
+.js .enter.is-in {
+  opacity: 1;
+  transform: none;
+  transition: opacity 500ms cubic-bezier(0, 0, 0.58, 1),
+              transform 500ms cubic-bezier(0, 0, 0.58, 1);
+}
+.js .reveal.is-settled,
+.js .enter.is-settled { will-change: auto; }
+
+/* `transform` is a single property, so the entrance translate CLOBBERS any
+   transform already doing layout work. The wordmark and the portrait are both
+   centred with translateX(-50%); without composing the two explicitly the
+   entrance silently un-centres them and the wordmark runs off the viewport.
+   Composed here rather than reaching for a wrapper element. */
+.js .hero-word.enter,
+.js .hero-media.enter { transform: translateX(-50%) translateY(20px); }
+.js .hero-word.enter.is-in,
+.js .hero-media.enter.is-in { transform: translateX(-50%); }
+
+/* The nav is the one element that does not stagger: a single slide-down from
+   y -20, same 0.5s. */
+.js .header { opacity: 0; transform: translateY(-20px); will-change: transform, opacity; }
+.js .header.is-in {
+  opacity: 1; transform: none;
+  transition: opacity 500ms cubic-bezier(0, 0, 0.58, 1),
+              transform 500ms cubic-bezier(0, 0, 0.58, 1);
+}
+.js .header.is-settled { will-change: auto; }
 
 /* ================================ TABLET ================================== */
 @media (max-width: 1199px) {
@@ -672,6 +777,12 @@ code { font-family: var(--mono); font-size: 0.88em; }
   .hero-copy, .hero-word, .hero-media, .hero-statement, .hero-meta {
     position: static; transform: none;
   }
+  /* No centring transform to preserve down here — these are static, so the
+     entrance translate stands alone again. */
+  .js .hero-word.enter,
+  .js .hero-media.enter { transform: translateY(20px); }
+  .js .hero-word.enter.is-in,
+  .js .hero-media.enter.is-in { transform: none; }
   .hero-word {
     width: auto; text-align: left;
     margin: var(--space-xl) 0 var(--space-lg);
@@ -700,8 +811,15 @@ code { font-family: var(--mono); font-size: 0.88em; }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .js .reveal { opacity: 1; transform: none; }
+  .js .reveal, .js .enter { opacity: 1; transform: none; will-change: auto; }
+  .js .header { opacity: 1; transform: none; will-change: auto; }
   .term-cursor { animation: none; }
+  /* The shader stops outright rather than slowing down — see lightning.js,
+     which renders exactly one frame and never schedules another. The canvas
+     itself must still be visible, so only the fade is neutralised. */
+  .hero-canvas { animation: none; opacity: 1; }
+  .btn:hover, .btn:active { transform: none; }
+  .btn:hover .btn-arrow { transform: none; }
   /* Explicit, not left to the blanket duration override: the hero flicker must
      come to rest FULLY REDACTED, never mid-glitch with the face showing. */
   .hero-redaction { animation: none; opacity: 1; transform: none; }

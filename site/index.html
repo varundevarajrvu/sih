@@ -92,29 +92,39 @@
 
   <!-- ===================== HERO ===================== -->
   <section class="hero" id="top">
+    <!-- Ambient WebGL lightning. Decorative and entirely optional: if the
+         context is unavailable or the shader fails to compile, lightning.js
+         hides this and the hero falls back to its flat ground. -->
+    <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
+    <!-- Keeps the bolt from reaching white behind the copy. See styles.css for
+         the measurement that fixes this value. -->
+    <div class="hero-scrim" aria-hidden="true"></div>
+
     <div class="hero-inner">
 
-      <div class="hero-copy reveal">
+      <!-- group: corner labels — staggered together -->
+      <div class="hero-copy enter" data-enter="labels">
         <p class="hero-eyebrow">Privacy<br>that survives<br>inspection.</p>
         <span class="rule" aria-hidden="true"></span>
       </div>
 
-      <p class="hero-word" aria-hidden="true">Dhristi</p>
+      <!-- group: main hero content — cascades in sequence -->
+      <p class="hero-word enter" data-enter="content" aria-hidden="true">Dhristi</p>
 
-      <div class="hero-media">
+      <div class="hero-media enter" data-enter="content">
         <img src="assets/id-card-face.jpg" alt="A headshot with a solid black redaction bar across the eyes — the state in which the model receives it." width="500" height="500" loading="eager">
         <span class="hero-redaction" aria-hidden="true"></span>
       </div>
 
-      <div class="hero-statement reveal">
-        <h1>The agent can see your screen.<br>It still can&rsquo;t see your password.</h1>
-        <div class="hero-actions">
-          <a class="btn" href="#proof">See the model guess wrong</a>
+      <div class="hero-statement">
+        <h1 class="enter" data-enter="content">The agent can see your screen.<br>It still can&rsquo;t see your password.</h1>
+        <div class="hero-actions enter" data-enter="content">
+          <a class="btn" href="#proof">See the model guess wrong<span class="btn-arrow" aria-hidden="true">→</span></a>
           <a class="link-underline" href="#limitations">Read the limits</a>
         </div>
       </div>
 
-      <div class="hero-meta reveal">
+      <div class="hero-meta enter" data-enter="labels">
         <p class="eyebrow">On-device<br>WebGPU<br>2026</p>
         <span class="rule" aria-hidden="true"></span>
       </div>
@@ -647,6 +657,7 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
   </div>
 </footer>
 
+<script src="lightning.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
