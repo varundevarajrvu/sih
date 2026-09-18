@@ -109,7 +109,10 @@
       </div>
 
       <!-- group: main hero content — cascades in sequence -->
-      <p class="hero-word enter" data-enter="content" aria-hidden="true">Dhristi</p>
+      <!-- data-text feeds the two glitch copies via content: attr(); they are
+           pseudo-elements so the word is still a single text node, and the
+           whole thing stays aria-hidden because the real <h1> is below. -->
+      <p class="hero-word enter" data-enter="content" data-text="Dhristi" aria-hidden="true">Dhristi</p>
 
       <div class="hero-statement">
         <h1 class="enter" data-enter="content">The agent can see your screen.<br>It still can&rsquo;t see your password.</h1>

@@ -364,6 +364,97 @@ code { font-family: var(--mono); font-size: 0.88em; }
   white-space: nowrap; user-select: none;
 }
 
+/* ---- Wordmark glitch ----------------------------------------------------
+   Two tinted copies of the word, clipped to horizontal bands and displaced in
+   opposite directions, plus a flicker on the word itself. Same character as
+   the effect the portrait used to carry, now on the element that is actually
+   the hero's focus.
+   The base flicker animates OPACITY ONLY. .hero-word is centred with
+   translateX(-50%) on desktop and is static with no transform on mobile, so a
+   transform-animating base would have to compose differently per breakpoint
+   and would silently un-centre the word if either rule drifted — that exact
+   bug already happened once here with the entrance translate. All displacement
+   lives on the pseudo-elements, which carry no layout transform of their own.
+   Gated on .is-settled so it starts after the entrance transition rather than
+   overriding its opacity. */
+.hero-word::before,
+.hero-word::after {
+  content: attr(data-text);
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  text-align: inherit;
+  opacity: 0;
+  pointer-events: none;
+  /* Screened, so where a copy sits exactly over the near-white base it stays
+     white and invisible; only the displaced fringe reads as colour. */
+  mix-blend-mode: screen;
+}
+.hero-word::before { color: #00c8ff; }
+.hero-word::after  { color: #ff2d46; }
+
+.js .hero-word.is-settled            { animation: wordFlicker 4s steps(1, end) infinite; }
+.js .hero-word.is-settled::before    { animation: wordGlitchA 4s steps(1, end) infinite; }
+.js .hero-word.is-settled::after     { animation: wordGlitchB 4s steps(1, end) infinite; }
+
+/* Four bursts per 4s. Each is 2-3 frames of ~40ms, so it snaps rather than
+   fades — a wordmark that eases in and out is a fade, not a fault. */
+/* INTERLEAVED with the chroma bursts, not simultaneous with them. Pseudo-
+   elements inherit their parent's opacity, so dimming the word at the same
+   instant the copies fire drags the fringes down with it — the first version
+   did exactly that and the cyan/red came out muddy. Each burst now runs
+   fringe, fringe, BLINK: the copies fire while the word is at full opacity,
+   and the word only dips once they are gone. */
+@keyframes wordFlicker {
+  0%, 16.9%  { opacity: 1; }
+  17%        { opacity: 0.22; }   /* blink, after the fringes */
+  17.8%      { opacity: 1; }
+  42.9%      { opacity: 1; }
+  43%        { opacity: 0.15; }
+  43.8%      { opacity: 1; }
+  72.9%      { opacity: 1; }
+  73%        { opacity: 0.3; }
+  73.8%      { opacity: 1; }
+  88.9%      { opacity: 1; }
+  89%        { opacity: 0.25; }
+  89.8%      { opacity: 1; }
+  100%       { opacity: 1; }
+}
+@keyframes wordGlitchA {
+  0%, 14.9%  { opacity: 0; }
+  15%        { opacity: 1; clip-path: inset(12% 0 58% 0); transform: translateX(-16px); }
+  16%        { opacity: 1; clip-path: inset(46% 0 26% 0); transform: translateX(11px); }
+  17%        { opacity: 0; }
+  41.9%      { opacity: 0; }
+  42%        { opacity: 1; clip-path: inset(30% 0 44% 0); transform: translateX(19px); }
+  43%        { opacity: 0; }
+  70.9%      { opacity: 0; }
+  71%        { opacity: 1; clip-path: inset(58% 0 14% 0); transform: translateX(-21px); }
+  72%        { opacity: 1; clip-path: inset(6% 0 70% 0);  transform: translateX(9px); }
+  73%        { opacity: 0; }
+  87.9%      { opacity: 0; }
+  88%        { opacity: 1; clip-path: inset(24% 0 52% 0); transform: translateX(-12px); }
+  89%        { opacity: 0; }
+  100%       { opacity: 0; }
+}
+@keyframes wordGlitchB {
+  0%, 14.9%  { opacity: 0; }
+  15%        { opacity: 1; clip-path: inset(52% 0 20% 0); transform: translateX(14px); }
+  16%        { opacity: 1; clip-path: inset(8% 0 66% 0);  transform: translateX(-13px); }
+  17%        { opacity: 0; }
+  41.9%      { opacity: 0; }
+  42%        { opacity: 1; clip-path: inset(62% 0 12% 0); transform: translateX(-17px); }
+  43%        { opacity: 0; }
+  70.9%      { opacity: 0; }
+  71%        { opacity: 1; clip-path: inset(18% 0 56% 0); transform: translateX(18px); }
+  72%        { opacity: 1; clip-path: inset(70% 0 4% 0);  transform: translateX(-10px); }
+  73%        { opacity: 0; }
+  87.9%      { opacity: 0; }
+  88%        { opacity: 1; clip-path: inset(56% 0 22% 0); transform: translateX(13px); }
+  89%        { opacity: 0; }
+  100%       { opacity: 0; }
+}
+
 /* The redacted face, overlapping the typography — the site's own subject
    matter used as its hero image. */
 
@@ -740,6 +831,9 @@ code { font-family: var(--mono); font-size: 0.88em; }
   .js .hero-word.enter { transform: translateY(20px); }
   .js .hero-word.enter.is-in { transform: none; }
   .hero-word {
+    /* The glitch copies are position:absolute; without this they would anchor
+       to .hero-inner once .hero-word stops being positioned. */
+    position: relative;
     width: auto; text-align: left;
     margin: var(--space-xl) 0 var(--space-lg);
     font-size: clamp(40px, 15vw, 72px);
@@ -767,6 +861,9 @@ code { font-family: var(--mono); font-size: 0.88em; }
     transition-duration: 0.01ms !important;
   }
   .js .reveal, .js .enter { opacity: 1; transform: none; will-change: auto; }
+  .js .hero-word.is-settled { animation: none; opacity: 1; }
+  .js .hero-word.is-settled::before,
+  .js .hero-word.is-settled::after { animation: none; opacity: 0; }
   .js .header { opacity: 1; transform: none; will-change: auto; }
   .term-cursor { animation: none; }
   /* The shader stops outright rather than slowing down — see lightning.js,
