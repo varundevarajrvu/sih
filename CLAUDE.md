@@ -387,6 +387,22 @@ In that run the exposure lasted one step only because the mock happened to `type
 
 **Still true and unchanged: none of this has been run against a real website.** These are the fixes the demo fixture could never have surfaced, written against the failure modes real sites are known to have — but the observe-only backend exists precisely so that run can happen safely, and it still has not. Do not let this entry read as if it had.
 
+### ACTION SURFACE BROADENED — `press_key`, in-view targeting, toggle state. Recorded 2026-09-19. **717 tests green** (497 JS + 220 server).
+
+**🔴 NEW ACTION: `press_key`.** A large share of the real web is only reachable from the keyboard — search boxes that commit on Enter with no visible submit button, modals and autocomplete popups that close on Escape, comboboxes driven by arrow keys. With `click`/`type` alone the agent fills a search field and then has nothing to press.
+
+`PressKey` is a **closed enum** (`Enter, Escape, Tab, Backspace, Arrow{Up,Down,Left,Right}`) and deliberately contains **no printable characters** — entering text is `type`'s job and goes through the guards, so a pressable letter would be a way to type that skips them. The extension dispatches synthetic keyboard events into whatever page is loaded; what it can trigger should be enumerable by reading the enum, not "whatever string the model emitted".
+
+`key` is **required exactly when `action == "press_key"` and forbidden otherwise**, mirroring `profileField`'s shape for `fill_profile` — a misplaced `key` is an ordinary contract violation (plain `ValueError` → the existing generic 502), not a privacy event, since a keystroke name is not data. **`press_key` runs through `guardSensitive()`/`guardIrreversible()` exactly like click and type** — an action that could reach a password field while skipping the guards would have been a hole, not a feature.
+
+**Off-screen targets are now scrolled into view before click/type.** A synthetic click on an off-screen element dispatches, but on real sites that is often not enough: virtualised lists (feeds, long tables, data grids) only mount rows near the viewport, and IntersectionObserver-gated widgets have not initialised their handlers yet — the click lands on a placeholder. Best-effort and never fatal: an element that cannot be scrolled to is still worth clicking.
+
+**🔴 `click` on a toggle now reports the RESULTING state.** `click` toggles, it does not set. Told to "accept the terms" on an already-ticked box the agent un-ticks it — and the old result said `ok: true` either way, so neither the loop nor the run summary could tell. Now reports `checked` for `input[type=checkbox|radio]` and for `role=checkbox|radio|switch` via `aria-checked` (null when the page exposes no state, rather than guessing).
+
+**Drift guards fired and were updated, not loosened.** Three tests assert the response's exact key set and exact action enum; all three failed on this change, which is them doing their job. Each was updated to the new exact set — still an equality assertion, never a superset check — so the next contract change is equally impossible to land silently.
+
+**Live-verified against the running server**, not only in unit tests: `/analyze` now returns `key` on every response, `{press_key, key:"Enter"}` validates, and all three violations (missing key, `F12`, `key` on a `click`) are rejected.
+
 ### ⚠️ OPEN — capture can return a stale frame. Observed 2026-09-17, mechanism NOT established.
 
 Two consecutive steps produced **byte-identical screenshots** while the page had scrolled 2,613 px between them (`agent-1` bbox y: `1161.0` → `-1452.0`). Step 2's redaction rectangles were therefore computed against the scrolled DOM and drawn on the *unscrolled* image, at negative y — off-image, redacting nothing.

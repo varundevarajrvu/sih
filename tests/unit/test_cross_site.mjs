@@ -281,3 +281,159 @@ describe("cross-site: the plain cases still behave exactly as before", () => {
     assert.equal(pw.value, "", "a blocked type must never reach the DOM");
   });
 });
+
+// ---------------------------------------------------------------------------
+// 5. KEYBOARD
+// ---------------------------------------------------------------------------
+
+describe("cross-site: press_key", () => {
+  const HTML = `<!doctype html><html><body>
+    <input id="search" type="search" />
+    <input id="pw" type="password" data-agent-sensitive="true" />
+  </body></html>`;
+
+  let document, AE, idMap, search, id;
+
+  beforeEach(() => {
+    ({ document, AE } = mount(HTML));
+    ({ idMap } = AE.buildDomSnapshot(document));
+    search = document.getElementById("search");
+    id = search.getAttribute(AE.AGENT_ID_ATTR);
+  });
+
+  test("fires keydown AND keyup with the right key, code and legacy keyCode", () => {
+    const seen = [];
+    search.addEventListener("keydown", (e) => seen.push(["keydown", e.key, e.code, e.keyCode, e.bubbles]));
+    search.addEventListener("keyup", (e) => seen.push(["keyup", e.key, e.code, e.keyCode]));
+
+    AE.executeAction({ action: "press_key", targetId: id, key: "Enter" }, idMap);
+
+    assert.deepEqual(seen[0], ["keydown", "Enter", "Enter", 13, true]);
+    assert.deepEqual(seen[1], ["keyup", "Enter", "Enter", 13]);
+  });
+
+  test("Escape and the arrow keys are dispatchable", () => {
+    for (const k of ["Escape", "ArrowDown", "ArrowUp", "Tab"]) {
+      let got = null;
+      search.addEventListener("keydown", (e) => { got = e.key; }, { once: true });
+      AE.executeAction({ action: "press_key", targetId: id, key: k }, idMap);
+      assert.equal(got, k);
+    }
+  });
+
+  test("🔴 a key outside the closed set is refused, not forwarded to the page", () => {
+    assert.throws(
+      () => AE.executeAction({ action: "press_key", targetId: id, key: "F12" }, idMap),
+      (err) => err.code === "INVALID_KEY"
+    );
+  });
+
+  test("reports whether the page cancelled the keydown", () => {
+    search.addEventListener("keydown", (e) => e.preventDefault());
+    const res = AE.executeAction({ action: "press_key", targetId: id, key: "Enter" }, idMap);
+    assert.equal(res.defaultPrevented, true);
+  });
+
+  test("🔴 press_key goes through the sensitive guard like click and type", () => {
+    // Otherwise it would be a way to interact with a password field that
+    // sidesteps the guard entirely.
+    const pw = document.getElementById("pw");
+    assert.throws(
+      () => AE.executeAction(
+        { action: "press_key", targetId: pw.getAttribute(AE.AGENT_ID_ATTR), key: "Enter" },
+        idMap
+      ),
+      (err) => err.code === "SENSITIVE_TARGET_BLOCKED"
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. SCROLL INTO VIEW + TOGGLE STATE
+// ---------------------------------------------------------------------------
+
+describe("cross-site: acting on off-screen and toggle elements", () => {
+  const HTML = `<!doctype html><html><body>
+    <button id="deep">Load more</button>
+    <input id="terms" type="checkbox" />
+    <div id="sw" role="switch" aria-checked="false">Notifications</div>
+  </body></html>`;
+
+  test("🔴 click scrolls the target into view first", () => {
+    // Virtualised lists and IntersectionObserver-gated widgets only mount or
+    // initialise near the viewport; clicking blind hits a placeholder.
+    const { document, AE } = mount(HTML);
+    const { idMap } = AE.buildDomSnapshot(document);
+    const btn = document.getElementById("deep");
+    let scrolled = null;
+    AE.executeAction(
+      { action: "click", targetId: btn.getAttribute(AE.AGENT_ID_ATTR) },
+      idMap,
+      { scrollElementIntoView: (el) => { scrolled = el.id; } }
+    );
+    assert.equal(scrolled, "deep");
+  });
+
+  test("type scrolls its target into view too", () => {
+    const { document, AE } = mount(`<!doctype html><html><body><input id="f" type="text"></body></html>`);
+    const { idMap } = AE.buildDomSnapshot(document);
+    const f = document.getElementById("f");
+    let scrolled = null;
+    AE.executeAction(
+      { action: "type", targetId: f.getAttribute(AE.AGENT_ID_ATTR), value: "x" },
+      idMap,
+      { scrollElementIntoView: (el) => { scrolled = el.id; } }
+    );
+    assert.equal(scrolled, "f");
+  });
+
+  test("a failing scrollIntoView never blocks the action", () => {
+    const { document, AE } = mount(HTML);
+    const { idMap } = AE.buildDomSnapshot(document);
+    const btn = document.getElementById("deep");
+    let clicked = false;
+    btn.addEventListener("click", () => { clicked = true; });
+    AE.executeAction(
+      { action: "click", targetId: btn.getAttribute(AE.AGENT_ID_ATTR) },
+      idMap,
+      { scrollElementIntoView: () => { throw new Error("no layout here"); } }
+    );
+    assert.equal(clicked, true, "scrolling is preparation, not the action");
+  });
+
+  test("🔴 click on a checkbox reports the RESULTING checked state", () => {
+    // click TOGGLES. Told to "accept the terms" on an already-ticked box, the
+    // agent unticks it -- and the old result said ok:true either way.
+    const { document, AE } = mount(HTML);
+    const { idMap } = AE.buildDomSnapshot(document);
+    const cb = document.getElementById("terms");
+    const id = cb.getAttribute(AE.AGENT_ID_ATTR);
+
+    const first = AE.executeAction({ action: "click", targetId: id }, idMap);
+    assert.equal(first.checked, true);
+
+    const second = AE.executeAction({ action: "click", targetId: id }, idMap);
+    assert.equal(second.checked, false, "a second click unticks it, and says so");
+  });
+
+  test("reads aria-checked for role=switch", () => {
+    const { document, AE } = mount(HTML);
+    const { idMap } = AE.buildDomSnapshot(document);
+    const sw = document.getElementById("sw");
+    const res = AE.executeAction(
+      { action: "click", targetId: sw.getAttribute(AE.AGENT_ID_ATTR) },
+      idMap
+    );
+    assert.equal(res.checked, false, "reflects aria-checked, which the page owns");
+  });
+
+  test("a non-toggle click carries no checked field at all", () => {
+    const { document, AE } = mount(HTML);
+    const { idMap } = AE.buildDomSnapshot(document);
+    const res = AE.executeAction(
+      { action: "click", targetId: document.getElementById("deep").getAttribute(AE.AGENT_ID_ATTR) },
+      idMap
+    );
+    assert.equal("checked" in res, false);
+  });
+});

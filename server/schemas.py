@@ -497,6 +497,26 @@ class AnalyzeRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class PressKey(str, Enum):
+    """Closed set of keys `press_key` may dispatch.
+
+    Deliberately small and enumerable. The extension dispatches synthetic
+    keyboard events into whatever page is loaded, so the set of things a
+    model can trigger that way should be readable in one glance rather than
+    being "any string the model emits". Printable characters are excluded on
+    purpose -- typing text is `type`'s job, and it goes through the guards.
+    """
+
+    ENTER = "Enter"
+    ESCAPE = "Escape"
+    TAB = "Tab"
+    BACKSPACE = "Backspace"
+    ARROW_UP = "ArrowUp"
+    ARROW_DOWN = "ArrowDown"
+    ARROW_LEFT = "ArrowLeft"
+    ARROW_RIGHT = "ArrowRight"
+
+
 class ActionType(str, Enum):
     """Strict enum. A VLM (or mock) returning any value outside this set
     must fail schema validation loudly, not pass through as a string."""
@@ -505,6 +525,15 @@ class ActionType(str, Enum):
     TYPE = "type"
     SCROLL = "scroll"
     DONE = "done"
+    PRESS_KEY = "press_key"
+    """Press a single key on a focused element. A large share of the real
+    web is only reachable this way: search boxes that commit on Enter with
+    no submit button, modals and autocomplete popups that close on Escape,
+    comboboxes driven by the arrow keys. Without it an agent can fill a
+    search field and then has nothing to press. The key itself is a closed
+    enum (see PressKey) -- an arbitrary string is refused rather than
+    forwarded to the page."""
+
     FILL_PROFILE = "fill_profile"
     """The model names WHICH local-profile category (see ProfileField)
     a field wants; it never supplies the value itself. See ruling #7
@@ -557,6 +586,13 @@ class ActionResponse(BaseModel):
             "WHERE the extension should look, never the value itself."
         ),
     )
+    key: Optional[PressKey] = Field(
+        default=None,
+        description=(
+            "Which key to press, REQUIRED when action == 'press_key' and "
+            "forbidden otherwise. Closed enum -- see PressKey."
+        ),
+    )
 
     @model_validator(mode="after")
     def _enforce_fill_profile_contract(self) -> "ActionResponse":
@@ -593,4 +629,14 @@ class ActionResponse(BaseModel):
                 raise ValueError("fill_profile action requires a non-null profileField")
         elif self.profileField is not None:
             raise ValueError("profileField must be null/absent unless action is 'fill_profile'")
+
+        # Same required-exactly-when shape as profileField above. `key` names
+        # a keystroke, not data, so a misplaced one is an ordinary contract
+        # violation rather than a privacy event -- plain ValueError, folded
+        # into the existing generic 502 path.
+        if self.action == ActionType.PRESS_KEY:
+            if self.key is None:
+                raise ValueError("press_key action requires a non-null key")
+        elif self.key is not None:
+            raise ValueError("key must be null/absent unless action is 'press_key'")
         return self

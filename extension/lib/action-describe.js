@@ -112,6 +112,12 @@ export function describeAction(action, domSnapshot) {
       return `filled ${humanizeProfileField(action.profileField)} from your profile`;
     case "click":
       return label ? `clicked ${label}` : "clicked an element";
+    case "press_key":
+      // The key name is safe to show: it is a member of a closed enum, never
+      // page content and never anything the user typed.
+      return label
+        ? `pressed ${action.key || "a key"} on ${label}`
+        : `pressed ${action.key || "a key"}`;
     case "scroll":
       return "scrolled the page";
     case "done":

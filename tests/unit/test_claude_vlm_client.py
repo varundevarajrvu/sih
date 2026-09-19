@@ -280,18 +280,26 @@ def test_request_output_config_carries_json_schema_mirroring_action_response():
     assert fmt["schema"] == ACTION_RESPONSE_JSON_SCHEMA
 
 
-def test_action_response_json_schema_is_a_strict_enum_of_five_actions():
+def test_action_response_json_schema_is_a_strict_enum_of_six_actions():
     """fill_profile joined the action enum 2026-09-14 (ruling #7) —
     updated from the original four-action assertion, not weakened: still
     a closed, exhaustive set, still additionalProperties=False."""
     props = ACTION_RESPONSE_JSON_SCHEMA["properties"]
-    assert set(props["action"]["enum"]) == {"click", "type", "scroll", "done", "fill_profile"}
+    assert set(props["action"]["enum"]) == {
+        "click", "type", "scroll", "done", "fill_profile", "press_key",
+    }
     assert ACTION_RESPONSE_JSON_SCHEMA["additionalProperties"] is False
     assert set(ACTION_RESPONSE_JSON_SCHEMA["required"]) == {
         "action",
         "targetId",
         "value",
         "profileField",
+        # `key` joined 2026-09-19 with the press_key action. Listed in
+        # `required` for the same reason `value`/`profileField` are: with
+        # additionalProperties locked to False, structured-output modes have
+        # no "optional property" concept, so a nullable-and-required field is
+        # how an absent value is expressed.
+        "key",
     }
 
 

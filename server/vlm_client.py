@@ -55,7 +55,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from schemas import PAGE_TARGET_ID, ActionType, DomNode, ProfileField, RedactedRegion
+from schemas import PAGE_TARGET_ID, ActionType, DomNode, PressKey, ProfileField, RedactedRegion
 
 
 # ---------------------------------------------------------------------------
@@ -155,11 +155,22 @@ def build_prompt(task_goal: str, dom_snapshot: list[DomNode], redacted_regions: 
     lines.append("")
 
     lines.append(
+        "KEYBOARD: use action='press_key' with `key` set when the page needs a "
+        "keystroke rather than a click — a search box that commits on Enter with "
+        "no visible submit button, a modal or autocomplete list that closes on "
+        "Escape, or a dropdown navigated with ArrowDown/ArrowUp. Allowed keys are "
+        "exactly: " + ", ".join(k.value for k in PressKey) + ". `key` must be set "
+        "ONLY for 'press_key' and must be null for every other action. To enter "
+        "text use 'type', never a sequence of key presses."
+    )
+    lines.append("")
+
+    lines.append(
         "Respond with ONLY a single JSON object, no prose, no markdown fences, "
         'matching exactly this shape: {"action": "click"|"type"|"scroll"|"done"'
-        '|"fill_profile", "targetId": "<agentId from the DOM snapshot above>", '
-        '"value": "<string or null>", "profileField": "full_name"|"email"|'
-        '"phone"|null}. '
+        '|"fill_profile"|"press_key", "targetId": "<agentId from the DOM snapshot '
+        'above>", "value": "<string or null>", "profileField": "full_name"|"email"|'
+        '"phone"|null, "key": "Enter"|"Escape"|"Tab"|null}. '
         "Use 'type' only for text-entry actions and include the text to type in "
         "`value` (never a guessed/redacted value). Use 'fill_profile' (see the "
         "PROFILE AUTOFILL instruction above) instead of 'type' when a field "
@@ -455,8 +466,12 @@ ACTION_RESPONSE_JSON_SCHEMA: dict = {
             "type": ["string", "null"],
             "enum": [f.value for f in ProfileField] + [None],
         },
+        "key": {
+            "type": ["string", "null"],
+            "enum": [k.value for k in PressKey] + [None],
+        },
     },
-    "required": ["action", "targetId", "value", "profileField"],
+    "required": ["action", "targetId", "value", "profileField", "key"],
     "additionalProperties": False,
 }
 """Mirrors schemas.ActionResponse, sent to Claude via `output_config` so

@@ -245,6 +245,7 @@ def test_action_response_json_schema_is_shared_single_source_of_truth():
     # backend reuses the exact same object Claude's client does, so the
     # updated set proves that sharing still holds, not that it broke.
     assert set(ACTION_RESPONSE_JSON_SCHEMA["properties"]["action"]["enum"]) == {
+        "press_key",
         "click",
         "type",
         "scroll",

@@ -497,7 +497,7 @@
   // Action execution
   // -------------------------------------------------------------------
 
-  var VALID_ACTIONS = { click: true, type: true, scroll: true, done: true, fill_profile: true };
+  var VALID_ACTIONS = { click: true, type: true, scroll: true, done: true, fill_profile: true, press_key: true };
 
   function resolveElement(idMap, targetId) {
     var el = idMap.get(targetId);
@@ -757,8 +757,60 @@
     );
   }
 
-  function dispatchClick(el) {
+  /**
+   * CROSS-SITE: bring the target on screen before acting on it.
+   *
+   * A synthetic click on an off-screen element technically dispatches, but on
+   * real sites that is frequently not enough. Virtualised lists (feeds, long
+   * tables, most data grids) only mount rows near the viewport, and anything
+   * revealed by an IntersectionObserver -- lazy images, deferred widgets --
+   * has not initialised its handlers yet. Scrolling first is what a human
+   * does implicitly and what makes the click land on a live element rather
+   * than a placeholder.
+   *
+   * Best-effort and never fatal: an element that cannot be scrolled to is
+   * still worth clicking.
+   */
+  function ensureInView(el, options) {
+    var opts = options || {};
+    var fn = opts.scrollElementIntoView || defaultScrollElementIntoView;
+    try {
+      fn(el);
+    } catch (e) {
+      /* scrolling is preparation, not the action itself */
+    }
+  }
+
+  /**
+   * CROSS-SITE: report the resulting checked state.
+   *
+   * `click` on a checkbox/radio/switch TOGGLES; it does not set. A model told
+   * to "accept the terms" issues a click, and if the box was already ticked it
+   * has just un-ticked it -- while the result said ok:true and looked like
+   * success. Reporting the state afterwards is what lets the loop (and the
+   * run summary) see what actually happened, instead of assuming.
+   */
+  function readToggleState(el) {
+    var tag = el.tagName ? el.tagName.toLowerCase() : "";
+    var type = (el.getAttribute && el.getAttribute("type") || "").toLowerCase();
+    var role = (el.getAttribute && el.getAttribute("role") || "").toLowerCase();
+
+    if (tag === "input" && (type === "checkbox" || type === "radio")) {
+      return { isToggle: true, checked: !!el.checked };
+    }
+    if (role === "checkbox" || role === "radio" || role === "switch") {
+      var aria = el.getAttribute("aria-checked");
+      if (aria === "true" || aria === "false") return { isToggle: true, checked: aria === "true" };
+      return { isToggle: true, checked: null };
+    }
+    return { isToggle: false };
+  }
+
+  function dispatchClick(el, options) {
     var view = getView(el);
+
+    ensureInView(el, options);
+
     if (typeof el.focus === "function") {
       try {
         el.focus();
@@ -768,11 +820,86 @@
     }
     var evt = new view.MouseEvent("click", { bubbles: true, cancelable: true, composed: true, view: view });
     var notCancelled = el.dispatchEvent(evt);
-    return {
+
+    var result = {
       ok: true,
       action: "click",
       targetId: el.getAttribute(AGENT_ID_ATTR),
       defaultPrevented: !notCancelled,
+    };
+
+    var toggle = readToggleState(el);
+    if (toggle.isToggle) result.checked = toggle.checked;
+
+    return result;
+  }
+
+  /**
+   * CROSS-SITE: keyboard.
+   *
+   * A great deal of the real web is only reachable from the keyboard. Search
+   * boxes commit on Enter and have no submit button; modals, dropdowns and
+   * autocomplete popups close on Escape; comboboxes move their selection with
+   * the arrow keys. With click/type alone an agent gets stuck in front of all
+   * of them -- it can fill a search field and then has nothing to press.
+   *
+   * Keys are a closed set, mirroring server/schemas.py's PressKey enum. An
+   * arbitrary key string is refused rather than passed to the page: this
+   * dispatches trusted-looking synthetic events, and the set of things it can
+   * trigger should be enumerable by reading this file.
+   */
+  var PRESSABLE_KEYS = {
+    Enter:      { key: "Enter",      code: "Enter",      keyCode: 13 },
+    Escape:     { key: "Escape",     code: "Escape",     keyCode: 27 },
+    Tab:        { key: "Tab",        code: "Tab",        keyCode: 9 },
+    Backspace:  { key: "Backspace",  code: "Backspace",  keyCode: 8 },
+    ArrowUp:    { key: "ArrowUp",    code: "ArrowUp",    keyCode: 38 },
+    ArrowDown:  { key: "ArrowDown",  code: "ArrowDown",  keyCode: 40 },
+    ArrowLeft:  { key: "ArrowLeft",  code: "ArrowLeft",  keyCode: 37 },
+    ArrowRight: { key: "ArrowRight", code: "ArrowRight", keyCode: 39 },
+  };
+
+  function dispatchPressKey(el, keyName, options) {
+    var spec = PRESSABLE_KEYS[keyName];
+    if (!spec) {
+      throw new ActionExecutionError(
+        "INVALID_KEY",
+        "press_key requires one of " + Object.keys(PRESSABLE_KEYS).join(", ") + "; got " + JSON.stringify(keyName),
+        { targetId: el && el.getAttribute ? el.getAttribute(AGENT_ID_ATTR) : null, key: keyName }
+      );
+    }
+
+    var view = getView(el);
+    ensureInView(el, options);
+    if (typeof el.focus === "function") {
+      try { el.focus(); } catch (e) { /* not fatal */ }
+    }
+
+    // keydown -> keyup, both cancelable, matching what a real press produces.
+    // A framework that listens on either one sees the event it expects.
+    function fire(type) {
+      var ev = new view.KeyboardEvent(type, {
+        key: spec.key,
+        code: spec.code,
+        keyCode: spec.keyCode,
+        which: spec.keyCode,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: view,
+      });
+      return el.dispatchEvent(ev);
+    }
+
+    var keydownAccepted = fire("keydown");
+    fire("keyup");
+
+    return {
+      ok: true,
+      action: "press_key",
+      targetId: el.getAttribute(AGENT_ID_ATTR),
+      key: spec.key,
+      defaultPrevented: !keydownAccepted,
     };
   }
 
@@ -942,9 +1069,12 @@
     return { matched: true, value: match.value, label: (match.label || match.textContent || "").trim() };
   }
 
-  function dispatchType(el, value) {
+  function dispatchType(el, value, options) {
     var text = value === null || value === undefined ? "" : String(value);
     var view = getView(el);
+
+    ensureInView(el, options);
+
     if (typeof el.focus === "function") {
       try {
         el.focus();
@@ -1328,7 +1458,7 @@
       );
     }
 
-    if (action === "click" || action === "type" || action === "fill_profile") {
+    if (action === "click" || action === "type" || action === "fill_profile" || action === "press_key") {
       if (targetId === PAGE_TARGET_ID) {
         throw new ActionExecutionError(
           "INVALID_TARGET_FOR_ACTION",
@@ -1359,8 +1489,9 @@
       // a behavior change to that module.
       guardSensitive(el, actionJson, options);
       guardIrreversible(el, actionJson, options);
-      if (action === "click") return dispatchClick(el);
-      if (action === "type") return dispatchType(el, value);
+      if (action === "click") return dispatchClick(el, options);
+      if (action === "type") return dispatchType(el, value, options);
+      if (action === "press_key") return dispatchPressKey(el, actionJson.key, options);
       return dispatchFillProfile(el, actionJson.profileField, options);
     }
 
@@ -1400,6 +1531,8 @@
     // Cross-site helpers, exposed so they can be unit-tested directly:
     // jsdom performs no layout, so scroll-container selection is only
     // testable through injected metrics.
+    PRESSABLE_KEYS: PRESSABLE_KEYS,
+    readToggleState: readToggleState,
     isEditableHost: isEditableHost,
     isScrollableMetrics: isScrollableMetrics,
     findScrollContainer: findScrollContainer,
