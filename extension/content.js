@@ -70,6 +70,12 @@ let CapturePlan = null;
 // "model names a category, this extension supplies the value" design.
 // Same dynamic-import pattern as every other ES-module lib file above.
 let ProfileVault = null;
+// CAPTURE STALENESS DETECTION (CLAUDE.md "OPEN -- capture can return a
+// stale frame"): detectStaleCapture() only -- this file never hashes raw
+// screenshot bytes itself (background.js already did that, see RULING B
+// in lib/capture-hash.js's own header). Same dynamic-import pattern as
+// every other ES-module lib file above.
+let CaptureHash = null;
 
 async function loadLibModules() {
   if (!DomScanner) {
@@ -98,6 +104,9 @@ async function loadLibModules() {
   }
   if (!ProfileVault) {
     ProfileVault = await import(browser.runtime.getURL("lib/profile-vault.js"));
+  }
+  if (!CaptureHash) {
+    CaptureHash = await import(browser.runtime.getURL("lib/capture-hash.js"));
   }
 }
 
@@ -1582,6 +1591,16 @@ function createInstrumentation() {
     const memSamples = entries.map((e) => e.memory).filter(Boolean);
     const peakUsedJSHeapSizeMB = memSamples.length ? Math.max(...memSamples.map((m) => m.usedJSHeapSizeMB)) : null;
 
+    // CAPTURE STALENESS DETECTION: reported UNCONDITIONALLY, including at
+    // zero -- "hash consecutive captures in every browser run; that is how
+    // it was caught" (CLAUDE.md's own instruction to whoever picked this
+    // up), made automatic instead of hand-diffing dumped PNGs. Same
+    // "silent truncation/omission reads as 'we saw everything' when we
+    // didn't" posture `fullPage`/`rank` already established -- a run with
+    // zero stale captures must say so explicitly, not merely omit the
+    // field.
+    const staleCaptures = stepResults.filter((s) => s.skipped === "stale_capture");
+
     const summary = {
       runAt: new Date().toISOString(),
       outcome,
@@ -1589,6 +1608,8 @@ function createInstrumentation() {
       totalMs,
       peakUsedJSHeapSizeMB,
       memoryApiAvailable: memSamples.length > 0,
+      staleCaptureCount: staleCaptures.length,
+      staleCaptures,
       stages: entries,
       steps: stepResults,
     };
@@ -1777,6 +1798,27 @@ async function runAgentLoop() {
   // See the stall-detection block near the end of the step loop, below.
   const actionHistory = [];
 
+  // CAPTURE STALENESS DETECTION (CLAUDE.md "OPEN -- capture can return a
+  // stale frame"): the previous step's screenshot hash and the scrollY the
+  // DOM was scanned at, so the NEXT step can tell "identical bytes because
+  // the page genuinely didn't change" (normal) apart from "identical bytes
+  // while the page scrolled" (stale -- the image shows the WRONG viewport
+  // for this step's redaction rects). Both null on step 1 -- nothing to
+  // compare against yet; see capture-hash.js's detectStaleCapture() for why
+  // that is "no verdict," not a false stale positive. Updated after EVERY
+  // step (see the STALE-CAPTURE DETECTION block below) regardless of that
+  // step's own verdict, so the NEXT comparison is always against the most
+  // recent capture. screenshotHash is `undefined` in full-page capture mode
+  // (background.js only computes it for the viewport-only path -- see that
+  // function's own comment) -- detectStaleCapture() treats a missing hash
+  // as "no verdict," which is exactly what scopes this check OUT of
+  // full-page mode without a separate branch: that mode always restores
+  // scroll to its pre-capture position before this file's own scan runs,
+  // so a single scrollY reading there would not mean what this check needs
+  // it to mean.
+  let lastScreenshotHash = null;
+  let lastScanScrollY = null;
+
   let taskGoal = "(no task goal set)";
   try {
     const stored = await browser.storage.local.get("taskGoal");
@@ -1906,6 +1948,30 @@ async function runAgentLoop() {
       // truncated (truncated: false) -- never omitted, matching
       // element-ranker.js's own "report unconditionally" precedent.
       fullPage: captureResp.fullPage || null,
+      // CAPTURE STALENESS DETECTION: present on EVERY step, unconditionally
+      // -- this is the "hash consecutive captures in every browser run"
+      // instrumentation CLAUDE.md's OPEN bug entry asks for, made
+      // automatic instead of relying on hand-diffing dumped PNGs again.
+      // `null` in full-page capture mode, where background.js does not
+      // compute one (see that function's own comment) -- reported as null
+      // rather than omitted, same "never silently absent" posture as
+      // `fullPage` above.
+      screenshotHash: captureResp.screenshotHash || null,
+      // HAZARD 2 proactive throttle (background.js's handleCaptureAndDetect
+      // -- see its own lastViewportCaptureAt comment): present on EVERY
+      // step, unconditionally, INCLUDING 0 -- a step where the throttle
+      // never had to wait must say `0`, not omit the field, because `0` is
+      // the measurement that proves the throttle cost nothing THIS step;
+      // an absent field proves nothing. This matters precisely because a
+      // stale-capture `continue` (below) sends the NEXT step's capture
+      // request well under MIN_CAPTURE_INTERVAL_MS after the last one, so
+      // the throttle is expected to actually bind on that following step --
+      // without this field that would show up only as unattributable
+      // end-to-end latency with no stage to pin it on. `null` in full-page
+      // capture mode, which has its own separate, already-throttled
+      // per-slice capture loop (see captureFullPageAndDetect()) and never
+      // populates this specific field.
+      throttleWaitMs: typeof captureResp.throttleWaitMs === "number" ? captureResp.throttleWaitMs : null,
     });
     // Split load vs. inference (coordinator-requested diagnostic,
     // 2026-09-11) -- these were previously conflated into one "detect"
@@ -1983,6 +2049,73 @@ async function runAgentLoop() {
       captureResp.fullPage && captureResp.fullPage.enabled
         ? { x: window.scrollX, y: window.scrollY }
         : CapturePlan.NO_DOCUMENT_OFFSET;
+
+    // ---- STALE-CAPTURE DETECTION (CLAUDE.md "OPEN -- capture can return
+    // a stale frame"): read HERE, at the exact same moment
+    // documentScanScrollOffset is captured just above -- "the moment of
+    // measurement" for THIS step's DOM scan. Deliberately a SEPARATE, raw
+    // reading (never CapturePlan.NO_DOCUMENT_OFFSET-zeroed) -- this check
+    // needs the page's ACTUAL current scroll position regardless of
+    // capture mode, not the (mode-dependent) offset applied to bboxes.
+    //
+    // RULING C -- FAIL CLOSED: a positive verdict here means the image
+    // this step captured shows the WRONG viewport for the redaction
+    // rectangles this step is about to compute -- transmitting it would
+    // send whatever was on screen at the STALE (old) scroll position,
+    // unredacted, dressed up as if it were redacted for the CURRENT
+    // position. This step's send is refused; the RUN is NOT aborted --
+    // the mechanism behind the underlying staleness is unestablished and
+    // did not reproduce (see CLAUDE.md), so aborting the whole run on it
+    // would be a NEW failure mode built on an unreproduced bug. Costing
+    // one step out of MAX_STEPS is cheap; the next step re-captures
+    // naturally and the loop continues exactly as if this step had simply
+    // been slow. Mirrors the fail-closed idiom assertNoRawPii() already
+    // uses below (abort BEFORE anything leaves the client, log it,
+    // survive), just with "skip and continue" instead of "skip and stop"
+    // -- see this block's own `continue`, not `break`.
+    const scanScrollY = window.scrollY;
+    const staleCaptureVerdict = CaptureHash.detectStaleCapture({
+      previousHash: lastScreenshotHash,
+      previousScrollY: lastScanScrollY,
+      currentHash: captureResp.screenshotHash,
+      currentScrollY: scanScrollY,
+    });
+    // Updated regardless of the verdict -- see lastScreenshotHash's own
+    // declaration comment for why the NEXT step must always compare
+    // against the MOST RECENT capture, not a stale one of its own.
+    lastScreenshotHash = captureResp.screenshotHash || null;
+    lastScanScrollY = scanScrollY;
+
+    if (staleCaptureVerdict) {
+      instr.mark(step, "stale-capture", staleCaptureVerdict);
+      // The log line states BOTH halves of the evidence, per CLAUDE.md's
+      // explicit instruction -- the repeated hash AND the scroll delta
+      // that proves the page moved -- not just "stale: true".
+      console.warn(
+        `[agent-loop] STALE CAPTURE DETECTED at step ${step} -- screenshot hash ${staleCaptureVerdict.hash} ` +
+          `repeated while the page's scrollY moved ${staleCaptureVerdict.previousScrollY} -> ` +
+          `${staleCaptureVerdict.currentScrollY} (delta ${staleCaptureVerdict.scrollDelta}px). The captured image ` +
+          "shows the WRONG viewport for this step's redaction rectangles -- refusing to send it. Skipping this " +
+          "step's /analyze send only; the run continues and will re-capture next step."
+      );
+      stepResults.push({
+        step,
+        skipped: "stale_capture",
+        detail:
+          `screenshot hash ${staleCaptureVerdict.hash} repeated while scrollY moved ` +
+          `${staleCaptureVerdict.previousScrollY} -> ${staleCaptureVerdict.currentScrollY} ` +
+          `(delta ${staleCaptureVerdict.scrollDelta}px)`,
+      });
+      reportProgress({
+        stage: "capture",
+        lastError: {
+          summary: "Stale screenshot detected (byte-identical capture while the page scrolled) -- this step's send was refused for safety.",
+          detail: `hash=${staleCaptureVerdict.hash} scrollY ${staleCaptureVerdict.previousScrollY}->${staleCaptureVerdict.currentScrollY}`,
+          step,
+        },
+      });
+      continue; // NOT break -- skip only this step's send; the run is not aborted, per RULING C
+    }
 
     // ---- 2.5. FRAME COORDINATION (real-site hardening pass): merge in
     // every subframe's already-offset-translated, already-sanitized

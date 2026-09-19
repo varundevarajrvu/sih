@@ -60,7 +60,8 @@
         "lib/error-messages.js",
         "lib/server-url.js",
         "lib/capture-plan.js",
-        "lib/profile-vault.js"
+        "lib/profile-vault.js",
+        "lib/capture-hash.js"
       ],
       "matches": ["<all_urls>"]
     }

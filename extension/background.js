@@ -54,6 +54,13 @@ import * as ServerUrlLib from "./lib/server-url.js";
 // math -- see content.js's "FULL-PAGE SCROLL-AND-STITCH CAPTURE" block
 // comment and lib/capture-plan.js's own header for the feature writeup.
 import * as CapturePlanLib from "./lib/capture-plan.js";
+// Capture staleness detection (CLAUDE.md "OPEN -- capture can return a
+// stale frame"): this file only ever calls hashScreenshot() -- the
+// staleness VERDICT itself is computed in content.js, which is the only
+// context that also knows the page's scroll position. See
+// lib/capture-hash.js's own header for the full split-of-responsibility
+// writeup (RULING B).
+import * as CaptureHashLib from "./lib/capture-hash.js";
 
 const OFFSCREEN_DOCUMENT_PATH = "offscreen.html";
 // Generous relative to Phase 0's measured 8,432ms median warm WebGPU
@@ -760,6 +767,28 @@ function stripDataUrlPrefix(dataUrl) {
 }
 
 // ---------------------------------------------------------------------
+// HAZARD 2 (asymmetry closed -- CLAUDE.md "OPEN -- capture can return a
+// stale frame" / "asymmetry worth noting"): this path (CAPTURE_AND_DETECT,
+// the viewport-only capture EVERY run actually uses -- full-page is OFF by
+// default) previously called captureVisibleTab bare, with neither the
+// full-page path's proactive throttle NOR its reactive rate-limit retry.
+// "The hardening went to the experimental path, not the one everything
+// actually runs on."
+//
+// This is this path's OWN lastCaptureAt clock, module-scoped to
+// background.js -- deliberately NOT shared with content.js's own
+// `lastCaptureVisibleTabAt` (used only by the full-page driver's
+// CAPTURE_VIEWPORT calls). Unlike that driver, this handler owns its
+// entire capture call within ONE message round trip: content.js sends
+// CAPTURE_AND_DETECT and awaits a single response, so it has no
+// opportunity to throttle proactively beforehand the way the full-page
+// driver's own loop does. Reuses capture-plan.js's own
+// computeThrottleDelay()/MIN_CAPTURE_INTERVAL_MS -- no second, divergent
+// throttle implementation, per the orchestrator's explicit instruction.
+// ---------------------------------------------------------------------
+let lastViewportCaptureAt = null;
+
+// ---------------------------------------------------------------------
 // Phase 4 (integration-loop): CAPTURE_AND_DETECT. Combines a tab capture
 // and a detection round trip into one content<->background message (fewer
 // hops than splitting them), but times each half SEPARATELY server-side
@@ -784,27 +813,65 @@ async function handleCaptureAndDetect(sender) {
 
     const offscreenDocumentAlreadyExisted = await hasOffscreenDocument();
 
+    // HAZARD 2, proactive half -- see lastViewportCaptureAt's own comment
+    // just above. Waits BEFORE the capture call, never inflating captureMs
+    // below (tCapture0 is taken AFTER this wait completes).
+    const throttleWaitMs = CapturePlanLib.computeThrottleDelay({
+      lastCaptureAt: lastViewportCaptureAt,
+      now: performance.now(),
+    });
+    if (throttleWaitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, throttleWaitMs));
+    }
+
     const tCapture0 = performance.now();
-    const dataUrl = await browser.tabs.captureVisibleTab(windowId, { format: "png" });
-    const captureMs = performance.now() - tCapture0;
+    // HAZARD 2, reactive half -- same captureVisibleTabWithRetry() the
+    // full-page path already uses (see its own comment), so a transient
+    // MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND is retried here too instead
+    // of failing the step outright.
+    const dataUrl = await captureVisibleTabWithRetry(windowId);
+    lastViewportCaptureAt = performance.now();
+    const captureMs = lastViewportCaptureAt - tCapture0;
     const screenshot = stripDataUrlPrefix(dataUrl);
+
+    // CAPTURE STALENESS DETECTION (RULING B): hash the bytes HERE, right
+    // next to where they were just captured -- background.js owns the
+    // capture and already holds them, so no second copy needs to cross the
+    // message boundary just to compute this. The VERDICT (does this hash
+    // repeating actually mean staleness) is content.js's job -- it is the
+    // only context that also knows the page's scroll position. See
+    // lib/capture-hash.js's own header for the full split-of-responsibility
+    // writeup.
+    const screenshotHash = await CaptureHashLib.hashScreenshot(screenshot);
 
     const tDetect0 = performance.now();
     const result = await detectObjects(screenshot);
     const detectMs = performance.now() - tDetect0;
 
     log(
-      `CAPTURE_AND_DETECT OK -- capture ${captureMs.toFixed(0)}ms, detect ${detectMs.toFixed(0)}ms total ` +
-        `(modelLoadMs=${result.modelLoadMs.toFixed(0)}, inferenceMs=${result.inferenceMs.toFixed(0)}, ` +
-        `offscreenDocumentAlreadyExisted=${offscreenDocumentAlreadyExisted}, ` +
-        `pipelineWasAlreadyLoaded=${result.pipelineWasAlreadyLoaded}), ${result.boxes.length} detection(s)`,
+      `CAPTURE_AND_DETECT OK -- throttleWait ${throttleWaitMs.toFixed(0)}ms, capture ${captureMs.toFixed(0)}ms, ` +
+        `detect ${detectMs.toFixed(0)}ms total (modelLoadMs=${result.modelLoadMs.toFixed(0)}, ` +
+        `inferenceMs=${result.inferenceMs.toFixed(0)}, offscreenDocumentAlreadyExisted=${offscreenDocumentAlreadyExisted}, ` +
+        `pipelineWasAlreadyLoaded=${result.pipelineWasAlreadyLoaded}, screenshotHash=${screenshotHash}), ` +
+        `${result.boxes.length} detection(s)`,
     );
     return {
       type: "CAPTURE_AND_DETECT_RESULT",
       screenshot,
+      screenshotHash,
       boxes: result.boxes,
       captureMs,
       detectMs,
+      // HAZARD 2 (proactive throttle -- see lastViewportCaptureAt's own
+      // comment above): reported so a step whose end-to-end latency jumps
+      // because this fired (e.g. the very next step after a stale-capture
+      // skip, which `continue`s straight back into another capture well
+      // under MIN_CAPTURE_INTERVAL_MS later) has a stage-level number to
+      // attribute that jump to, instead of it showing up only as
+      // unattributable total latency. Always present -- 0 is the
+      // measurement that proves the throttle cost nothing THIS step, not
+      // the absence of one.
+      throttleWaitMs,
       // Phase 4 diagnostic additions -- see comment above.
       modelLoadMs: result.modelLoadMs,
       inferenceMs: result.inferenceMs,
@@ -840,9 +907,13 @@ function isFiniteNumber(n) {
   return typeof n === "number" && Number.isFinite(n);
 }
 
-// HAZARD 2 backstop: content.js already throttles PROACTIVELY, before each
-// capture (see its own `computeThrottleDelay()` call site) -- this is the
-// REACTIVE half, a last-resort retry in case that proactive margin is ever
+// HAZARD 2 backstop: BOTH capture paths now throttle PROACTIVELY before
+// each capture (content.js's own `computeThrottleDelay()` call site for
+// the full-page driver's CAPTURE_VIEWPORT slices; handleCaptureAndDetect's
+// own call, just above in this file, for the viewport-only path every run
+// actually uses -- see lastViewportCaptureAt's comment there for why this
+// asymmetry was closed) -- this function is the REACTIVE half shared by
+// both, a last-resort retry in case that proactive margin is ever
 // insufficient under real scheduling jitter (e.g. another extension also
 // calling captureVisibleTab against the same tab in the same window).
 // Chrome's own error string for this specific condition is
