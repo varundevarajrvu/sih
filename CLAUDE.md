@@ -403,15 +403,41 @@ In that run the exposure lasted one step only because the mock happened to `type
 
 **Live-verified against the running server**, not only in unit tests: `/analyze` now returns `key` on every response, `{press_key, key:"Enter"}` validates, and all three violations (missing key, `F12`, `key` on a `click`) are rejected.
 
-### ⚠️ OPEN — capture can return a stale frame. Observed 2026-09-17, mechanism NOT established.
+### ⚠️ STILL OPEN — capture can return a stale frame. Observed 2026-09-17, mechanism **still NOT established**. Now DETECTED and FAIL-CLOSED as of 2026-09-19 — see the entry directly below this one.
 
 Two consecutive steps produced **byte-identical screenshots** while the page had scrolled 2,613 px between them (`agent-1` bbox y: `1161.0` → `-1452.0`). Step 2's redaction rectangles were therefore computed against the scrolled DOM and drawn on the *unscrolled* image, at negative y — off-image, redacting nothing.
 
 **No exposure in that run:** at scroll 0 the sensitive fields sat at y≥1161 in a 972 px-tall viewport, below the fold, so the stale image did not contain them. That is luck, not design.
 
-**Asymmetry worth noting:** the loop's viewport-only capture (`background.js:788`, `handleCaptureAndDetect`) is a bare `captureVisibleTab` with **no proactive throttle and no rate-limit retry**. The full-page path — which ships OFF by default — has both (550 ms minimum spacing, 3× retry on `MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND`). The hardening went to the experimental path, not the one everything actually runs on.
+**Asymmetry worth noting:** ~~the loop's viewport-only capture (`background.js:788`, `handleCaptureAndDetect`) is a bare `captureVisibleTab` with **no proactive throttle and no rate-limit retry**. The full-page path — which ships OFF by default — has both (550 ms minimum spacing, 3× retry on `MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND`).~~ **CLOSED 2026-09-19** — both paths now share `captureVisibleTabWithRetry()` and `capture-plan.js`'s `computeThrottleDelay()`. The observation that prompted it stands: *the hardening went to the experimental path, not the one everything actually runs on.*
 
 **Did NOT reproduce** on a later run at 1920×970 (three distinct hashes); it was observed only at a 265 px-wide window, where the page reflowed to ~3,000 px tall. Nothing was changed, so this is *unobserved*, not fixed. The captures were 761 ms apart — inside what the full-page path's own 550 ms constant assumes is safe — so "Chrome rate-limited it" does not obviously fit. **Whoever picks this up: hash consecutive captures in every browser run; that is how it was caught.**
+
+### STALE CAPTURE — DETECTED AND FAIL-CLOSED. Recorded 2026-09-19. **732 tests green** (512 JS + 220 server). **The mechanism is still not established and this does not claim to fix it.**
+
+The bug above was found by hand-diffing dumped PNGs. That is now automatic. `lib/capture-hash.js` (pure, 15 tests, includes a fixture carrying the 2026-09-17 observation's exact numbers — scrollY 1161 → -1452, delta -2613).
+
+**🔴 RULING A — what counts as "stale". Get this wrong and it becomes a false-positive machine.**
+> **stale = consecutive captures byte-identical AND the page's scroll position changed between them.**
+
+Byte-identical consecutive captures are the **normal, correct** case on a static page that did not scroll — flagging that alone would make every quiet step on every static page a false alarm. Scroll movement alone says nothing about what was transmitted. Requiring both is the exact narrow signature the observation exhibited, and a static page produces zero false positives by construction.
+
+**🔴 RULING B — `background.js` hashes, `content.js` decides.** SHA-256 via `crypto.subtle` over the decoded bytes (exact; a cheap non-crypto hash is the wrong trade for the one check whose entire job is proving two images are or are not byte-identical). Background owns the bytes, so nothing crosses the message boundary twice; `content.js` is the only context that also knows `scrollY`. It returns `screenshotHash` on `CAPTURE_AND_DETECT_RESULT`.
+
+**🔴 RULING C — fail closed on the STEP, not the RUN.** A positive verdict means this step's image shows the wrong viewport for the redaction rectangles about to be computed against this step's scrolled DOM — transmitting it sends whatever was on screen at the old position, unredacted, dressed up as redacted. The step aborts **before redact** (stronger than before-send), mirroring `assertNoRawPii()`'s fail-closed idiom, with **`continue`, never `break`**.
+> Aborting the whole run would be a NEW failure mode built on a bug whose mechanism nobody has explained. One step out of `MAX_STEPS = 25` is cheap; an unredacted viewport is the entire thesis.
+
+**Reported unconditionally, including at zero** — `screenshotHash` and `throttleWaitMs` on every step's `capture` instrumentation, `staleCaptureCount`/`staleCaptures` in the RUN SUMMARY. Same posture `fullPage` and `rank` already set: a run with zero stale captures must *say* zero, not omit the field.
+
+**Why `throttleWaitMs` is reported and not just computed:** a stale-capture skip `continue`s immediately, so the next capture lands inside the new 550 ms floor. The throttle fires *precisely* in the scenario this change instruments, and an unreported wait would surface only as unattributable end-to-end latency. `tCapture0` is taken **after** the wait, so `captureMs` still measures only the capture — do not "simplify" that.
+
+**Scoped OUT: full-page capture mode.** It never populates a hash, and `detectStaleCapture()` treats a missing hash as "no verdict" — which scopes the check out without a separate branch. That mode restores scroll to its pre-capture position before the scan runs, so a single `scrollY` reading there would not mean what this check needs it to mean.
+
+**NOT verified without a browser** — all of this belongs on the browser-run checklist, none of it is claimed as covered:
+- that `crypto.subtle`/`atob` behave identically inside the real MV3 service worker (only Node-verified; the `crypto.subtle` call site is new),
+- that `content.js`'s dynamic `import()` of `capture-hash.js` resolves under the real extension loader (jsdom cannot exercise `chrome.runtime.getURL` or `web_accessible_resources` at all),
+- that the detector ever fires against a **real** reproduction — only Ruling A's discriminator is proven, against fixtures,
+- **whether inserting an `await crypto.subtle.digest(...)` between capture and detect perturbs the timing of a race nobody has explained.** Stated because the mechanism is unknown: this change could in principle mask or unmask the original bug.
 
 ### FULL-PAGE SCROLL-AND-STITCH CAPTURE. Recorded 2026-09-13. **526 tests green** (378 JS + 148 server). **Ships OFF by default.**
 
