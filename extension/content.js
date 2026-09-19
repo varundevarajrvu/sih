@@ -1767,6 +1767,11 @@ async function runAgentLoop() {
   // profile-vault.js, and its call site below, near allSensitiveNodes.
   const filledProfileAgentIds = new Map();
 
+  // CROSS-SITE: the URL this run last saw, so a client-side route change can
+  // be detected at the top of each step. Read once here rather than compared
+  // against a constant, because a run can legitimately start on any URL.
+  let lastSeenHref = typeof location !== "undefined" ? location.href : "";
+
   // WIRING PASS TASK 3: oldest-first action-signature history, fed to
   // stall-detector.js after every successfully executed non-"done" step.
   // See the stall-detection block near the end of the step loop, below.
@@ -1835,6 +1840,27 @@ async function runAgentLoop() {
         console.log(`[agent-loop] STOP requested -- halting before step ${step} begins.`);
         break;
       }
+
+      // ---- CROSS-SITE: client-side (SPA) navigation.
+      // A full page load tears down this content script and the run with it,
+      // so that case needs nothing. A pushState/replaceState route change does
+      // NOT: the script survives, the loop keeps going, and every agentId in
+      // actedAgentIds now refers to an element on a page that no longer
+      // exists. Those stale ids keep filtering the NEW page's snapshot, so the
+      // agent silently cannot see elements it has never acted on -- and on a
+      // single-page app that is most of the site. Reset on route change.
+      if (typeof location !== "undefined" && location.href !== lastSeenHref) {
+        const from = lastSeenHref;
+        lastSeenHref = location.href;
+        const dropped = actedAgentIds.size;
+        actedAgentIds.clear();
+        filledProfileAgentIds.clear();
+        console.log(
+          `[agent-loop] step ${step}: client-side navigation detected -- cleared ${dropped} acted id(s). ` +
+            `${from} -> ${lastSeenHref}`
+        );
+      }
+
       reportProgress({ step, stage: "capture" });
 
       // ---- 1. CAPTURE + DETECT. Viewport-only (default): one round trip
