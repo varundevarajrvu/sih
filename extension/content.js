@@ -70,11 +70,12 @@ let CapturePlan = null;
 // "model names a category, this extension supplies the value" design.
 // Same dynamic-import pattern as every other ES-module lib file above.
 let ProfileVault = null;
-// CAPTURE STALENESS DETECTION (CLAUDE.md "OPEN -- capture can return a
-// stale frame"): detectStaleCapture() only -- this file never hashes raw
-// screenshot bytes itself (background.js already did that, see RULING B
-// in lib/capture-hash.js's own header). Same dynamic-import pattern as
-// every other ES-module lib file above.
+// CAPTURE STALENESS DETECTION (CLAUDE.md "STILL OPEN -- capture can return
+// a stale frame"): detectDimensionMismatch()/detectHashRecurrence() only --
+// this file never hashes raw screenshot bytes or decodes PNG pixels
+// itself (background.js already did both, see RULING B in
+// lib/capture-hash.js's own header). Same dynamic-import pattern as every
+// other ES-module lib file above.
 let CaptureHash = null;
 
 async function loadLibModules() {
@@ -1798,26 +1799,23 @@ async function runAgentLoop() {
   // See the stall-detection block near the end of the step loop, below.
   const actionHistory = [];
 
-  // CAPTURE STALENESS DETECTION (CLAUDE.md "OPEN -- capture can return a
-  // stale frame"): the previous step's screenshot hash and the scrollY the
-  // DOM was scanned at, so the NEXT step can tell "identical bytes because
-  // the page genuinely didn't change" (normal) apart from "identical bytes
-  // while the page scrolled" (stale -- the image shows the WRONG viewport
-  // for this step's redaction rects). Both null on step 1 -- nothing to
-  // compare against yet; see capture-hash.js's detectStaleCapture() for why
-  // that is "no verdict," not a false stale positive. Updated after EVERY
-  // step (see the STALE-CAPTURE DETECTION block below) regardless of that
-  // step's own verdict, so the NEXT comparison is always against the most
-  // recent capture. screenshotHash is `undefined` in full-page capture mode
-  // (background.js only computes it for the viewport-only path -- see that
-  // function's own comment) -- detectStaleCapture() treats a missing hash
-  // as "no verdict," which is exactly what scopes this check OUT of
-  // full-page mode without a separate branch: that mode always restores
-  // scroll to its pre-capture position before this file's own scan runs,
-  // so a single scrollY reading there would not mean what this check needs
-  // it to mean.
-  let lastScreenshotHash = null;
-  let lastScanScrollY = null;
+  // CAPTURE STALENESS DETECTION (CLAUDE.md "STILL OPEN -- capture can
+  // return a stale frame"; RULING A', amended 2026-09-20 after a same-day
+  // false negative). hash -> the scrollY it was FIRST seen at, THIS run --
+  // see capture-hash.js's detectHashRecurrence() for why the SECONDARY
+  // check compares against the whole run's history now, not just the
+  // immediately-previous capture (the original, narrower comparison missed
+  // an hour-old frame resurfacing after a correct one). Empty on step 1 --
+  // nothing recorded yet. Entries are added, never overwritten (first-seen
+  // semantics), at the STALE-CAPTURE DETECTION block below. `screenshotHash`
+  // is `undefined` in full-page capture mode (background.js only computes
+  // one for the viewport-only path) -- detectHashRecurrence() treats a
+  // missing hash as "no verdict," which is exactly what scopes the
+  // SECONDARY check OUT of full-page mode without a separate branch. The
+  // PRIMARY (dimension) check is scoped out of full-page mode explicitly
+  // instead -- see that block's own comment for why it can't rely on the
+  // same "missing data" trick.
+  const seenHashScrollY = new Map();
 
   let taskGoal = "(no task goal set)";
   try {
@@ -1940,6 +1938,23 @@ async function runAgentLoop() {
         });
         break;
       }
+    // RULING A' check 1's EXPECTED side, computed HERE -- not only inside
+    // the verdict below -- so a PASSING step still records what the actual
+    // dimensions were compared against, not just that nothing fired.
+    // Without this a passing run shows `screenshotWidthPx`/`Px` (what was
+    // captured) with no visibility into what was EXPECTED or how much
+    // margin there was, which matters more here than it did for
+    // `throttleWaitMs`: the tolerance is unverified on real hardware, and
+    // a wrong tolerance would fail closed on every step with no numbers in
+    // the run summary to diagnose it from. Explicitly `null` in full-page
+    // mode, where this check never runs (see its own comment at the
+    // STALE-CAPTURE DETECTION block for why that's an explicit branch, not
+    // incidental) -- computed exactly ONCE here and reused verbatim at
+    // that block, never re-derived a second time.
+    const dprForDimensionCheck = window.devicePixelRatio || 1;
+    const expectedWidthPxForDimensionCheck = fullPageCaptureEnabled ? null : window.innerWidth * dprForDimensionCheck;
+    const expectedHeightPxForDimensionCheck = fullPageCaptureEnabled ? null : window.innerHeight * dprForDimensionCheck;
+
     instr.mark(step, "capture", {
       durationMs: +captureResp.captureMs.toFixed(1),
       offscreenDocumentAlreadyExisted: captureResp.offscreenDocumentAlreadyExisted,
@@ -1957,6 +1972,23 @@ async function runAgentLoop() {
       // rather than omitted, same "never silently absent" posture as
       // `fullPage` above.
       screenshotHash: captureResp.screenshotHash || null,
+      // RULING A' check 1's ACTUAL side (the raw measurement background.js
+      // took off the PNG's own IHDR header) -- present on EVERY step,
+      // unconditionally, same posture as screenshotHash immediately above.
+      screenshotWidthPx: typeof captureResp.screenshotWidthPx === "number" ? captureResp.screenshotWidthPx : null,
+      screenshotHeightPx: typeof captureResp.screenshotHeightPx === "number" ? captureResp.screenshotHeightPx : null,
+      // RULING A' check 1's EXPECTED side + the DPR it was computed with
+      // (see the const block just above this call) -- present on EVERY
+      // step, unconditionally, right beside the ACTUAL measurement above.
+      // A PASSING step must still show what it was compared against and
+      // how much margin there was, not just that nothing fired -- the
+      // ±2px tolerance is unverified on real hardware, and if it's wrong
+      // for the machine this runs on, EVERY step fails closed silently
+      // with no numbers to diagnose it from unless this is here. `null`
+      // in full-page mode, where this check does not run.
+      expectedWidthPx: expectedWidthPxForDimensionCheck,
+      expectedHeightPx: expectedHeightPxForDimensionCheck,
+      devicePixelRatio: fullPageCaptureEnabled ? null : dprForDimensionCheck,
       // HAZARD 2 proactive throttle (background.js's handleCaptureAndDetect
       // -- see its own lastViewportCaptureAt comment): present on EVERY
       // step, unconditionally, INCLUDING 0 -- a step where the throttle
@@ -2050,67 +2082,126 @@ async function runAgentLoop() {
         ? { x: window.scrollX, y: window.scrollY }
         : CapturePlan.NO_DOCUMENT_OFFSET;
 
-    // ---- STALE-CAPTURE DETECTION (CLAUDE.md "OPEN -- capture can return
-    // a stale frame"): read HERE, at the exact same moment
-    // documentScanScrollOffset is captured just above -- "the moment of
-    // measurement" for THIS step's DOM scan. Deliberately a SEPARATE, raw
-    // reading (never CapturePlan.NO_DOCUMENT_OFFSET-zeroed) -- this check
-    // needs the page's ACTUAL current scroll position regardless of
-    // capture mode, not the (mode-dependent) offset applied to bboxes.
+    // ---- STALE-CAPTURE DETECTION (CLAUDE.md "STILL OPEN -- capture can
+    // return a stale frame"; RULING A', amended 2026-09-20). scrollY read
+    // HERE, at the exact same moment documentScanScrollOffset is captured
+    // just above -- "the moment of measurement" for THIS step's DOM scan.
+    // Deliberately a SEPARATE, raw reading (never
+    // CapturePlan.NO_DOCUMENT_OFFSET-zeroed) -- this check needs the
+    // page's ACTUAL current scroll position regardless of capture mode,
+    // not the (mode-dependent) offset applied to bboxes.
     //
-    // RULING C -- FAIL CLOSED: a positive verdict here means the image
-    // this step captured shows the WRONG viewport for the redaction
-    // rectangles this step is about to compute -- transmitting it would
-    // send whatever was on screen at the STALE (old) scroll position,
-    // unredacted, dressed up as if it were redacted for the CURRENT
-    // position. This step's send is refused; the RUN is NOT aborted --
-    // the mechanism behind the underlying staleness is unestablished and
-    // did not reproduce (see CLAUDE.md), so aborting the whole run on it
-    // would be a NEW failure mode built on an unreproduced bug. Costing
-    // one step out of MAX_STEPS is cheap; the next step re-captures
-    // naturally and the loop continues exactly as if this step had simply
-    // been slow. Mirrors the fail-closed idiom assertNoRawPii() already
-    // uses below (abort BEFORE anything leaves the client, log it,
-    // survive), just with "skip and continue" instead of "skip and stop"
-    // -- see this block's own `continue`, not `break`.
+    // TWO INDEPENDENT CHECKS -- see capture-hash.js's module header for the
+    // full writeup of why one check (the original Ruling A) missed a real
+    // occurrence the same day it shipped.
     const scanScrollY = window.scrollY;
-    const staleCaptureVerdict = CaptureHash.detectStaleCapture({
-      previousHash: lastScreenshotHash,
-      previousScrollY: lastScanScrollY,
-      currentHash: captureResp.screenshotHash,
-      currentScrollY: scanScrollY,
-    });
-    // Updated regardless of the verdict -- see lastScreenshotHash's own
-    // declaration comment for why the NEXT step must always compare
-    // against the MOST RECENT capture, not a stale one of its own.
-    lastScreenshotHash = captureResp.screenshotHash || null;
-    lastScanScrollY = scanScrollY;
 
-    if (staleCaptureVerdict) {
-      instr.mark(step, "stale-capture", staleCaptureVerdict);
-      // The log line states BOTH halves of the evidence, per CLAUDE.md's
-      // explicit instruction -- the repeated hash AND the scroll delta
-      // that proves the page moved -- not just "stale: true".
+    // CHECK 1 -- DIMENSION MISMATCH, PRIMARY, definitive, no history
+    // needed. Explicitly scoped OUT of full-page mode (NOT via missing
+    // data, unlike check 2 below) -- a stitched image is document-sized by
+    // construction and would fail this check on EVERY step if it ran
+    // there, so the guard is an explicit `fullPageCaptureEnabled` branch,
+    // not an incidental side effect of some field being unset.
+    // `expectedWidthPxForDimensionCheck`/`expectedHeightPxForDimensionCheck`/
+    // `dprForDimensionCheck` were already computed once, above, right before
+    // the "capture" instrumentation mark (so a passing step still records
+    // what this check compared against) -- reused verbatim here, never
+    // re-derived a second time.
+    const dimensionMismatchVerdict = fullPageCaptureEnabled
+      ? null
+      : CaptureHash.detectDimensionMismatch({
+          expectedWidth: expectedWidthPxForDimensionCheck,
+          expectedHeight: expectedHeightPxForDimensionCheck,
+          actualWidth: captureResp.screenshotWidthPx,
+          actualHeight: captureResp.screenshotHeightPx,
+        });
+
+    // CHECK 2 -- HASH RECURRENCE, SECONDARY, whole-run history. Scoped OUT
+    // of full-page mode implicitly: background.js never populates
+    // `screenshotHash` for a stitched capture, and detectHashRecurrence()
+    // treats a missing hash as "no verdict" -- the same mechanism the
+    // original Ruling A already relied on, unchanged by this amendment.
+    const hashRecurrenceVerdict = CaptureHash.detectHashRecurrence(seenHashScrollY, {
+      hash: captureResp.screenshotHash,
+      scrollY: scanScrollY,
+    });
+    // Record this hash's FIRST-seen scrollY, but ONLY if it isn't already
+    // recorded -- see seenHashScrollY's own declaration comment and
+    // detectHashRecurrence()'s doc comment for why overwriting an existing
+    // entry would silently narrow the window this check can catch a stale
+    // frame in.
+    if (
+      typeof captureResp.screenshotHash === "string" &&
+      captureResp.screenshotHash.length > 0 &&
+      !seenHashScrollY.has(captureResp.screenshotHash)
+    ) {
+      seenHashScrollY.set(captureResp.screenshotHash, scanScrollY);
+    }
+
+    // Reported UNCONDITIONALLY, every step, including when both are
+    // `null` -- a merged boolean here is exactly what let the 2026-09-20
+    // false negative go unnoticed for as long as it did; the RUN SUMMARY
+    // must be able to say WHICH check fired, not just "something did."
+    instr.mark(step, "stale-capture", {
+      dimensionMismatch: dimensionMismatchVerdict,
+      hashRecurrence: hashRecurrenceVerdict,
+    });
+
+    // RULING C -- FAIL CLOSED on EITHER verdict: a positive result from
+    // either check means the image this step captured cannot be trusted to
+    // show the CURRENT viewport, so transmitting it risks sending whatever
+    // was on screen at some other position/time, unredacted, dressed up as
+    // redacted for the current one. This step's send is refused; the RUN
+    // is NOT aborted -- the mechanism behind the underlying staleness is
+    // still unestablished (two hypotheses have now failed to survive
+    // scrutiny), so aborting the whole run on it would be a NEW failure
+    // mode built on a bug nobody has explained. Costing one step out of
+    // MAX_STEPS is cheap; the next step re-captures naturally. Mirrors the
+    // fail-closed idiom assertNoRawPii() already uses below (abort BEFORE
+    // anything leaves the client, log it, survive), just with "skip and
+    // continue" instead of "skip and stop" -- see this block's own
+    // `continue`, not `break`.
+    if (dimensionMismatchVerdict || hashRecurrenceVerdict) {
+      const reasons = [];
+      if (dimensionMismatchVerdict) reasons.push("dimension_mismatch");
+      if (hashRecurrenceVerdict) reasons.push("hash_recurrence");
+
+      // The log line states BOTH halves of the evidence for WHICHEVER
+      // check(s) fired, per CLAUDE.md's explicit instruction -- never just
+      // "stale: true".
+      const evidenceParts = [];
+      if (dimensionMismatchVerdict) {
+        evidenceParts.push(
+          `dimension mismatch: expected ${dimensionMismatchVerdict.expectedWidth}x${dimensionMismatchVerdict.expectedHeight} ` +
+            `but captured ${dimensionMismatchVerdict.actualWidth}x${dimensionMismatchVerdict.actualHeight} ` +
+            `(delta ${dimensionMismatchVerdict.deltaWidth}x${dimensionMismatchVerdict.deltaHeight}px)`
+        );
+      }
+      if (hashRecurrenceVerdict) {
+        evidenceParts.push(
+          `hash recurrence: screenshot hash ${hashRecurrenceVerdict.hash} first seen this run at scrollY ` +
+            `${hashRecurrenceVerdict.firstSeenScrollY}, now at scrollY ${hashRecurrenceVerdict.currentScrollY} ` +
+            `(delta ${hashRecurrenceVerdict.scrollDelta}px)`
+        );
+      }
+      const evidence = evidenceParts.join("; ");
+
       console.warn(
-        `[agent-loop] STALE CAPTURE DETECTED at step ${step} -- screenshot hash ${staleCaptureVerdict.hash} ` +
-          `repeated while the page's scrollY moved ${staleCaptureVerdict.previousScrollY} -> ` +
-          `${staleCaptureVerdict.currentScrollY} (delta ${staleCaptureVerdict.scrollDelta}px). The captured image ` +
-          "shows the WRONG viewport for this step's redaction rectangles -- refusing to send it. Skipping this " +
+        `[agent-loop] STALE CAPTURE DETECTED at step ${step} (${reasons.join("+")}) -- ${evidence}. The captured ` +
+          "image cannot be trusted for this step's redaction rectangles -- refusing to send it. Skipping this " +
           "step's /analyze send only; the run continues and will re-capture next step."
       );
       stepResults.push({
         step,
         skipped: "stale_capture",
-        detail:
-          `screenshot hash ${staleCaptureVerdict.hash} repeated while scrollY moved ` +
-          `${staleCaptureVerdict.previousScrollY} -> ${staleCaptureVerdict.currentScrollY} ` +
-          `(delta ${staleCaptureVerdict.scrollDelta}px)`,
+        reasons,
+        detail: evidence,
       });
       reportProgress({
         stage: "capture",
         lastError: {
-          summary: "Stale screenshot detected (byte-identical capture while the page scrolled) -- this step's send was refused for safety.",
-          detail: `hash=${staleCaptureVerdict.hash} scrollY ${staleCaptureVerdict.previousScrollY}->${staleCaptureVerdict.currentScrollY}`,
+          summary: `Stale screenshot detected (${reasons.join(", ")}) -- this step's send was refused for safety.`,
+          detail: evidence,
           step,
         },
       });

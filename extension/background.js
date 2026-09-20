@@ -834,15 +834,20 @@ async function handleCaptureAndDetect(sender) {
     const captureMs = lastViewportCaptureAt - tCapture0;
     const screenshot = stripDataUrlPrefix(dataUrl);
 
-    // CAPTURE STALENESS DETECTION (RULING B): hash the bytes HERE, right
-    // next to where they were just captured -- background.js owns the
-    // capture and already holds them, so no second copy needs to cross the
-    // message boundary just to compute this. The VERDICT (does this hash
-    // repeating actually mean staleness) is content.js's job -- it is the
-    // only context that also knows the page's scroll position. See
-    // lib/capture-hash.js's own header for the full split-of-responsibility
-    // writeup.
+    // CAPTURE STALENESS DETECTION (RULING B): hash + measure the bytes
+    // HERE, right next to where they were just captured -- background.js
+    // owns the capture and already holds them, so nothing needs to cross
+    // the message boundary twice just to compute either. readPngDimensions()
+    // is synchronous and reads only the IHDR header (see its own doc
+    // comment) -- no second decode, no extra cost beyond a few bytes of
+    // base64. BOTH verdicts (does this hash repeating actually mean
+    // staleness; does this size actually match the current viewport) are
+    // content.js's job -- it is the only context that also knows the
+    // page's scroll position and innerWidth/innerHeight/devicePixelRatio.
+    // See lib/capture-hash.js's own header (RULING A') for the full
+    // split-of-responsibility writeup.
     const screenshotHash = await CaptureHashLib.hashScreenshot(screenshot);
+    const { width: screenshotWidthPx, height: screenshotHeightPx } = CaptureHashLib.readPngDimensions(screenshot);
 
     const tDetect0 = performance.now();
     const result = await detectObjects(screenshot);
@@ -852,13 +857,15 @@ async function handleCaptureAndDetect(sender) {
       `CAPTURE_AND_DETECT OK -- throttleWait ${throttleWaitMs.toFixed(0)}ms, capture ${captureMs.toFixed(0)}ms, ` +
         `detect ${detectMs.toFixed(0)}ms total (modelLoadMs=${result.modelLoadMs.toFixed(0)}, ` +
         `inferenceMs=${result.inferenceMs.toFixed(0)}, offscreenDocumentAlreadyExisted=${offscreenDocumentAlreadyExisted}, ` +
-        `pipelineWasAlreadyLoaded=${result.pipelineWasAlreadyLoaded}, screenshotHash=${screenshotHash}), ` +
-        `${result.boxes.length} detection(s)`,
+        `pipelineWasAlreadyLoaded=${result.pipelineWasAlreadyLoaded}, screenshotHash=${screenshotHash}, ` +
+        `screenshotDims=${screenshotWidthPx}x${screenshotHeightPx}), ${result.boxes.length} detection(s)`,
     );
     return {
       type: "CAPTURE_AND_DETECT_RESULT",
       screenshot,
       screenshotHash,
+      screenshotWidthPx,
+      screenshotHeightPx,
       boxes: result.boxes,
       captureMs,
       detectMs,
