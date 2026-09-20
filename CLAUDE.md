@@ -484,11 +484,16 @@ A maximised viewport and a ~265 px viewport **cannot** produce byte-identical PN
 
 **⚠️ THE COMPOSITOR HYPOTHESIS RECORDED ABOVE NO LONGER FITS.** "The tab was not compositing" does not explain step 1 receiving a correct fresh maximised frame and step 2 then receiving an hour-old one. The honest position: the mechanism is stranger than characterised and is **still not established.** It is deliberately NOT replaced with a new theory here.
 
-**RULING A′ — two independent checks** (in flight, not yet verified at time of writing):
+**RULING A′ — two independent checks.** ✅ **BUILT AND VERIFIED MECHANICALLY 2026-09-20 — 749 tests green (529 JS + 220 server). NOT yet browser-verified.** Includes a regression test for the real miss above: the hash rule passes it clean, the dimension rule catches it.
 1. **Dimension check, primary and definitive:** the captured PNG's pixel dimensions must match the current viewport × `devicePixelRatio`. A frame from any other window state fails outright, with no history needed. Dimensions are read from the PNG **IHDR header** (fixed byte offsets 16–23), not by decoding — pure, synchronous, no canvas. **A ±2 px tolerance is mandatory:** `devicePixelRatio` is commonly fractional on Windows (1.25/1.5/1.75 under display scaling), so exact equality would fire on every step on most machines.
 2. **Hash recurrence across the whole run, secondary:** extends the comparison from "the previous capture" to "any capture earlier in this run", keyed `hash → scrollY-when-first-seen`. A hash recurring at the *same* scrollY is still the normal static-page case and must not flag.
 
-Both must be scoped OUT of full-page mode — a stitched image is document-sized by construction and would fail the dimension check on every step. The RUN SUMMARY must report **which** check fired; a merged boolean would discard exactly the signal that made this blind spot visible.
+Both are scoped OUT of full-page mode — the dimension check by an **explicit branch**, not by absent data, since a stitched image is document-sized by construction and would fail it every step. The RUN SUMMARY reports **which** check fired; a merged boolean would discard exactly the signal that made this blind spot visible.
+
+**🔴 THE ±2 px TOLERANCE HAS NEVER MET REAL HARDWARE, AND ITS FAILURE MODE IS TOTAL.** If it is wrong for the display scaling in use, `detectDimensionMismatch()` fires on every step, every step fails closed, and **the agent does nothing at all** while the run summary reports a list of skips. That is the correct direction to fail — loud, not silent — but it must be recognised on sight rather than read as a broken extension.
+> Which is why `expectedWidthPx`, `screenshotWidthPx` and `devicePixelRatio` are recorded on **every** step's `capture` entry, firing or not, from a **single hoisted computation the verdict itself reuses** (so the reported numbers cannot drift from the checked ones). A passing step must show its margin. This is the third time in this work that a value was computed and discarded unless it fired — see `throttleWaitMs` above. **Watch for that shape.**
+
+**The next browser run is this ruling's verification.** Re-run the same scenario (`demo/test-page.html`, the profile-autofill goal, mock backend). A `staleCaptureCount` of 0 is only meaningful now *because* the margin is visible on passing steps.
 
 #### ⚠️ THE PUBLISHED LATENCY FIGURE DOES NOT REPRODUCE. Found 2026-09-20. **Not yet resolved.**
 
