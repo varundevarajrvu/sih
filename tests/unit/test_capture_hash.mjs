@@ -282,37 +282,72 @@ describe("detectHashRecurrence() -- RULING A' check 2, SECONDARY, whole-run hist
   });
 });
 
-describe("REGRESSION: 2026-09-20 maximised/narrow-window miss -- hashes differ (old Ruling A blind), dimensions don't (Ruling A' catches it)", () => {
-  // Real observation (CLAUDE.md, "RULING A WAS TOO NARROW"):
-  //   12:38 maximised window   step 1   8f53565f...389593   fresh, correct
-  //   12:38 maximised window   step 2   832450c5...296eb0   an ~265px-window
-  //                                                          frame from a
-  //                                                          run that had
-  //                                                          ended ~57 min
-  //                                                          earlier
-  const MAXIMISED_STEP1_HASH = "8f53565f389593";
-  const NARROW_WINDOW_STALE_HASH = "832450c5296eb0";
+describe("CONSTRUCTED SCENARIO: cross-window-size staleness -- NOT a reproduction of the 2026-09-20 event (see CLAUDE.md 'RULING A WAS TOO NARROW' -> its own correction directly below it)", () => {
+  // ---------------------------------------------------------------------
+  // ⚠️ FRAMING CORRECTION (2026-09-20, same day, later sitting). This
+  // block was originally written as "the regression test reproducing the
+  // real 12:38 maximised/narrow-window miss." That framing was WRONG, and
+  // the error was the orchestrator's, not this module's or this test's.
+  //
+  // What actually happened: window dimensions were never recorded for the
+  // 12:38 run (the dimension instrumentation didn't exist yet), so "step
+  // 2's hash came from an ~265px-wide window" was an INFERENCE, not a
+  // measurement. Once the dimension instrumentation shipped, a LATER run
+  // (13:49) recorded that exact same hash -- 832450c5...296eb0 -- with
+  // `screenshotWidthPx: 1920, screenshotHeightPx: 970`. It is a
+  // 1920x970 frame. The "narrow window" story was never true.
+  //
+  // WHAT THIS TEST ACTUALLY IS: a CONSTRUCTED scenario proving
+  // detectDimensionMismatch() catches a frame captured under a genuinely
+  // different window size than the one currently expected, using the
+  // real hash strings from the 2026-09-20 observation only as flavour/
+  // labels -- not as a claim about what those hashes' real dimensions
+  // were. Cross-window-size staleness is a real failure mode and this is
+  // a real, valid test of it. It does NOT reproduce the observed 12:38
+  // event, and must not be cited as if it does.
+  //
+  // THE HONEST CONSEQUENCE, stated plainly rather than left implied by a
+  // green test: if the 12:38 run was 1920x970 throughout (which the
+  // 13:49 measurement now suggests), then AT STEP 2, NEITHER of Ruling
+  // A''s checks would have fired -- dimensions would have matched (both
+  // 1920x970), and 832450c5 had not been seen earlier IN THAT RUN (its
+  // own step 1 was a different hash, 8f53565f...389593). Step 2 still
+  // received a frame that did not reflect step 1's scroll-and-fill, and
+  // Ruling A' does not demonstrably close that case. The only thing this
+  // suite proves is that Ruling A' catches a stale frame that arrives
+  // from a DIFFERENT window size, or that repeats an EARLIER hash in the
+  // SAME run at a different scroll position -- not that it catches every
+  // way a stale frame could arrive. A reader should take a green result
+  // here as coverage of those two specific mechanisms, not as evidence
+  // the underlying bug is closed.
+  // ---------------------------------------------------------------------
+  const HASH_A_LABEL = "8f53565f389593"; // borrowed from the 2026-09-20 observation, label only -- no claim about its real dimensions
+  const HASH_B_LABEL = "832450c5296eb0"; // ditto -- this is the hash later measured at 1920x970, NOT at any "narrow" size
 
-  test("detectHashRecurrence() ALONE does not flag it -- this is exactly the blind spot this amendment closes", () => {
-    const seenThisRun = new Map([[MAXIMISED_STEP1_HASH, 0]]); // this run's own fresh step 1
+  test("detectHashRecurrence() does not flag two DIFFERENT hashes -- true independent of any window-size claim, and not sufficient on its own to catch every staleness shape (see the framing correction above)", () => {
+    const seenThisRun = new Map([[HASH_A_LABEL, 0]]); // this run's own step 1
     const verdict = detectHashRecurrence(seenThisRun, {
-      hash: NARROW_WINDOW_STALE_HASH, // step 2's hash -- different from anything seen so far THIS run
+      hash: HASH_B_LABEL, // step 2's hash -- different from anything seen so far THIS run
       scrollY: 0,
     });
     assert.equal(
       verdict,
       null,
-      "the hash-recurrence check alone must NOT catch this -- the stale hash was never seen in THIS run's own history, only in an unrelated run ~57 minutes earlier"
+      "the hash-recurrence check alone must not flag two hashes that simply differ -- it has nothing to compare against when a hash is genuinely new to this run, whatever the reason"
     );
   });
 
-  test("detectDimensionMismatch() DOES flag it -- the stale frame's actual PNG size cannot match the maximised viewport it was supposedly captured under", () => {
-    // Maximised window (dpr 1 for this scenario -- the fractional-DPR
-    // interaction is exercised separately above).
+  test("detectDimensionMismatch() DOES flag a CONSTRUCTED cross-window-size case -- a real capability of the dimension check, not a reproduction of the 12:38 event (see the framing correction above)", () => {
+    // Constructed "expected" side: a maximised viewport, dpr 1 for this
+    // scenario (the fractional-DPR interaction is exercised separately
+    // above).
     const expectedWidth = 1920;
     const expectedHeight = 970;
-    // The narrow window's actual captured size -- the ~265px-wide window
-    // CLAUDE.md's own OPEN-bug entry names ("reflowed to ~3,000 px tall").
+    // Constructed "actual" side: a frame captured under a genuinely
+    // different, narrow window -- CLAUDE.md's own OPEN-bug entry names
+    // this shape ("reflowed to ~3,000 px tall"). This pairing is
+    // deliberately constructed to exercise the check, not measured from
+    // any single real run.
     const actualWidth = 265;
     const actualHeight = 3000;
 
