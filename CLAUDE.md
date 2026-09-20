@@ -478,6 +478,18 @@ A third run, **maximised window**, on the same page. Hashes across all three run
 ```
 A maximised viewport and a ~265 px viewport **cannot** produce byte-identical PNGs. `captureVisibleTab` served a cached frame from a previous window size, and the frame was transmitted.
 
+> ### 🔴 CORRECTION — 2026-09-20, later the same day. The sentence directly above is WRONG, and it was an ORCHESTRATOR error.
+>
+> **`832450c5…296eb0` is a 1920×970 frame.** Measured, once the dimension instrumentation existed: the 13:49 run recorded that exact hash with `screenshotWidthPx: 1920, screenshotHeightPx: 970`. Calling it "the narrow-window frame" was an **inference from an assumed window size that was never recorded** — the runs above predate the instrumentation that would have settled it. That is the same class of mistake as quoting a latency figure you cannot reproduce.
+>
+> **What survives unchanged:** the **11:41 catch is real.** Identical hash on consecutive captures while `scrollY` moved 573.6 px is stale by Ruling A's own discriminator regardless of what size the window was. The detector worked.
+>
+> **What does NOT survive:** the claim that the 12:38 step-2 frame came from a *different window size*. If that run was 1920×970 throughout — which the hash now suggests — then at step 2 **neither** of Ruling A′'s checks would have fired: dimensions would match, and `832450c5` had not been seen earlier *in that run* (step 1 was `8f53565f`). Step 2 still received a frame that did not reflect step 1's scroll-and-fill, so **a genuine staleness case exists that Ruling A′ does not demonstrably close.**
+>
+> **Consequence for the test suite:** the regression test added for "the real miss" encodes 265×3000 vs 1920×970 — a scenario constructed from the wrong inference. It is a valid test of cross-window-size staleness, which is a real failure mode the dimension check genuinely catches. It is **not** a reproduction of the observed 12:38 event, and must not be cited as one.
+>
+> **The actual lesson, and why the instrumentation now exists:** window dimensions were never recorded, so a question that one number would have answered instead got answered by inference — twice, wrongly. `expectedWidthPx`/`screenshotWidthPx`/`devicePixelRatio` are now on **every** step precisely so this cannot recur.
+
 **`staleCaptureCount: 0` on that run is a FALSE NEGATIVE.** Ruling A compares only against the *immediately previous* capture: `8f53565f != 832450c5`, so no verdict. The discriminator catches "the same frame twice in a row" and is blind to "an older frame resurfacing after a correct one."
 
 **This is an orchestrator error, not an implementation defect** — Ruling A was specified too narrowly and the module implements it exactly as written.
