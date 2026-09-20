@@ -403,7 +403,7 @@ In that run the exposure lasted one step only because the mock happened to `type
 
 **Live-verified against the running server**, not only in unit tests: `/analyze` now returns `key` on every response, `{press_key, key:"Enter"}` validates, and all three violations (missing key, `F12`, `key` on a `click`) are rejected.
 
-### ⚠️ STILL OPEN — capture can return a stale frame. Observed 2026-09-17, mechanism **still NOT established**. Now DETECTED and FAIL-CLOSED as of 2026-09-19 — see the entry directly below this one.
+### ⚠️ STILL OPEN — capture can return a stale frame. **REPRODUCED 2026-09-20** and caught automatically by the detector; mechanism still NOT established (rate-limiting is now RULED OUT — see the reproduction entry below). Detected and fail-closed as of 2026-09-19.
 
 Two consecutive steps produced **byte-identical screenshots** while the page had scrolled 2,613 px between them (`agent-1` bbox y: `1161.0` → `-1452.0`). Step 2's redaction rectangles were therefore computed against the scrolled DOM and drawn on the *unscrolled* image, at negative y — off-image, redacting nothing.
 
@@ -430,6 +430,34 @@ Byte-identical consecutive captures are the **normal, correct** case on a static
 **Reported unconditionally, including at zero** — `screenshotHash` and `throttleWaitMs` on every step's `capture` instrumentation, `staleCaptureCount`/`staleCaptures` in the RUN SUMMARY. Same posture `fullPage` and `rank` already set: a run with zero stale captures must *say* zero, not omit the field.
 
 **Why `throttleWaitMs` is reported and not just computed:** a stale-capture skip `continue`s immediately, so the next capture lands inside the new 550 ms floor. The throttle fires *precisely* in the scenario this change instruments, and an unreported wait would surface only as unattributable end-to-end latency. `tCapture0` is taken **after** the wait, so `captureMs` still measures only the capture — do not "simplify" that.
+
+#### ✅ REPRODUCED AND CAUGHT IN-BROWSER — 2026-09-20. The detector's first real outing.
+
+Mock backend, `demo/test-page.html` at a **~265 px-wide window**, goal `Fill the name as River Jane and email id as riverjane33@demo.com`. Run completed `outcome: "done"`, 4 steps, 11,635 ms.
+
+```
+step 1 :: capture        screenshotHash 832450c5…296eb0   throttleWaitMs 0
+step 1 :: act            fill_profile agent-4  → page scrolls 0 → 573.6 px
+step 2 :: capture        screenshotHash 832450c5…296eb0   ← BYTE-IDENTICAL
+step 2 :: stale-capture  stale: true, scrollDelta 573.6px → SEND REFUSED
+step 3, 4                distinct hashes, sent normally, run completed
+staleCaptureCount: 1
+```
+
+**Everything Rulings A/B/C specified behaved as designed in a real browser:** it fired exactly once, on the real thing; it did not fire on the three steps that were genuinely fine; the step refused to send *before redact*; and the run continued to a clean `done` rather than aborting.
+
+**🔴 RATE-LIMITING IS RULED OUT.** `throttleWaitMs: 0` and the two captures were **~2.9 s apart** — far outside Chrome's ~2/sec limit, and far outside the full-page path's own 550 ms constant. The 2026-09-17 note that *"Chrome rate-limited it does not obviously fit"* is now confirmed: it doesn't fit at all. The throttle/retry parity was still correct to close, but it is **not** the cause and must not be recorded as the fix.
+
+**🔴 THE TRIGGER IS `scrollIntoView` FROM THE ACTION SURFACE.** Step 1's `fill_profile` scrolled the page 573.6 px to reach an off-screen field — the "off-screen targets are now scrolled into view before click/type" behaviour added 2026-09-19. That change did not *create* this bug; it made it **reachable on a page that previously never scrolled mid-run**, which is why every earlier multi-step run on this same page missed it.
+
+**MECHANISM — HYPOTHESIS ONLY, NOT ESTABLISHED. Do not record this as a cause.**
+2.9 s is far too long for an ordinary in-flight-repaint race. The remaining explanation consistent with the data is that the tab **was not compositing at all** — a narrow, partially-occluded window with devtools focused — so `captureVisibleTab` returned the last frame actually painted. This would also explain the shape of the original observation: reproduced at 265 px, never at 1920×970. **Unverified.** Whoever takes this further: vary occlusion/focus/window state deliberately and watch `staleCaptureCount`, which now makes that a cheap experiment instead of a PNG-diffing exercise.
+
+**Verified in-browser by this run, closing three of the four "not verified without a browser" items above:** `crypto.subtle` works in the real MV3 service worker (real SHA-256 digests returned); `content.js`'s dynamic `import()` of `capture-hash.js` resolves under the real extension loader; and the unconditional reporting renders as designed. Only "does an extra `await` between capture and detect perturb the race" remains open — and the bug reproduced *with* that await in place, so it plainly does not mask it.
+
+**Side confirmations from the same run:** `sensitiveNodes` went 4 → 5 after the `fill_profile`, i.e. `buildProfileVaultSensitiveNodes()` working in a browser. And `framesReported: 0` on this iframe-free page — the `framesReported: 1, framesMerged: 0, framesDropped: 1` seen in an immediately prior run was a **stale `tabId→frameId` registry entry surviving from the previous session**, cleared by the extension reload. It failed safe (defensive whole-iframe redaction fired), but it is the phantom-frame shape the 2026-09-14 fix was supposed to have closed — **watch for it; it is not confirmed gone.**
+
+**⚠️ UNEXPLAINED — inference ran 2,650 ms / 2,692 ms against the recorded 780–880 ms baseline**, warm (`pipelineWasAlreadyLoaded: true`, `device: webgpu`), two consistent samples. An immediately prior run measured 4,570 ms, so there is a warm-up component, but it settles ~3× above baseline, not at it. Both runs were at the 265 px window, so image shape is the obvious suspect and the baseline was a normal viewport — **suspected, not established.** Re-measure at a normal window before quoting either number.
 
 **Scoped OUT: full-page capture mode.** It never populates a hash, and `detectStaleCapture()` treats a missing hash as "no verdict" — which scopes the check out without a separate branch. That mode restores scroll to its pre-capture position before the scan runs, so a single `scrollY` reading there would not mean what this check needs it to mean.
 
