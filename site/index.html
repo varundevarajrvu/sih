@@ -22,7 +22,7 @@
   <div class="announce-inner">
     <p class="announce-msg">SIH 26171 — On-Device Visual Perception for Lightweight Browser Agents</p>
     <ul class="announce-links">
-      <li>717 tests green</li>
+      <li>749 tests green</li>
       <li aria-hidden="true" class="announce-sep">|</li>
       <li>0 network calls for inference</li>
     </ul>
@@ -235,7 +235,7 @@
         <li class="pipe">
           <p class="pipe-index">02</p>
           <h3 class="pipe-stage">Detect</h3>
-          <p class="pipe-desc"><code>Xenova/yolos-tiny</code> runs in an MV3 offscreen document on WebGPU, auto WASM fallback. Bounding boxes only — the image doesn&rsquo;t leave the browser here either.</p>
+          <p class="pipe-desc"><code>Xenova/yolos-tiny</code> runs in an MV3 offscreen document on WebGPU, WASM fallback by design. Bounding boxes only — the image doesn&rsquo;t leave the browser here either.</p>
           <p class="pipe-metric"><b>784–881ms</b> warm, 4 samples</p>
         </li>
         <li class="pipe">
@@ -286,7 +286,7 @@
         <h2 class="section-title">Three real runs,<br>stage by stage.</h2>
         <p class="lede">
           Every line below is drawn from real browser runs and real measured ranges — nothing
-          here is a mockup. Full log lines are quoted verbatim.
+          here is a mockup. Composited from several real runs; individual log lines are quoted verbatim.
         </p>
       </div>
 
@@ -302,7 +302,7 @@
           <div class="term-line dim">$ VLM_BACKEND=mock · goal: "fill the name as Simon"</div>
           <div class="term-line">[agent-loop] step 1 :: capture :: viewport screenshot captured</div>
           <div class="term-line">[agent-loop] step 1 :: detect :: <span class="num">784</span>ms warm (yolos-tiny, WebGPU) — samples: 784 / 817 / 860 / 881 ms</div>
-          <div class="term-line dim">&nbsp;&nbsp;↪ first call after offscreen doc creation: ~16–21s, one-time WebGPU shader compile — absorbed by a pre-warm at install, never paid mid-run</div>
+          <div class="term-line dim">&nbsp;&nbsp;↪ first call after offscreen doc creation: ~16–20s, one-time WebGPU shader compile — pre-warm at install covers the common case; a service-worker eviction re-incurs it</div>
           <div class="term-line">[agent-loop] step 1 :: scan :: <span class="num">1–16</span>ms — 4 sensitive nodes flagged (password, email, aadhaar-shaped id, id-caption text)</div>
           <div class="term-line">[agent-loop] step 1 :: redact :: <span class="num">22–158</span>ms — canvas blackout + DOM JSON strip · detections: 3, regions: 7 (4 DOM + 3 vision)</div>
           <div class="term-line pass">[agent-loop] Section 5 check PASSED -- outgoing payload contains no raw value for 4 flagged sensitive node(s).</div>
@@ -321,7 +321,7 @@
           <div class="term-line dim">"text matches destructive-intent keyword "place order"; id matches destructive-intent keyword "place order""</div>
 
           <div class="term-line divider">————————————————————————————————————</div>
-          <div class="term-line ok">717/717 tests passing · peak JS heap 30–35MB · zero network calls for inference</div>
+          <div class="term-line ok">749/749 tests passing · peak JS heap 30–35MB · zero network calls for inference</div>
           <span class="term-cursor is-hidden" id="term-cursor" aria-hidden="true"></span>
         </div>
       </div>
@@ -495,7 +495,7 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
     <div class="wrap">
       <div class="section-head reveal">
         <p class="eyebrow"><span class="section-number">§7</span> Measured results</p>
-        <h2 class="section-title">Real numbers from browser<br>runs, not estimates.</h2>
+        <h2 class="section-title">Real numbers from browser<br>runs.</h2>
       </div>
 
       <div class="table-wrap reveal" tabindex="0" role="region" aria-label="Measured results table, scrollable horizontally on narrow screens">
@@ -505,7 +505,7 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
           </thead>
           <tbody>
             <tr><td>Object detection, warm</td><td class="figure">784 / 817 / 860 / 881 ms <span class="dim">(4 samples, ~780–880ms)</span></td></tr>
-            <tr><td>Object detection, first call after offscreen doc creation</td><td class="figure">~16–21 s <span class="dim">¹</span></td></tr>
+            <tr><td>Object detection, first call after offscreen doc creation</td><td class="figure">~16–20 s <span class="dim">¹</span></td></tr>
             <tr><td>DOM PII scan</td><td class="figure">1–16 ms</td></tr>
             <tr><td>Redaction (canvas + JSON)</td><td class="figure">22–158 ms</td></tr>
             <tr><td>Peak JS heap</td><td class="figure">30–35 MB</td></tr>
@@ -517,13 +517,16 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
       <p class="note reveal">
         <sup>1</sup> One-time WebGPU shader compilation, not model load
         (<code>pipelineWasAlreadyLoaded: true</code>, model-load 0ms) — the timing pattern is
-        confirmed, the exact mechanism inferred. A pre-warm inference at install and startup absorbs this
-        cost once, invisibly; the popup only shows ready once it&rsquo;s paid.
+        confirmed, the exact mechanism inferred. A pre-warm inference at install and startup covers the
+        common case, paying this cost once per offscreen-document lifetime rather than mid-run — but an
+        MV3 service worker is evicted routinely, and when it is, the offscreen document goes with it and
+        the next inference re-incurs the full cost. A recorded sample after such an eviction measured
+        18,430 ms with <code>pipelineWasAlreadyLoaded: true</code>.
       </p>
 
       <div class="chips reveal">
-        <span class="chip"><b>717</b> tests, all green — 497 Node + 220 pytest</span>
-        <span class="chip"><b>Xenova/yolos-tiny</b> on WebGPU, WASM fallback</span>
+        <span class="chip"><b>749</b> tests, all green — 529 Node + 220 pytest</span>
+        <span class="chip"><b>Xenova/yolos-tiny</b> on WebGPU, WASM fallback by design</span>
         <span class="chip"><b>0</b> network calls for inference — ONNX runtime + weights bundled locally</span>
         <span class="chip"><b>detections: 3, regions: 7</b> (4 DOM + 3 vision), one full run</span>
       </div>
@@ -576,7 +579,7 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
         <div>
           <ul class="stack-list">
             <li><span class="name">Chrome MV3 + chrome.offscreen</span><span class="desc">The only way to hold a persistent WebGPU context inside a service-worker-based extension.</span></li>
-            <li><span class="name">WebGPU · onnxruntime-web · @huggingface/transformers</span><span class="desc">Xenova/yolos-tiny, fp32, bundled locally. Automatic WASM fallback if WebGPU isn&rsquo;t available.</span></li>
+            <li><span class="name">WebGPU · onnxruntime-web · @huggingface/transformers</span><span class="desc">Xenova/yolos-tiny, fp32, bundled locally. Degrades to WASM by design if WebGPU isn&rsquo;t available — that path has never fired in this project.</span></li>
             <li><span class="name">FastAPI + Pydantic</span><span class="desc">One /analyze endpoint, strict schemas, defense-in-depth PII re-check on every request.</span></li>
             <li><span class="name">Set-of-Mark grounding</span><span class="desc">Stable data-agent-id per actionable element — the model never touches raw pixel coordinates.</span></li>
           </ul>
@@ -619,8 +622,8 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
           <dd>A name has no regex signature, and flagging generic <code>name</code> autocomplete tokens would black out most of a form and leave the agent unable to operate — a deliberate, documented tradeoff. The demo ID card&rsquo;s caption name is readable in the transmitted screenshot. Values the agent fills <em>from your vault</em> are a separate case and are redacted, because their provenance is known rather than inferred.</dd>
         </div>
         <div class="limit">
-          <dt>Capture returned a stale frame once</dt>
-          <dd>Two consecutive steps produced byte-identical screenshots while the page had scrolled, so that step&rsquo;s redaction boxes were drawn against an image they didn&rsquo;t match. Nothing was exposed — the sensitive fields were below the fold in the stale frame — and it did not recur at normal window width. The mechanism is not understood and nothing was changed. Tracked openly rather than quietly.</dd>
+          <dt>Capture has returned a stale frame at least three times</dt>
+          <dd>A detector now catches the byte-identical-while-scrolled case and fails the step closed rather than transmitting an image that doesn&rsquo;t match the DOM — browser-verified 2026-09-20. A second check, for an older frame resurfacing, is built but not yet browser-verified. One observed case is caught by neither, and the mechanism remains unestablished. Tracked openly rather than quietly.</dd>
         </div>
         <div class="limit">
           <dt>General detector, not a PII detector</dt>
@@ -650,7 +653,7 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
     <p class="footer-note">
       A Privacy-Preserving Browser Tool. SIH 26171 — On-Device Visual Perception for Lightweight
       Browser Agents. Built offline: no CDNs, no third-party requests, fonts self-hosted.
-      Every number on this page comes from a real browser run.
+      Every measurement on this page comes from a real browser run.
     </p>
   </div>
 </footer>

@@ -69,7 +69,7 @@ If redaction failed, the guard still blocks the write. If the guard were bypasse
 
 ## Measured results
 
-Real numbers from browser runs, not estimates.
+Real numbers from browser runs.
 
 | Stage | Measured |
 |---|---|
@@ -80,9 +80,9 @@ Real numbers from browser runs, not estimates.
 | Peak JS heap | 30–35 MB |
 | Full 3-step loop (mock backend) | 3,182 ms |
 
-¹ The first inference after the offscreen document is created is ~20× slower, with the pipeline *already loaded* and model-load time at 0 ms. Best explanation is WebGPU compiling shaders lazily on first execution — the timing pattern is confirmed; that specific mechanism is inferred, not instrumented. A pre-warm inference runs at install and startup, and the popup shows warm status so the cost is paid once, invisibly.
+¹ The first inference after the offscreen document is created is ~20× slower, with the pipeline *already loaded* and model-load time at 0 ms. Best explanation is WebGPU compiling shaders lazily on first execution — the timing pattern is confirmed; that specific mechanism is inferred, not instrumented. A pre-warm inference runs at install and startup, and the popup shows warm status, so the common case pays this cost once per offscreen-document lifetime rather than mid-run. An MV3 service worker is evicted routinely, and when it is, the offscreen document goes with it — the next inference re-incurs the full cost. A recorded step-1 sample after such an eviction measured 18,430 ms with `pipelineWasAlreadyLoaded: true`.
 
-**Detection:** `Xenova/yolos-tiny`, WebGPU with automatic WASM fallback, ONNX runtime and weights bundled locally — **zero network calls for inference**.
+**Detection:** `Xenova/yolos-tiny`, WebGPU with automatic WASM fallback by design, ONNX runtime and weights bundled locally — **zero network calls for inference**.
 
 ---
 
@@ -107,7 +107,9 @@ cross-origin rather than same-origin wearing a different path.
 
 Then load the extension: `chrome://extensions` → Developer mode → **Load
 unpacked** → select `extension/`. Wait for the popup's green ✓ before running —
-the first inference is slow exactly once.
+the first inference after the offscreen document is created is slow, and a
+service-worker eviction re-creates it, so check for the ✓ again after the
+browser has been idle.
 
 ### Or manually
 
@@ -189,20 +191,21 @@ server/           FastAPI /analyze — Pydantic schemas, swappable VLM clients
 demo/             test-page.html with password, email, Aadhaar-shaped ID, an ID card, and a
                    guard-test "Place Order" button (?scenario=checkout)
 spike/            Phase 0 research — the WebGPU/offscreen viability investigation
-tests/            663 tests
+tests/            749 tests
 CLAUDE.md         full decision record: every ruling, measurement, and correction
 ```
 
 ## Tests
 
 ```bash
-node --test tests/unit/*.mjs                      # 466
-server/.venv/Scripts/python -m pytest tests/      # 197
+node --test tests/unit/*.mjs                      # 529
+server/.venv/Scripts/python -m pytest tests/      # 220
 ```
 
-466 Node `node:test` + 197 pytest = **663 tests, all green**. This figure
-supersedes the "238"/"367"/"393"/"526" counts in older commentary
-elsewhere in this repo; `CLAUDE.md` carries the per-pass breakdown.
+529 Node `node:test` + 220 pytest = **749 tests, all green**. This figure
+supersedes the "238"/"367"/"393"/"526"/"663"/"717" counts in older
+commentary elsewhere in this repo; `CLAUDE.md` carries the per-pass
+breakdown.
 
 Redaction is verified by **sampling actual pixels** inside and outside each rect — including a test asserting the *unscaled* coordinate is NOT painted, which proves the HiDPI scaling is load-bearing rather than merely present.
 
@@ -213,7 +216,9 @@ Redaction is verified by **sampling actual pixels** inside and outside each rect
 - **Viewport only.** `captureVisibleTab` can't see below the fold. Content off-screen is invisible to the vision layer.
 - **`yolos-tiny` is a general COCO detector**, not a PII detector. It finds faces via the `person` class; there is no "ID card" class. Modern real-time detectors (RT-DETR, D-FINE) currently crash on onnxruntime-web's WebGPU backend — a missing `ceil_mode` `AveragePool` kernel, not a model defect. Documented in `CLAUDE.md`.
 - **Names in page content are not redacted.** A name has no regex signature, and flagging generic `name` autocomplete tokens would black out most of a form and leave the agent unable to operate — a deliberate, documented tradeoff. The demo ID card's "Jordan A. Demo" is readable in the transmitted screenshot. Values the agent fills *from your vault* are a separate case and **are** redacted, because their provenance is known rather than inferred.
-- **Capture returned a stale frame once.** Two consecutive steps produced byte-identical screenshots while the page had scrolled, so that step's redaction boxes were drawn against an image they didn't match. Nothing was exposed (the sensitive fields were below the fold in the stale frame), it only appeared at a 265px-wide window, and it did not recur at normal width — but the mechanism is not understood and nothing was changed. Tracked in `CLAUDE.md`.
+- **Capture has returned a stale frame at least three times.** A detector now catches the byte-identical-while-scrolled case and fails the step closed rather than transmitting an image that doesn't match the DOM — browser-verified 2026-09-20. A second check, for an older frame resurfacing, is built but not yet browser-verified. One observed case is caught by neither, and the mechanism remains unestablished. Tracked in `CLAUDE.md`.
+- **One iframe deep.** DOM scanning and redaction cover the top-level page plus one level of iframe nesting — the realistic case of a payment provider's frame sitting directly in a checkout page. An iframe nested inside another iframe is not covered.
+- **Never run against a real website.** Every browser verification to date is against this project's own demo fixtures. The hardening was designed for real pages — hundreds of actionable elements, third-party ad frames — but has not yet met one. An observe-only backend exists specifically so that test can be run without an autonomous agent clicking anything.
 - **Firefox is untouched.** Scoped from the start as a post-integration pass.
 - **Gemini's free tier may train on submitted data.** Acceptable here precisely because redaction happens client-side first — a provider that trains on this data still never receives a password, an email, or a face. That's the thesis working, not a compromise of it.
 
