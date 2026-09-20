@@ -431,6 +431,14 @@ Byte-identical consecutive captures are the **normal, correct** case on a static
 
 **Why `throttleWaitMs` is reported and not just computed:** a stale-capture skip `continue`s immediately, so the next capture lands inside the new 550 ms floor. The throttle fires *precisely* in the scenario this change instruments, and an unreported wait would surface only as unattributable end-to-end latency. `tCapture0` is taken **after** the wait, so `captureMs` still measures only the capture — do not "simplify" that.
 
+**Scoped OUT: full-page capture mode.** It never populates a hash, and `detectStaleCapture()` treats a missing hash as "no verdict" — which scopes the check out without a separate branch. That mode restores scroll to its pre-capture position before the scan runs, so a single `scrollY` reading there would not mean what this check needs it to mean.
+
+**NOT verified without a browser** — *(written 2026-09-19; three of these four were closed by the reproduction recorded below the next day — left here as written rather than edited after the fact)*:
+- that `crypto.subtle`/`atob` behave identically inside the real MV3 service worker (only Node-verified; the `crypto.subtle` call site is new),
+- that `content.js`'s dynamic `import()` of `capture-hash.js` resolves under the real extension loader (jsdom cannot exercise `chrome.runtime.getURL` or `web_accessible_resources` at all),
+- that the detector ever fires against a **real** reproduction — only Ruling A's discriminator is proven, against fixtures,
+- **whether inserting an `await crypto.subtle.digest(...)` between capture and detect perturbs the timing of a race nobody has explained.** Stated because the mechanism is unknown: this change could in principle mask or unmask the original bug.
+
 #### ✅ REPRODUCED AND CAUGHT IN-BROWSER — 2026-09-20. The detector's first real outing.
 
 Mock backend, `demo/test-page.html` at a **~265 px-wide window**, goal `Fill the name as River Jane and email id as riverjane33@demo.com`. Run completed `outcome: "done"`, 4 steps, 11,635 ms.
@@ -450,7 +458,7 @@ staleCaptureCount: 1
 
 **🔴 THE TRIGGER IS `scrollIntoView` FROM THE ACTION SURFACE.** Step 1's `fill_profile` scrolled the page 573.6 px to reach an off-screen field — the "off-screen targets are now scrolled into view before click/type" behaviour added 2026-09-19. That change did not *create* this bug; it made it **reachable on a page that previously never scrolled mid-run**, which is why every earlier multi-step run on this same page missed it.
 
-**MECHANISM — HYPOTHESIS ONLY, NOT ESTABLISHED. Do not record this as a cause.**
+**MECHANISM — HYPOTHESIS ONLY, NOT ESTABLISHED. Do not record this as a cause.** ⚠️ **AND IT DID NOT SURVIVE THE SAME DAY — see "RULING A WAS TOO NARROW" directly below.** Left here as written rather than deleted, because the reasoning that produced it is the reasoning that got corrected.
 2.9 s is far too long for an ordinary in-flight-repaint race. The remaining explanation consistent with the data is that the tab **was not compositing at all** — a narrow, partially-occluded window with devtools focused — so `captureVisibleTab` returned the last frame actually painted. This would also explain the shape of the original observation: reproduced at 265 px, never at 1920×970. **Unverified.** Whoever takes this further: vary occlusion/focus/window state deliberately and watch `staleCaptureCount`, which now makes that a cheap experiment instead of a PNG-diffing exercise.
 
 **Verified in-browser by this run, closing three of the four "not verified without a browser" items above:** `crypto.subtle` works in the real MV3 service worker (real SHA-256 digests returned); `content.js`'s dynamic `import()` of `capture-hash.js` resolves under the real extension loader; and the unconditional reporting renders as designed. Only "does an extra `await` between capture and detect perturb the race" remains open — and the bug reproduced *with* that await in place, so it plainly does not mask it.
@@ -459,13 +467,45 @@ staleCaptureCount: 1
 
 **⚠️ UNEXPLAINED — inference ran 2,650 ms / 2,692 ms against the recorded 780–880 ms baseline**, warm (`pipelineWasAlreadyLoaded: true`, `device: webgpu`), two consistent samples. An immediately prior run measured 4,570 ms, so there is a warm-up component, but it settles ~3× above baseline, not at it. Both runs were at the 265 px window, so image shape is the obvious suspect and the baseline was a normal viewport — **suspected, not established.** Re-measure at a normal window before quoting either number.
 
-**Scoped OUT: full-page capture mode.** It never populates a hash, and `detectStaleCapture()` treats a missing hash as "no verdict" — which scopes the check out without a separate branch. That mode restores scroll to its pre-capture position before the scan runs, so a single `scrollY` reading there would not mean what this check needs it to mean.
+#### 🔴 RULING A WAS TOO NARROW — a stale frame got through undetected. Found 2026-09-20, same sitting.
 
-**NOT verified without a browser** — all of this belongs on the browser-run checklist, none of it is claimed as covered:
-- that `crypto.subtle`/`atob` behave identically inside the real MV3 service worker (only Node-verified; the `crypto.subtle` call site is new),
-- that `content.js`'s dynamic `import()` of `capture-hash.js` resolves under the real extension loader (jsdom cannot exercise `chrome.runtime.getURL` or `web_accessible_resources` at all),
-- that the detector ever fires against a **real** reproduction — only Ruling A's discriminator is proven, against fixtures,
-- **whether inserting an `await crypto.subtle.digest(...)` between capture and detect perturbs the timing of a race nobody has explained.** Stated because the mechanism is unknown: this change could in principle mask or unmask the original bug.
+A third run, **maximised window**, on the same page. Hashes across all three runs that day:
+```
+11:25  narrow window      step 1   832450c5…296eb0
+11:41  narrow window      step 1   832450c5…296eb0   ← correctly flagged stale at step 2
+12:38  MAXIMISED window   step 1   8f53565f…389593   ← fresh and correct
+12:38  MAXIMISED window   step 2   832450c5…296eb0   ← the NARROW-window frame, ~57 min old
+```
+A maximised viewport and a ~265 px viewport **cannot** produce byte-identical PNGs. `captureVisibleTab` served a cached frame from a previous window size, and the frame was transmitted.
+
+**`staleCaptureCount: 0` on that run is a FALSE NEGATIVE.** Ruling A compares only against the *immediately previous* capture: `8f53565f != 832450c5`, so no verdict. The discriminator catches "the same frame twice in a row" and is blind to "an older frame resurfacing after a correct one."
+
+**This is an orchestrator error, not an implementation defect** — Ruling A was specified too narrowly and the module implements it exactly as written.
+
+**⚠️ THE COMPOSITOR HYPOTHESIS RECORDED ABOVE NO LONGER FITS.** "The tab was not compositing" does not explain step 1 receiving a correct fresh maximised frame and step 2 then receiving an hour-old one. The honest position: the mechanism is stranger than characterised and is **still not established.** It is deliberately NOT replaced with a new theory here.
+
+**RULING A′ — two independent checks** (in flight, not yet verified at time of writing):
+1. **Dimension check, primary and definitive:** the captured PNG's pixel dimensions must match the current viewport × `devicePixelRatio`. A frame from any other window state fails outright, with no history needed. Dimensions are read from the PNG **IHDR header** (fixed byte offsets 16–23), not by decoding — pure, synchronous, no canvas. **A ±2 px tolerance is mandatory:** `devicePixelRatio` is commonly fractional on Windows (1.25/1.5/1.75 under display scaling), so exact equality would fire on every step on most machines.
+2. **Hash recurrence across the whole run, secondary:** extends the comparison from "the previous capture" to "any capture earlier in this run", keyed `hash → scrollY-when-first-seen`. A hash recurring at the *same* scrollY is still the normal static-page case and must not flag.
+
+Both must be scoped OUT of full-page mode — a stitched image is document-sized by construction and would fail the dimension check on every step. The RUN SUMMARY must report **which** check fired; a merged boolean would discard exactly the signal that made this blind spot visible.
+
+#### ⚠️ THE PUBLISHED LATENCY FIGURE DOES NOT REPRODUCE. Found 2026-09-20. **Not yet resolved.**
+
+**`~780–880 ms` warm object detection is published in `README.md` twice (including the rubric table) and in `site/index.html` twice.** Six warm samples taken across three runs on 2026-09-20 all landed near **2,700 ms** — roughly 3× the published figure:
+
+| Run | Window | Warm inference |
+|---|---|---|
+| 11:41 | ~265 px | 2,650 / 2,692 ms |
+| 12:38 | maximised | 2,700 ms (+ ~2.6 s on the following step) |
+
+**Window size is ruled out** — the first two runs were narrow, the third maximised, and all agree. The earlier 4,570 ms sample shows a warm-up component on top, but it settles at ~2,700 ms, not at ~800 ms.
+
+Not investigated, and all plausible: GPU/thermal state, laptop power mode, a Chrome update since 2026-09-11, or machine load. The 780–880 ms figure came from 4 samples on a single day.
+
+**Measured under uncontrolled conditions** (devtools open, other apps unknown) — so this does not yet *disprove* the published number, it means **the published number is currently unsupported by the most recent measurements.** Before any submission: re-measure warm inference under controlled conditions, then either correct both documents or qualify the claim with the conditions it holds under. Per this project's own standard on overstated documentation — *do not ship a figure a fifteen-minute test contradicts.*
+
+*(Step 1 of the 12:38 run measured 18,430 ms with `pipelineWasAlreadyLoaded: true` and `model-load: 0 ms` — that is the already-documented cold-start-after-SW-eviction cost, not part of this finding.)*
 
 ### FULL-PAGE SCROLL-AND-STITCH CAPTURE. Recorded 2026-09-13. **526 tests green** (378 JS + 148 server). **Ships OFF by default.**
 
