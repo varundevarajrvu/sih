@@ -31,7 +31,7 @@ bypassed, the model never had the value to write.
 
 ## PRE-FLIGHT — do this before anyone is watching
 
-Two failure modes have actually bitten during testing. Both are avoidable and both look
+Three failure modes have actually bitten during testing. All are avoidable and all look
 like a broken product if they happen live.
 
 **1. Cold start is 16–20 seconds.** After the service worker is evicted, the first
@@ -56,6 +56,24 @@ wrong demo once already.
 
 **3. Plug the laptop in.** GPU throttling on battery is a live suspect for slower
 inference. No reason to demo on battery.
+
+**4. 🔴 Reload the extension, THEN reload the page.** This one has actually bitten, and it
+looks exactly like the product being broken:
+
+```
+ERROR: Could not establish connection. Receiving end does not exist.
+```
+
+It is not a code fault. Reloading an unpacked extension **orphans the content script in any
+tab that is already open** — the page still prints "content script loaded" and still does
+nothing. Clicking the toolbar icon while `chrome://extensions` is the focused tab causes
+the same error, because no content script can run on a `chrome://` page.
+
+> **Order, every time:** reload the extension → **reload the page (F5)** → make the test
+> page the focused tab → *then* click the toolbar icon.
+
+If you are doing several runs back to back, do **not** reload the extension between them —
+there is no need, and it re-introduces this trap.
 
 ---
 
