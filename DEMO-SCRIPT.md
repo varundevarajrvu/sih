@@ -141,13 +141,24 @@ evidence:
 
 ## NUMBERS
 
-> ⚠️ **PENDING RE-MEASUREMENT — do not quote the old figures until this is filled in.**
-> Measurements on 2026-09-20 came in well above the previously published numbers, under
-> uncontrolled conditions (unplugged, devtools open, other apps unknown). Controlled
-> re-measurement is in progress. **Quote nothing from this section until it is updated —
-> a number you cannot reproduce in front of a judge costs more than no number.**
+All measured on `demo/test-page.html`, Chrome, WebGPU, `Xenova/yolos-tiny`, mock backend,
+across five runs on 2026-09-20 and 2026-09-21.
 
-If asked before this is resolved, the honest answer is strong on its own:
+| Stage | Measured |
+|---|---|
+| Object detection, warm | 2,346 / 2,426 / 2,651 / 2,693 / 2,700 ms (5 samples) — **~2,350–2,700 ms** |
+| Object detection, cold start | ~16–20 s (samples: 18,430 ms, 19,407 ms) |
+| DOM PII scan | 2–33 ms |
+| Redaction (canvas + JSON) | 84–235 ms |
+| Peak JS heap | 33–63 MB across 5 runs — typically 33–37 MB, with one 63 MB outlier (don't quote only the flattering end) |
+| Full loop, warm (mock backend) | ~2.7 s/step — 3-step run 7,975 ms; 4-step runs 11,005 ms and 11,635 ms |
+
+> An earlier session on 2026-09-11 measured 784–881 ms warm object detection on this same
+> machine. That has not reproduced across the five later samples above, and the cause is
+> not established. If asked why the number moved, say exactly that — don't guess at
+> thermal, power mode, driver, or Chrome version; none of those is confirmed.
+
+If a judge wants more precision than a range, the honest answer is still strong on its own:
 
 > *"Per-stage timings are instrumented in every run and printed in the summary — I'd
 > rather show you a live measurement than quote one."*
@@ -176,8 +187,8 @@ Then run it and read the numbers off the screen.
 | Accuracy of visual context | 25% | On-device WebGPU detection; vision + DOM regions merged in one coordinate space |
 | PII recall / precision | 20% | Fixture suite + browser-verified; recall-biased by explicit design |
 | Redaction precision | 20% | **Both halves verified** — payload *and* pixels, including bbox placement on a cross-origin iframe password field |
-| Client resource utilisation | 20% | Per-stage instrumentation, heap sampled every stage *(figures pending re-measurement)* |
-| End-to-end latency | 15% | Per-stage timings in every run summary *(figures pending re-measurement)* |
+| Client resource utilisation | 20% | Per-stage instrumentation, heap sampled every stage — 33–63 MB peak across 5 runs |
+| End-to-end latency | 15% | Per-stage timings in every run summary — ~2,350–2,700 ms warm detection, ~2.7 s/step |
 
 **749 tests green** (529 JS + 220 server).
 

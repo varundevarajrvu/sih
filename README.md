@@ -73,14 +73,16 @@ Real numbers from browser runs.
 
 | Stage | Measured |
 |---|---|
-| Object detection (warm) | **~780–880 ms** (4 samples: 784 / 817 / 860 / 881) |
+| Object detection (warm) | **~2,350–2,700 ms** (5 samples, Chrome/WebGPU/mock backend, warm, 2026-09-20–21: 2,346 / 2,426 / 2,651 / 2,693 / 2,700) ² |
 | Object detection (first call) | ~16–20 s ¹ |
-| DOM PII scan | 1–16 ms |
-| Redaction (canvas + JSON) | 22–158 ms |
-| Peak JS heap | 30–35 MB |
-| Full 3-step loop (mock backend) | 3,182 ms |
+| DOM PII scan | 2–33 ms |
+| Redaction (canvas + JSON) | 84–235 ms |
+| Peak JS heap | 33–63 MB (5 runs: 33.1 / 33.2 / 34.8 / 37.2 / 63.3 — typically 33–37 MB, with one 63 MB outlier) |
+| Full loop (mock backend, warm) | ~2.7 s per step (3-step run: 7,975 ms; 4-step runs: 11,005 ms and 11,635 ms) |
 
 ¹ The first inference after the offscreen document is created is ~20× slower, with the pipeline *already loaded* and model-load time at 0 ms. Best explanation is WebGPU compiling shaders lazily on first execution — the timing pattern is confirmed; that specific mechanism is inferred, not instrumented. A pre-warm inference runs at install and startup, and the popup shows warm status, so the common case pays this cost once per offscreen-document lifetime rather than mid-run. An MV3 service worker is evicted routinely, and when it is, the offscreen document goes with it — the next inference re-incurs the full cost. A recorded step-1 sample after such an eviction measured 18,430 ms with `pipelineWasAlreadyLoaded: true`.
+
+² An earlier session on 2026-09-11 measured 784–881 ms on this same machine. That has not reproduced across five later samples taken 2026-09-20–21, and the cause is not established.
 
 **Detection:** `Xenova/yolos-tiny`, WebGPU with automatic WASM fallback by design, ONNX runtime and weights bundled locally — **zero network calls for inference**.
 
@@ -231,5 +233,5 @@ Redaction is verified by **sampling actual pixels** inside and outside each rect
 | Visual context accuracy | 25% | On-device WebGPU detection, real boxes on the demo page |
 | PII recall / precision | 20% | 37 fixture tests, recall-biased, `value`/`placeholder` scanning |
 | Redaction precision | 20% | 32 tests with pixel-level verification; DOM + vision regions merged |
-| Client resource utilization | 20% | 30–35 MB peak heap, instrumented per stage |
-| End-to-end latency | 15% | ~780–880 ms detection (4 samples); per-stage timings in every run summary |
+| Client resource utilization | 20% | 33–63 MB peak heap (5 runs, typically 33–37 MB with one 63 MB outlier), instrumented per stage |
+| End-to-end latency | 15% | ~2,350–2,700 ms detection (5 samples, Chrome/WebGPU/mock backend, warm, 2026-09-20–21) — an earlier 2026-09-11 session measured 784–881 ms on this machine; that has not reproduced and the cause is not established; per-stage timings in every run summary |

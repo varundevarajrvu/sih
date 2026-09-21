@@ -236,19 +236,20 @@
           <p class="pipe-index">02</p>
           <h3 class="pipe-stage">Detect</h3>
           <p class="pipe-desc"><code>Xenova/yolos-tiny</code> runs in an MV3 offscreen document on WebGPU, WASM fallback by design. Bounding boxes only — the image doesn&rsquo;t leave the browser here either.</p>
-          <p class="pipe-metric"><b>784–881ms</b> warm, 4 samples</p>
+          <p class="pipe-metric"><b>~2,350–2,700ms</b> warm, 5 samples (2026-09-20/21)</p>
+          <p class="pipe-desc">An earlier session on 2026-09-11 measured 784–881ms on this same machine — that has not reproduced across five later samples, and the cause is not established.</p>
         </li>
         <li class="pipe">
           <p class="pipe-index">03</p>
           <h3 class="pipe-stage">Scan</h3>
           <p class="pipe-desc">The DOM is walked for <code>type=password</code>, <code>autocomplete</code> hints, and regex over visible text: email, phone, Aadhaar-shaped, PAN-shaped.</p>
-          <p class="pipe-metric"><b>1–16ms</b> DOM walk</p>
+          <p class="pipe-metric"><b>2–33ms</b> DOM walk</p>
         </li>
         <li class="pipe">
           <p class="pipe-index">04</p>
           <h3 class="pipe-stage">Redact</h3>
           <p class="pipe-desc">Vision boxes and DOM boxes merge into one coordinate space. Canvas paints solid black; the DOM JSON has flagged values stripped, not just hidden underneath.</p>
-          <p class="pipe-metric"><b>22–158ms</b> canvas + JSON</p>
+          <p class="pipe-metric"><b>84–235ms</b> canvas + JSON</p>
         </li>
         <li class="pipe is-gate">
           <p class="pipe-index">05</p>
@@ -301,10 +302,11 @@
         <div class="terminal-body" id="terminal-body" tabindex="0" role="log" aria-label="Console replay output">
           <div class="term-line dim">$ VLM_BACKEND=mock · goal: "fill the name as Simon"</div>
           <div class="term-line">[agent-loop] step 1 :: capture :: viewport screenshot captured</div>
-          <div class="term-line">[agent-loop] step 1 :: detect :: <span class="num">784</span>ms warm (yolos-tiny, WebGPU) — samples: 784 / 817 / 860 / 881 ms</div>
+          <div class="term-line">[agent-loop] step 1 :: detect :: <span class="num">2,346–2,700</span>ms warm (yolos-tiny, WebGPU) — 5 samples, 2026-09-20/21: 2,346 / 2,426 / 2,651 / 2,693 / 2,700 ms</div>
           <div class="term-line dim">&nbsp;&nbsp;↪ first call after offscreen doc creation: ~16–20s, one-time WebGPU shader compile — pre-warm at install covers the common case; a service-worker eviction re-incurs it</div>
-          <div class="term-line">[agent-loop] step 1 :: scan :: <span class="num">1–16</span>ms — 4 sensitive nodes flagged (password, email, aadhaar-shaped id, id-caption text)</div>
-          <div class="term-line">[agent-loop] step 1 :: redact :: <span class="num">22–158</span>ms — canvas blackout + DOM JSON strip · detections: 3, regions: 7 (4 DOM + 3 vision)</div>
+          <div class="term-line dim">&nbsp;&nbsp;↪ an earlier 2026-09-11 session measured 784–881ms on this machine; that hasn&rsquo;t reproduced across five later samples, cause not established</div>
+          <div class="term-line">[agent-loop] step 1 :: scan :: <span class="num">2–33</span>ms — 4 sensitive nodes flagged (password, email, aadhaar-shaped id, id-caption text)</div>
+          <div class="term-line">[agent-loop] step 1 :: redact :: <span class="num">84–235</span>ms — canvas blackout + DOM JSON strip · detections: 3, regions: 7 (4 DOM + 3 vision)</div>
           <div class="term-line pass">[agent-loop] Section 5 check PASSED -- outgoing payload contains no raw value for 4 flagged sensitive node(s).</div>
           <div class="term-line">[agent-loop] step 1 :: send+response :: POST /analyze</div>
           <div class="term-line ok">step 1: {"action":"type","targetId":"agent-4","value":"Simon"}&nbsp;&nbsp;&nbsp;ok: true</div>
@@ -321,7 +323,7 @@
           <div class="term-line dim">"text matches destructive-intent keyword "place order"; id matches destructive-intent keyword "place order""</div>
 
           <div class="term-line divider">————————————————————————————————————</div>
-          <div class="term-line ok">749/749 tests passing · peak JS heap 30–35MB · zero network calls for inference</div>
+          <div class="term-line ok">749/749 tests passing · peak JS heap 33–63MB (typically 33–37MB) · zero network calls for inference</div>
           <span class="term-cursor is-hidden" id="term-cursor" aria-hidden="true"></span>
         </div>
       </div>
@@ -504,12 +506,12 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
             <tr><th scope="col">Stage</th><th scope="col">Measured</th></tr>
           </thead>
           <tbody>
-            <tr><td>Object detection, warm</td><td class="figure">784 / 817 / 860 / 881 ms <span class="dim">(4 samples, ~780–880ms)</span></td></tr>
+            <tr><td>Object detection, warm</td><td class="figure">2,346 / 2,426 / 2,651 / 2,693 / 2,700 ms <span class="dim">(5 samples, Chrome/WebGPU/mock backend, 2026-09-20–21, ~2,350–2,700ms)</span> <sup>2</sup></td></tr>
             <tr><td>Object detection, first call after offscreen doc creation</td><td class="figure">~16–20 s <span class="dim">¹</span></td></tr>
-            <tr><td>DOM PII scan</td><td class="figure">1–16 ms</td></tr>
-            <tr><td>Redaction (canvas + JSON)</td><td class="figure">22–158 ms</td></tr>
-            <tr><td>Peak JS heap</td><td class="figure">30–35 MB</td></tr>
-            <tr><td>Full 3-step loop (mock backend)</td><td class="figure">3,182 ms</td></tr>
+            <tr><td>DOM PII scan</td><td class="figure">2–33 ms</td></tr>
+            <tr><td>Redaction (canvas + JSON)</td><td class="figure">84–235 ms</td></tr>
+            <tr><td>Peak JS heap</td><td class="figure">33–63 MB <span class="dim">(5 runs; typically 33–37 MB, one 63 MB outlier)</span></td></tr>
+            <tr><td>Full loop (mock backend, warm)</td><td class="figure">~2.7 s / step <span class="dim">(3-step: 7,975 ms; 4-step: 11,005 ms, 11,635 ms)</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -522,6 +524,12 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
         MV3 service worker is evicted routinely, and when it is, the offscreen document goes with it and
         the next inference re-incurs the full cost. A recorded sample after such an eviction measured
         18,430 ms with <code>pipelineWasAlreadyLoaded: true</code>.
+      </p>
+
+      <p class="note reveal">
+        <sup>2</sup> An earlier session on 2026-09-11 measured 784–881 ms warm object detection on this
+        same machine. That has not reproduced across five later samples (2026-09-20–21), and the cause is
+        not established.
       </p>
 
       <div class="chips reveal">
