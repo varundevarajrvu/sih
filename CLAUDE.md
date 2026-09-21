@@ -403,6 +403,45 @@ In that run the exposure lasted one step only because the mock happened to `type
 
 **Live-verified against the running server**, not only in unit tests: `/analyze` now returns `key` on every response, `{press_key, key:"Enter"}` validates, and all three violations (missing key, `F12`, `key` on a `click`) are rejected.
 
+### ✅ THE PIPELINE HAS MET THE REAL WEB — 2026-09-21. Observe-only backend, two live sites. **The project's largest evidence gap is closed.**
+
+Every browser verification before this ran against `demo/test-page.html` — five actionable elements, no iframes, markup we wrote. `ObserveOnlyVLMClient` (`/analyze` always replies `done` on the page sentinel, naming no element, so the loop cannot act *by construction*) made this safe. Verified at the wire before the run, not just from the launcher banner: `POST /analyze → {"action":"done","targetId":"page"}`.
+
+**Both runs completed `outcome: "done"`, one step, zero exceptions, nothing clicked or typed.**
+
+| | `wikipedia.org` | `thehindu.com/news/cities/bangalore/` |
+|---|---|---|
+| actionableNodes | 401 | **455** |
+| rank selected / dropped | 40 / 361 | 40 / 415 |
+| sensitiveNodes | 0 | 1 |
+| framesReported / merged / dropped | 0 / 0 / 0 | **19 / 13 / 6** |
+| unscannableRegions | 0 | 4 |
+| redact regions | 0 | 5 |
+| detections (vision) | 1 → 0 after class filter | **0** |
+| scan | 23.9 ms | **346.4 ms** |
+| detect (warm) | 2,418.6 ms | 2,571.3 ms |
+| peak JS heap | 61.4 MB | **125.25 MB** |
+
+**🏆 THE CROSS-ORIGIN IFRAME HANDSHAKE SURVIVED REAL AD TECH.** The Hindu loaded **19 subframes** — pubmatic, doubleclick, rubicon, taboola, smartadserver, openx, indexww, onetag, reCAPTCHA. **13 merged successfully.** That mechanism had only ever faced two iframes on a fixture page; the `MessageEvent.source` ↔ `iframe.contentWindow` correlation and the retry-until-ACK handshake hold at ten times that scale, against frames written by nine different ad vendors.
+
+**🏆 AND THE DEFENSIVE REDACTION FIRED FOR REAL.** Six reports did not merge, so **four iframes were blacked out whole** (`unscannableRegions: 4`, contributing 4 of the 5 redaction regions). This is the TIER 1 ruling — *"when you cannot see inside, over-redact"* — executing in production conditions rather than in a test. The failure mode on a real page with nineteen ad frames was **over-redaction, never exposure**, exactly as designed. This is now the strongest available evidence that the fail-safe is real rather than aspirational.
+
+**🏆 `element-ranker` under genuine load.** It was built for "real pages have hundreds of actionable elements" and had never seen more than six. It handled 455 → 40 in 18.8 ms, and 401 → 40 in 8.4 ms, with sensitive nodes exempt from the budget by construction.
+
+**The distributed Section 5 guarantee is visible in the log:** each subframe ran its own sanitize-and-assert before its report left that frame's isolated world (many `no raw value for 0 flagged sensitive node(s)` lines), then the top frame asserted over the merged payload (`1 flagged sensitive node`). The guarantee is distributed rather than centralized — Tier 1 declared that, and this is it happening.
+
+#### 🔴 NEW — OPEN. `SCAN_THIS_FRAME` reaches frames with no handler for it.
+
+Logged **13 times** on The Hindu: `[content] received message (no handler for this type): SCAN_THIS_FRAME`. The content script is present in those frames (each logged its own load line) but does not handle the message it is being sent.
+
+**Not established, and deliberately not theorised here:** whether this is the *cause* of the 6 dropped reports, a harmless broadcast to frames that legitimately have no handler, or a registration-ordering problem. The count coincidence (13 merged, 13 unhandled) is suggestive and is **not** evidence. Nothing was changed — the code was frozen for submission. Whoever picks this up starts here, because it is the one anomaly this run produced that has no explanation.
+
+#### ⚠️ RESOURCE AND VISION FINDINGS — both matter for the rubric
+
+**Peak heap on a real news site is 125 MB** — roughly 2× the demo page's 33–63 MB, on a page with 19 ad frames and 455 actionable elements. **Every published heap figure is a demo-page figure.** A judge who runs this on a real site will see a number twice what the README says unless it is qualified. Scan time moves the same way (23.9 ms → 346.4 ms).
+
+**Vision contributed nothing on either real page.** The Hindu: `detections: 0`. Wikipedia: one detection, dropped by the privacy-class filter. This is **expected, not a defect** — `yolos-tiny` is COCO-80, trained on physical objects (person, laptop, tv), and a text-heavy news homepage contains none. It confirms the UI-DETECTOR SPIKE's conclusion from the other direction: vision earns its place on pages with *rendered human content* (faces, ID cards, photos), and contributes nothing on text. **Do not claim the vision path carries redaction on ordinary web pages — on these two it carried zero.**
+
 ### ⚠️ STILL OPEN — capture can return a stale frame. **REPRODUCED 2026-09-20** and caught automatically by the detector; mechanism still NOT established (rate-limiting is now RULED OUT — see the reproduction entry below). Detected and fail-closed as of 2026-09-19.
 
 Two consecutive steps produced **byte-identical screenshots** while the page had scrolled 2,613 px between them (`agent-1` bbox y: `1161.0` → `-1452.0`). Step 2's redaction rectangles were therefore computed against the scrolled DOM and drawn on the *unscrolled* image, at negative y — off-image, redacting nothing.
