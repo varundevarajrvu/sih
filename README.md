@@ -73,18 +73,76 @@ Real numbers from browser runs.
 
 | Stage | Measured |
 |---|---|
-| Object detection (warm) | **~2,350–2,700 ms** (5 samples, Chrome/WebGPU/mock backend, warm, 2026-09-20–21: 2,346 / 2,426 / 2,651 / 2,693 / 2,700) ² |
+| Object detection (warm) | **~2,350–2,700 ms** (5 samples, Chrome/WebGPU/mock backend, warm, 2026-09-20–21: 2,346 / 2,426 / 2,651 / 2,693 / 2,700) ² — real sites land inside this range: 2,418.6 ms (`wikipedia.org`), 2,571.3 ms (`thehindu.com`), 2026-09-21, observe-only backend, one step each ³ |
 | Object detection (first call) | ~16–20 s ¹ |
-| DOM PII scan | 2–33 ms |
+| DOM PII scan | 2–33 ms, demo page. Real sites ³: 23.9 ms (`wikipedia.org`), 346.4 ms (`thehindu.com`) |
 | Redaction (canvas + JSON) | 84–235 ms |
-| Peak JS heap | 33–63 MB (5 runs: 33.1 / 33.2 / 34.8 / 37.2 / 63.3 — typically 33–37 MB, with one 63 MB outlier) |
+| Peak JS heap | 33–63 MB, demo page (5 runs: 33.1 / 33.2 / 34.8 / 37.2 / 63.3 — typically 33–37 MB, with one 63 MB outlier). Real site ³: **125.25 MB** (`thehindu.com`) — roughly 2× the demo-page range. Every heap figure elsewhere in this README is demo-page only unless labeled real-site. |
 | Full loop (mock backend, warm) | ~2.7 s per step (3-step run: 7,975 ms; 4-step runs: 11,005 ms and 11,635 ms) |
 
 ¹ The first inference after the offscreen document is created is ~20× slower, with the pipeline *already loaded* and model-load time at 0 ms. Best explanation is WebGPU compiling shaders lazily on first execution — the timing pattern is confirmed; that specific mechanism is inferred, not instrumented. A pre-warm inference runs at install and startup, and the popup shows warm status, so the common case pays this cost once per offscreen-document lifetime rather than mid-run. An MV3 service worker is evicted routinely, and when it is, the offscreen document goes with it — the next inference re-incurs the full cost. A recorded step-1 sample after such an eviction measured 18,430 ms with `pipelineWasAlreadyLoaded: true`.
 
 ² An earlier session on 2026-09-11 measured 784–881 ms on this same machine. That has not reproduced across five later samples taken 2026-09-20–21, and the cause is not established.
 
+³ Measured 2026-09-21 against two live sites, `wikipedia.org` and `thehindu.com/news/cities/bangalore/`, using the observe-only backend (`/analyze` always replies `done` on the page sentinel, so the loop cannot click or type). One step per site. Full results in [Tested against real websites](#tested-against-real-websites) below.
+
 **Detection:** `Xenova/yolos-tiny`, WebGPU with automatic WASM fallback by design, ONNX runtime and weights bundled locally — **zero network calls for inference**.
+
+---
+
+## Tested against real websites
+
+Every browser verification before this ran against this project's own demo fixtures. On 2026-09-21 the
+pipeline ran, for the first time, against two live sites — `wikipedia.org` and
+`thehindu.com/news/cities/bangalore/` — using the observe-only backend, which always replies `done` on the
+page sentinel so the loop cannot click or type, by construction. One step per site. Both runs completed
+`outcome: "done"` with zero exceptions.
+
+|  | `wikipedia.org` | `thehindu.com/news/cities/bangalore/` |
+|---|---|---|
+| actionable elements found | 401 | 455 |
+| ranked / dropped | 40 / 361 | 40 / 415 |
+| sensitive nodes | 0 | 1 |
+| iframes reported / merged / dropped | 0 / 0 / 0 | 19 / 13 / 6 |
+| iframes defensively redacted whole | 0 | 4 |
+| redaction regions | 0 | 5 |
+| vision detections | 1, dropped by class filter | 0 |
+| DOM scan | 23.9 ms | 346.4 ms |
+| warm detection | 2,418.6 ms | 2,571.3 ms |
+| peak JS heap | 61.4 MB | 125.25 MB |
+
+**The cross-origin iframe handshake held against real ad tech.** The Hindu loaded 19 subframes from nine
+vendors — pubmatic, doubleclick, rubicon, taboola, smartadserver, openx, indexww, onetag, reCAPTCHA — and
+13 merged successfully. That handshake (`MessageEvent.source` ↔ `iframe.contentWindow` correlation,
+retry-until-ACK) had only ever faced two iframes on a fixture page before this run.
+
+**The defensive redaction fired for real, not just in a test.** Six of the 19 iframe reports failed to
+merge, so 4 iframes were blacked out whole — 4 of the page's 5 redaction regions. On a real page with
+nineteen ad frames, the failure mode was over-redaction, never exposure — exactly the fail-safe this
+project is built around, now observed in production conditions instead of a fixture.
+
+**Element ranking held under real load.** 455 actionable candidates ranked down to 40 in 18.8 ms on The
+Hindu (401 → 40 in 8.4 ms on Wikipedia). Sensitive nodes are exempt from the ranking budget by construction
+and were never among those dropped on either site.
+
+**Vision contributed zero redactions on both pages.** The Hindu returned 0 detections; Wikipedia returned
+1, dropped by the privacy-class filter before redaction. Expected, not a defect — `yolos-tiny` is a
+COCO-80 detector trained on physical objects (person, laptop, tv, …), and a text-heavy news homepage
+contains none of them. Vision earns its place on pages with rendered human content — faces, ID cards,
+photographs — and contributed nothing on these two text-heavy pages.
+
+**Open issue found by this run, not yet explained.** `SCAN_THIS_FRAME` reached frames with no handler for
+it, logged 13 times on The Hindu. The content script was present in those frames (each logged its own load
+line) but did not handle the message. Whether this caused the 6 dropped iframe reports, is a harmless
+broadcast to frames that legitimately have no handler, or is a registration-ordering issue is **not
+established** — the count coincidence (13 merged, 13 unhandled) is suggestive, not evidence. Nothing was
+changed; this is left as an open item — see [Known limitations](#known-limitations).
+
+**What this does and does not prove.** One step per site, two sites, observe-only backend. It shows the
+DOM scan, iframe handshake, defensive redaction, and element ranking holding up against real, unmodified
+web pages at real scale. It does **not** show multi-step behaviour on real sites, and it does not show the
+agent completing a real task there — the observe-only backend exists specifically so this could be tested
+without an autonomous agent clicking or typing on a page nobody controls.
 
 ---
 
@@ -178,7 +236,7 @@ Save a name/email/phone under **"Your profile (autofill)"** in the popup, then t
 
 Detection is deliberately **recall-biased**. A 12-digit order number gets flagged as possible Aadhaar. A missed password is an unredacted credential in a screenshot; a false positive is a harmlessly blacked-out box.
 
-Vision boxes are filtered to privacy-relevant COCO classes (`person`, `tv`, `laptop`, `cell phone`, `book`) before redaction — the detector is general-purpose, so passing everything through would black out the whole page.
+Vision boxes are filtered to privacy-relevant COCO classes (`person`, `tv`, `laptop`, `cell phone`, `book`) before redaction — the detector is general-purpose, so passing everything through would black out the whole page. It earns its place on pages with rendered human content — faces, ID cards, photographs — and contributed nothing on either of the two text-heavy real sites tested 2026-09-21 (see [Tested against real websites](#tested-against-real-websites)): zero detections on `thehindu.com`, one on `wikipedia.org` dropped by this same class filter. Expected for a COCO-80 detector on a page with no physical objects in it, not a defect.
 
 ---
 
@@ -220,7 +278,8 @@ Redaction is verified by **sampling actual pixels** inside and outside each rect
 - **Names in page content are not redacted.** A name has no regex signature, and flagging generic `name` autocomplete tokens would black out most of a form and leave the agent unable to operate — a deliberate, documented tradeoff. The demo ID card's "Jordan A. Demo" is readable in the transmitted screenshot. Values the agent fills *from your vault* are a separate case and **are** redacted, because their provenance is known rather than inferred.
 - **Capture has returned a stale frame at least three times.** A detector now catches the byte-identical-while-scrolled case and fails the step closed rather than transmitting an image that doesn't match the DOM — browser-verified 2026-09-20. A second check, for an older frame resurfacing, is built but not yet browser-verified. One observed case is caught by neither, and the mechanism remains unestablished. Tracked in `CLAUDE.md`.
 - **One iframe deep.** DOM scanning and redaction cover the top-level page plus one level of iframe nesting — the realistic case of a payment provider's frame sitting directly in a checkout page. An iframe nested inside another iframe is not covered.
-- **Never run against a real website.** Every browser verification to date is against this project's own demo fixtures. The hardening was designed for real pages — hundreds of actionable elements, third-party ad frames — but has not yet met one. An observe-only backend exists specifically so that test can be run without an autonomous agent clicking anything.
+- **Run against two real websites, one step each.** On 2026-09-21 the pipeline ran against `wikipedia.org` and `thehindu.com/news/cities/bangalore/` using the observe-only backend (`/analyze` always replies `done` on the page sentinel — the loop cannot click or type). Both completed cleanly, including a cross-origin iframe handshake that held against 19 real ad-tech frames. See [Tested against real websites](#tested-against-real-websites) for the full results. This was one step per site, not a full autonomous run — it does not prove multi-step behaviour on real sites, or that the agent can complete a real task there.
+- **`SCAN_THIS_FRAME` reaches frames with no handler — open, unexplained.** Logged 13 times on `thehindu.com`, 2026-09-21: the content script was present in each of those frames but did not handle the message. Not established: whether this caused the 6 iframe reports that failed to merge in that same run, is a harmless broadcast to frames that legitimately have no handler, or is a registration-ordering issue. The count coincidence (13 merged, 13 unhandled) is suggestive, not evidence.
 - **Firefox is untouched.** Scoped from the start as a post-integration pass.
 - **Gemini's free tier may train on submitted data.** Acceptable here precisely because redaction happens client-side first — a provider that trains on this data still never receives a password, an email, or a face. That's the thesis working, not a compromise of it.
 
@@ -230,8 +289,8 @@ Redaction is verified by **sampling actual pixels** inside and outside each rect
 
 | Criterion | Weight | Evidence |
 |---|---|---|
-| Visual context accuracy | 25% | On-device WebGPU detection, real boxes on the demo page |
+| Visual context accuracy | 25% | On-device WebGPU detection, real boxes on the demo page; on two real text-heavy sites tested 2026-09-21, vision contributed zero usable detections — expected for a COCO-80 detector, not evidence against it (see [Tested against real websites](#tested-against-real-websites)) |
 | PII recall / precision | 20% | 37 fixture tests, recall-biased, `value`/`placeholder` scanning |
-| Redaction precision | 20% | 32 tests with pixel-level verification; DOM + vision regions merged |
-| Client resource utilization | 20% | 33–63 MB peak heap (5 runs, typically 33–37 MB with one 63 MB outlier), instrumented per stage |
-| End-to-end latency | 15% | ~2,350–2,700 ms detection (5 samples, Chrome/WebGPU/mock backend, warm, 2026-09-20–21) — an earlier 2026-09-11 session measured 784–881 ms on this machine; that has not reproduced and the cause is not established; per-stage timings in every run summary |
+| Redaction precision | 20% | 32 tests with pixel-level verification; DOM + vision regions merged. Real-site run (2026-09-21): defensive redaction fired correctly — 4 of 19 cross-origin iframes blacked out whole when their reports didn't merge; over-redaction, never exposure |
+| Client resource utilization | 20% | 33–63 MB peak heap on the demo page (5 runs, typically 33–37 MB with one 63 MB outlier); **125.25 MB** on a real news site (`thehindu.com`, 2026-09-21, one step, observe-only) — instrumented per stage |
+| End-to-end latency | 15% | ~2,350–2,700 ms detection (5 samples, Chrome/WebGPU/mock backend, warm, 2026-09-20–21) — an earlier 2026-09-11 session measured 784–881 ms on this machine; that has not reproduced and the cause is not established. Real-site detection (2026-09-21) landed inside the published range: 2,418.6 ms / 2,571.3 ms; per-stage timings in every run summary |

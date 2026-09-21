@@ -142,6 +142,37 @@ autonomous agent completing a purchase is not recoverable."*
   including a password inside a **cross-origin** iframe, which is where real payment
   forms live.
 
+### 6 — Does this work on real websites? *(≈45 seconds — new, 2026-09-21)*
+
+Switch the backend before starting:
+
+```powershell
+.\start-demo.ps1 -Backend observe
+```
+
+`ObserveOnlyVLMClient` makes `/analyze` always reply `{"action":"done","targetId":"page"}` — it names
+no element, so the loop cannot click or type, **by construction, not by convention**. That is what makes
+it safe to point the extension at a real page during a demo: there is no path from "agent looked at a
+live website" to "agent clicked something on it."
+
+- **Page:** any real site, e.g. `https://en.wikipedia.org/` or
+  `https://www.thehindu.com/news/cities/bangalore/`
+- **Goal:** anything — the backend ignores it
+- **What to point at**, from the real run recorded 2026-09-21:
+  - `thehindu.com`: **19 iframes reported, 13 merged** — real ad-tech frames (pubmatic, doubleclick,
+    rubicon, taboola, smartadserver, openx, indexww, onetag, reCAPTCHA), not a fixture.
+  - **4 iframes defensively redacted whole** — the 6 reports that didn't merge were blacked out rather
+    than left unscanned. Over-redaction, never exposure.
+  - **455 actionable elements ranked down to 40** in 18.8 ms.
+
+**Say:** *"Nothing here can act — the backend always says done. What I'm showing you is that the scan,
+the iframe handshake, and the redaction fail-safe hold up on a real page we don't control, not just on
+the page we built."*
+
+> **Scenarios 1–4 will not act under this backend.** If you've switched to `-Backend observe`, switch
+> back to the default (`.\start-demo.ps1`, or `.\start-demo.ps1 -Backend mock`) before running any of
+> them again.
+
 ---
 
 ## THE RUN SUMMARY — what to point at

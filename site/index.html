@@ -243,7 +243,7 @@
           <p class="pipe-index">03</p>
           <h3 class="pipe-stage">Scan</h3>
           <p class="pipe-desc">The DOM is walked for <code>type=password</code>, <code>autocomplete</code> hints, and regex over visible text: email, phone, Aadhaar-shaped, PAN-shaped.</p>
-          <p class="pipe-metric"><b>2–33ms</b> DOM walk</p>
+          <p class="pipe-metric"><b>2–33ms</b> DOM walk, demo page — <b>23.9ms</b> / <b>346.4ms</b> on two real sites (2026-09-21, §10)</p>
         </li>
         <li class="pipe">
           <p class="pipe-index">04</p>
@@ -323,7 +323,7 @@
           <div class="term-line dim">"text matches destructive-intent keyword "place order"; id matches destructive-intent keyword "place order""</div>
 
           <div class="term-line divider">————————————————————————————————————</div>
-          <div class="term-line ok">749/749 tests passing · peak JS heap 33–63MB (typically 33–37MB) · zero network calls for inference</div>
+          <div class="term-line ok">749/749 tests passing · peak JS heap 33–63MB demo page (typically 33–37MB), 125.25MB real site (thehindu.com, 2026-09-21) · zero network calls for inference</div>
           <span class="term-cursor is-hidden" id="term-cursor" aria-hidden="true"></span>
         </div>
       </div>
@@ -506,11 +506,11 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
             <tr><th scope="col">Stage</th><th scope="col">Measured</th></tr>
           </thead>
           <tbody>
-            <tr><td>Object detection, warm</td><td class="figure">2,346 / 2,426 / 2,651 / 2,693 / 2,700 ms <span class="dim">(5 samples, Chrome/WebGPU/mock backend, 2026-09-20–21, ~2,350–2,700ms)</span> <sup>2</sup></td></tr>
+            <tr><td>Object detection, warm</td><td class="figure">2,346 / 2,426 / 2,651 / 2,693 / 2,700 ms <span class="dim">(5 samples, Chrome/WebGPU/mock backend, 2026-09-20–21, ~2,350–2,700ms)</span> <sup>2,3</sup></td></tr>
             <tr><td>Object detection, first call after offscreen doc creation</td><td class="figure">~16–20 s <span class="dim">¹</span></td></tr>
-            <tr><td>DOM PII scan</td><td class="figure">2–33 ms</td></tr>
+            <tr><td>DOM PII scan</td><td class="figure">2–33 ms, demo page <span class="dim">(5 runs)</span> · <strong>23.9 ms</strong> / <strong>346.4 ms</strong>, real sites <span class="dim">(wikipedia.org / thehindu.com, 2026-09-21, observe-only, one step)</span></td></tr>
             <tr><td>Redaction (canvas + JSON)</td><td class="figure">84–235 ms</td></tr>
-            <tr><td>Peak JS heap</td><td class="figure">33–63 MB <span class="dim">(5 runs; typically 33–37 MB, one 63 MB outlier)</span></td></tr>
+            <tr><td>Peak JS heap</td><td class="figure">33–63 MB, demo page <span class="dim">(5 runs; typically 33–37 MB, one 63 MB outlier)</span> · <strong>125.25 MB</strong>, real site <span class="dim">(thehindu.com, 2026-09-21, observe-only, one step)</span></td></tr>
             <tr><td>Full loop (mock backend, warm)</td><td class="figure">~2.7 s / step <span class="dim">(3-step: 7,975 ms; 4-step: 11,005 ms, 11,635 ms)</span></td></tr>
           </tbody>
         </table>
@@ -530,6 +530,12 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
         <sup>2</sup> An earlier session on 2026-09-11 measured 784–881 ms warm object detection on this
         same machine. That has not reproduced across five later samples (2026-09-20–21), and the cause is
         not established.
+      </p>
+
+      <p class="note reveal">
+        <sup>3</sup> Real sites (<code>wikipedia.org</code>, <code>thehindu.com/news/cities/bangalore/</code>,
+        2026-09-21, observe-only backend, one step each) measured 2,418.6 ms and 2,571.3 ms warm — both
+        land inside this range. Full real-site results in <a href="#realsites">§10</a>.
       </p>
 
       <div class="chips reveal">
@@ -635,11 +641,15 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
         </div>
         <div class="limit">
           <dt>General detector, not a PII detector</dt>
-          <dd><code>yolos-tiny</code> is a COCO-80 object detector. It finds faces via the generic <code>person</code> class; there is no &ldquo;ID card&rdquo; class, so a card is only caught when it has a real face on it (see the reveal in §1).</dd>
+          <dd><code>yolos-tiny</code> is a COCO-80 object detector. It finds faces via the generic <code>person</code> class; there is no &ldquo;ID card&rdquo; class, so a card is only caught when it has a real face on it (see the reveal in §1). On the two real sites tested 2026-09-21 (<a href="#realsites">§10</a>), it found nothing to detect at all — expected for a COCO-80 detector on text-heavy pages, not evidence it doesn&rsquo;t work.</dd>
         </div>
         <div class="limit">
-          <dt>Never run against a real website</dt>
-          <dd>Every browser verification to date is against this project&rsquo;s own demo fixtures. The hardening was designed for real pages — hundreds of actionable elements, third-party ad frames — but has not yet met one. An observe-only backend exists specifically so that test can be run without an autonomous agent clicking anything.</dd>
+          <dt>Run against two real websites, one step each</dt>
+          <dd>On 2026-09-21 the pipeline ran against <code>wikipedia.org</code> and <code>thehindu.com/news/cities/bangalore/</code> using the observe-only backend, which always replies <code>done</code> and never clicks or types. Both completed cleanly, including a cross-origin iframe handshake that held against 19 real ad-tech frames — see <a href="#realsites">§10</a> for the full results. This was one step per site, not a full autonomous run: it doesn&rsquo;t prove multi-step behaviour on real sites, or that the agent can complete a real task there.</dd>
+        </div>
+        <div class="limit">
+          <dt><code>SCAN_THIS_FRAME</code> reaches frames with no handler — open, unexplained</dt>
+          <dd>Logged 13 times on <code>thehindu.com</code>, 2026-09-21: the content script was present in each of those frames but did not handle the message. Not established: whether this caused the 6 iframe reports that failed to merge that same run, is a harmless broadcast to frames that legitimately have no handler, or is a registration-ordering issue. The count coincidence (13 merged, 13 unhandled) is suggestive, not evidence.</dd>
         </div>
         <div class="limit">
           <dt>Firefox untouched</dt>
@@ -650,6 +660,101 @@ type "riverjane33@demo.com" → email   <span class="blocked">SENSITIVE_TARGET_B
           <dd>Google&rsquo;s free tier may train on submitted data. Accepted here specifically because redaction happens client-side first — the §1 assertion proves no PII is in the payload, so a provider training on this traffic still never sees a password, an email, or a face.</dd>
         </div>
       </dl>
+    </div>
+  </section>
+
+  <!-- ===================== §10 REAL-SITE RESULTS ===================== -->
+  <section id="realsites" class="section section--surface">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <p class="eyebrow"><span class="section-number">§10</span> Tested against real websites</p>
+        <h2 class="section-title">Two live sites.<br>One step each. No acting.</h2>
+        <p class="lede">
+          Every browser verification before this ran against this project&rsquo;s own demo fixtures. On
+          2026-09-21 the pipeline ran, for the first time, against <code>wikipedia.org</code> and
+          <code>thehindu.com/news/cities/bangalore/</code>, using the observe-only backend —
+          <code>/analyze</code> always replies <code>done</code> on the page sentinel, so the loop cannot
+          click or type, by construction. One step per site. Both completed <code>outcome: "done"</code>
+          with zero exceptions.
+        </p>
+      </div>
+
+      <div class="table-wrap reveal" tabindex="0" role="region" aria-label="Real-site results table, scrollable horizontally on narrow screens">
+        <table class="results-table">
+          <thead>
+            <tr><th scope="col">Metric</th><th scope="col">wikipedia.org</th><th scope="col">thehindu.com/news/cities/bangalore/</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>actionable elements found</td><td class="figure">401</td><td class="figure">455</td></tr>
+            <tr><td>ranked / dropped</td><td class="figure">40 / 361</td><td class="figure">40 / 415</td></tr>
+            <tr><td>sensitive nodes</td><td class="figure">0</td><td class="figure">1</td></tr>
+            <tr><td>iframes reported / merged / dropped</td><td class="figure">0 / 0 / 0</td><td class="figure">19 / 13 / 6</td></tr>
+            <tr><td>iframes defensively redacted whole</td><td class="figure">0</td><td class="figure">4</td></tr>
+            <tr><td>redaction regions</td><td class="figure">0</td><td class="figure">5</td></tr>
+            <tr><td>vision detections</td><td class="figure">1, dropped by class filter</td><td class="figure">0</td></tr>
+            <tr><td>DOM scan</td><td class="figure">23.9 ms</td><td class="figure">346.4 ms</td></tr>
+            <tr><td>warm detection</td><td class="figure">2,418.6 ms</td><td class="figure">2,571.3 ms</td></tr>
+            <tr><td>peak JS heap</td><td class="figure">61.4 MB</td><td class="figure">125.25 MB</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="pull-quote reveal">
+        <strong>The cross-origin iframe handshake held against real ad tech.</strong> The Hindu loaded 19
+        subframes from nine vendors — pubmatic, doubleclick, rubicon, taboola, smartadserver, openx,
+        indexww, onetag, reCAPTCHA — and 13 merged successfully. That handshake had only ever faced two
+        iframes on a fixture page before this run.
+      </p>
+
+      <div class="split reveal">
+        <div class="prose">
+          <p>
+            <strong>The defensive redaction fired for real.</strong> Six of the 19 iframe reports didn&rsquo;t
+            merge, so four iframes were blacked out whole — 4 of the page&rsquo;s 5 redaction regions. On a
+            real page with nineteen ad frames, the failure mode was over-redaction, never exposure — the
+            fail-safe this project is built around, observed in production conditions instead of a
+            fixture.
+          </p>
+          <p>
+            <strong>Element ranking held under real load.</strong> 455 candidates ranked down to 40 in
+            18.8 ms on The Hindu; 401 to 40 in 8.4 ms on Wikipedia. Sensitive nodes are exempt from the
+            budget by construction and were never among those dropped on either site.
+          </p>
+        </div>
+        <div class="prose">
+          <p>
+            <strong>Vision contributed zero redactions on both pages.</strong> The Hindu returned 0
+            detections; Wikipedia returned 1, dropped by the privacy-class filter before redaction.
+            Expected, not a defect — <code>yolos-tiny</code> is a COCO-80 detector trained on physical
+            objects, and a text-heavy news homepage contains none of them. Vision earns its place on pages
+            with rendered human content — faces, ID cards, photographs — and contributed nothing on these
+            two.
+          </p>
+          <p>
+            <strong>Open issue, found by this run and not yet explained:</strong>
+            <code>SCAN_THIS_FRAME</code> reached frames with no handler for it, logged 13 times on The
+            Hindu. The content script was present in those frames but did not handle the message. Whether
+            this caused the 6 dropped iframe reports, is a harmless broadcast, or is a
+            registration-ordering issue is <strong>not established</strong> — the count coincidence (13
+            merged, 13 unhandled) is suggestive, not evidence.
+          </p>
+        </div>
+      </div>
+
+      <p class="note reveal">
+        <strong>What this does and does not prove.</strong> One step per site, two sites, observe-only
+        backend. It shows the DOM scan, iframe handshake, defensive redaction, and element ranking holding
+        up against real, unmodified pages at real scale. It does not show multi-step behaviour on real
+        sites, and it does not show the agent completing a real task there.
+      </p>
+
+      <p class="note reveal">
+        Every heap and scan-time figure elsewhere on this page is measured on the demo page. On a real
+        page, peak heap was <strong>125.25 MB</strong> — roughly 2&times; the demo page&rsquo;s 33&ndash;63 MB
+        range — and DOM scan ran 346.4 ms against the demo page&rsquo;s 2&ndash;33 ms. Warm object detection
+        held up: 2,418.6 ms and 2,571.3 ms both land inside the already-published ~2,350&ndash;2,700 ms
+        range.
+      </p>
     </div>
   </section>
 
