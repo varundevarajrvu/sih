@@ -507,6 +507,29 @@ Both are scoped OUT of full-page mode — the dimension check by an **explicit b
 
 **The next browser run is this ruling's verification.** Re-run the same scenario (`demo/test-page.html`, the profile-autofill goal, mock backend). A `staleCaptureCount` of 0 is only meaningful now *because* the margin is visible on passing steps.
 
+#### ✅ RULING A′ BROWSER-VERIFIED — 2026-09-21. The tolerance risk is closed.
+
+Same scenario, maximised window, mock backend. `outcome: "done"`, 4 steps.
+
+```
+step 1  dimensionMismatch: null  hashRecurrence: null
+        expected 1920x970 | actual 1920x970 | devicePixelRatio 1.25
+step 2  STALE CAPTURE DETECTED (hash_recurrence)
+        hash 832450c5…296eb0 first seen this run at scrollY 0, now 573.6 (delta 573.6px)
+        -> send refused, run continued
+staleCaptureCount: 1   reasons: ["hash_recurrence"]
+```
+
+**🔴 THE ±2 px TOLERANCE IS FINE ON REAL HARDWARE — the "failure mode is total" risk recorded above did NOT materialise.** At `devicePixelRatio: 1.25`, expected and actual matched **exactly**, with zero tolerance consumed, on every passing step. The check produced no false positives across three sending steps.
+
+Worth being precise about what this does and does not prove: it proves the dimension check is **safe to ship** — it does not fire spuriously at fractional DPR. It does **not** prove the dimension check ever *catches* anything, because nothing in this run had mismatched dimensions. Its catching behaviour remains fixture-only.
+
+**The per-reason reporting earned itself immediately:** `reasons: ["hash_recurrence"]` names which check fired. A merged boolean would have left it ambiguous whether the dimension check or the hash check caught this, and they have very different implications.
+
+**The margin is now visible on passing steps**, which is what makes a `staleCaptureCount: 0` interpretable at all — the 2026-09-20 false negative looked identical to a clean run.
+
+*Process note, worth carrying forward: this run was preceded by a `Could not establish connection. Receiving end does not exist.` failure that cost real time and was not a code defect. Reloading an unpacked extension **orphans the content script in any already-open tab**, and clicking the toolbar icon while `chrome://extensions` is the active tab targets a page where no content script can run. **Reload the extension, then reload the page, then make the test page the focused tab.** Worth knowing before a live demo.*
+
 #### ⚠️ THE PUBLISHED LATENCY FIGURE DOES NOT REPRODUCE. Found 2026-09-20. **Not yet resolved.**
 
 **`~780–880 ms` warm object detection is published in `README.md` twice (including the rubric table) and in `site/index.html` twice.** Six warm samples taken across three runs on 2026-09-20 all landed near **2,700 ms** — roughly 3× the published figure:
