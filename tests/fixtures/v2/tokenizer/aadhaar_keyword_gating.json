@@ -1,0 +1,6 @@
+{
+  "description": "SUPERSEDED by the V1A/V1D parity pass (2026-09-24, see extension/lib/pii-regex.js's header note): bare 12-digit runs used to be Aadhaar-shaped only with a nearby aadhaar/aadhar/uidai keyword. server/pii_regex_v2.py's AADHAAR_RE (ported from dom-scanner.js) was already unconditional and, per the parity ruling ('broader pattern wins in both files'), this file's keyword gate was REMOVED to match it. Same bare 12-digit number, one text with the keyword, one without -- BOTH now flag, proving the gate is genuinely gone rather than just untested.",
+  "withKeyword": "My Aadhaar number is 234567890123, please verify.",
+  "withoutKeyword": "The order reference number is 234567890123, please verify.",
+  "bareTwelveDigitValue": "234567890123"
+}

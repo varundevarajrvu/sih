@@ -1,0 +1,92 @@
+{
+  "note": "onnxruntime-node CPU fp32 -- recall evidence ONLY, NOT a browser latency comparison",
+  "results": {
+    "demoFace": {
+      "detections": [
+        {
+          "label": "person",
+          "score": 0.987930178642273,
+          "xmin": 0,
+          "ymin": 0,
+          "xmax": 499,
+          "ymax": 331
+        },
+        {
+          "label": "tie",
+          "score": 0.5472676753997803,
+          "xmin": 175,
+          "ymin": 310,
+          "xmax": 303,
+          "ymax": 332
+        },
+        {
+          "label": "tie",
+          "score": 0.5229414105415344,
+          "xmin": 175,
+          "ymin": 310,
+          "xmax": 230,
+          "ymax": 332
+        }
+      ],
+      "ms": 5903.206099999999
+    },
+    "scaleLadder": {
+      "40": {
+        "detections": [],
+        "ms": 4081.9302
+      },
+      "60": {
+        "detections": [],
+        "ms": 3808.070100000001
+      },
+      "80": {
+        "detections": [],
+        "ms": 4296.568799999999
+      },
+      "96": {
+        "detections": [
+          {
+            "label": "person",
+            "score": 0.6198461055755615,
+            "xmin": 569,
+            "ymin": 343,
+            "xmax": 712,
+            "ymax": 413
+          }
+        ],
+        "ms": 4130.252800000002
+      },
+      "120": {
+        "detections": [],
+        "ms": 3808.9075999999986
+      },
+      "200": {
+        "detections": [
+          {
+            "label": "person",
+            "score": 0.9180008769035339,
+            "xmin": 476,
+            "ymin": 267,
+            "xmax": 818,
+            "ymax": 467
+          }
+        ],
+        "ms": 3768.9956999999995
+      }
+    },
+    "falsePositives": {
+      "no-face-testpage.png": {
+        "detections": [],
+        "ms": 4080.3238999999994
+      },
+      "no-face-wikipedia.png": {
+        "detections": [],
+        "ms": 4307.4107
+      },
+      "no-face-loginform.png": {
+        "detections": [],
+        "ms": 4171.964500000002
+      }
+    }
+  }
+}

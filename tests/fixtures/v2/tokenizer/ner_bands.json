@@ -1,0 +1,11 @@
+{
+  "description": "Synthetic NER spans (V1b, ner-service, is not built yet -- these are hand-written stand-ins for its PiiSpan[] output shape, per C1) exercising all three confidence bands and the PERSONNAME floor override (0.12) vs the default floor (0.35). Offsets are deliberately NOT hardcoded here (see the test file): they are computed at test time via text.indexOf(value), which removes any risk of a hand-counted index drifting from the actual string.",
+  "text": "Hi, I am Francis and my account number is 8842910077.",
+  "personNameValue": "Francis",
+  "accountNumberValue": "8842910077",
+  "personNameAskScore": 0.24,
+  "personNameIgnoreScore": 0.10,
+  "accountNumberStripScore": 0.82,
+  "accountNumberAskScore": 0.40,
+  "accountNumberIgnoreScore": 0.20
+}

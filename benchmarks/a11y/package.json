@@ -1,0 +1,14 @@
+{
+  "name": "dhristi-popup-a11y",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Automated accessibility audit for the Dhristi extension popup (extension/popup.html).",
+  "type": "commonjs",
+  "scripts": {
+    "audit": "node run-audit.js"
+  },
+  "dependencies": {
+    "@axe-core/playwright": "^4.10.1",
+    "playwright": "^1.48.0"
+  }
+}

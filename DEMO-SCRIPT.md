@@ -243,6 +243,126 @@ Then run it and read the numbers off the screen.
 
 ---
 
+## V2 — the rebuild's own demo section
+
+Everything above is v1 (image-first, DOM-JSON payload). v2
+(`docs/v2/ARCHITECTURE.md`) is a parallel pipeline: **tokenized structure,
+not pixels, is the default payload** — the planner sees `EMAIL#1`,
+`PERSONNAME#2`, never a raw value, and the image is an escalation
+(`need_visual`), not the default. Select it in the popup's **Settings**
+disclosure (**Pipeline version → v2**, already the default) before running
+any scenario below.
+
+### V2 pre-flight — do this before scenario 1
+
+1. `.\start-demo.ps1` now also starts and health-checks the **NER service**
+   (127.0.0.1:8757, contract C3). **Watch for the `ner service` line to read
+   `OK ... (loaded:true)`** in the launcher's own health block before running
+   anything — cold load is ~20s. Per C3, a v2 run with NER unreachable does
+   **not** silently fall back to regex-only; it stops with `ner_unavailable`.
+   If you see that outcome, the NER window closed or never finished loading —
+   re-run `.\start-demo.ps1` and wait for the green line again.
+2. Confirm the popup's pipeline toggle reads **v2** (Settings → Pipeline
+   version) and, for the live demo, the planner backend selector reads the
+   backend you actually launched with (see below).
+3. Same cold-start/battery/extension-reload cautions as the v1 pre-flight
+   above apply unchanged.
+
+### Running with a cloud planner for speed
+
+```powershell
+.\start-demo.ps1 -Planner claude    # needs ANTHROPIC_API_KEY set
+.\start-demo.ps1 -Planner gemini    # needs GEMINI_API_KEY or GOOGLE_API_KEY set
+```
+
+`-Planner local` (default) never leaves the machine — the server talks to
+Ollama's `llama3.1:8b` on 127.0.0.1. `-Planner claude`/`-Planner gemini` are
+an **explicit opt-in**, matched by the popup's own planner-backend selector
+(Settings → Planner backend) — selecting a cloud option there requires
+ticking a confirmation checkbox before it saves, and shows the same one-line
+note this section repeats below. **The popup never sees or stores an API
+key** — keys live only in the server process's own environment variables,
+exactly as set on the command line above.
+
+> **The privacy talking point:** *"Whichever planner is running — local or
+> cloud — it receives the same thing: tokenized element structure and
+> geometry, never a raw value. Choosing a cloud planner is about speed, not
+> about trust boundaries — the redaction guarantee doesn't move when the
+> backend does."*
+
+### V2 scenario 1 — the agent is useful (tokenized)
+
+- **Page:** `http://localhost:5500/test-page.html`
+- **Goal:** `fill the name as Simon`
+- **What to point at:** the RUN SUMMARY's `taskGoal` shows a `PERSONNAME#1`
+  token, not `Simon` — the name is typed via `rehydrate()`, locally, only at
+  the moment of dispatch.
+
+### V2 scenario 2 — the agent is safe (`ask`, not a hard block)
+
+- **Page:** same
+- **Goal:** `Fill in the password field with the value hunter2`
+- **What happens:** the consent panel opens in the popup — **`SENSITIVE_TARGET`**,
+  plain language: *"Type into 'Password'?"* with the policy reason underneath.
+  v2's C4 policy asks the user rather than refusing outright (v1's hard
+  block); **Deny** (or let the panel's own 60s countdown run out) produces the
+  same `SENSITIVE_TARGET_BLOCKED` outcome v1 demonstrates.
+
+### V2 scenario 3 — the policy discriminates
+
+- **Goal:** `Fill the name as River Jane and email id as riverjane33@demo.com`
+- **What happens:** fills the name (token rehydrated locally), then the
+  consent panel opens for the email field — deny it and the run ends
+  `blocked`/`SENSITIVE_TARGET_BLOCKED`, same one-task discrimination v1
+  demonstrates, now through a real UI instead of a hard-coded refusal.
+
+### V2 scenario 4 — irreversible actions
+
+- **Page:** `http://localhost:5500/test-page.html?scenario=checkout`
+- **Goal:** `Complete the checkout by clicking Place Order`
+- **What happens:** consent panel opens with **`IRREVERSIBLE_ACTION`** —
+  *"Click 'Place Order'?"*, reason: *"This action may be hard to undo..."*.
+  Deny → `IRREVERSIBLE_ACTION_BLOCKED`.
+
+### V2 scenario 5 — subframe + shadow-DOM parity
+
+- **Page:** `http://localhost:5500/frames-test.html?xorigin=1`
+- **Goal:** `fill the traveler name`
+- **What to point at:** the scan stage's `framesReported`/`framesMerged`
+  counters (v2 reuses v1's own frame handshake and defensive whole-frame
+  redaction verbatim — invariant 7) plus a `kind:"frame"` entry in the C5
+  `regions` array for anything that didn't merge, proving the planner itself
+  was told "this area is unscannable, don't guess" — not just that the pixels
+  were blacked out.
+
+### V2 scenario 6 — tokenized multi-field fill (shipping address)
+
+- **Page:** `http://localhost:5500/test-page.html?scenario=shipping`
+- **Goal:** `Ship to Meera Iyer, 14 MG Road, Pune 411001`
+- **What happens:** the name and address are tokenized (`PERSONNAME#1`,
+  `ADDRESS#1`) before the goal ever leaves the browser; the planner names
+  those tokens back, and the extension rehydrates each locally before
+  typing. Two fields fill in the run, in one task, from one sentence.
+- **What to point at:** every captured request body's `taskGoal` — it never
+  contains "Meera Iyer" or "14 MG Road" in any form, only the tokens.
+
+### V2 scenario 7 — consent, both ways
+
+- **Page:** `http://localhost:5500/test-page.html`
+- **Goal:** `type my email into the email field` (or reuse scenario 2/3's
+  goal — anything that targets the sensitive email/password field)
+- **Run it twice:**
+  1. When the consent panel opens, click **Approve** — the field types,
+     visibly, and the run continues/completes.
+  2. Reload and run again; this time click **Deny** (or press **Esc**, or
+     just wait out the countdown) — `SENSITIVE_TARGET_BLOCKED`, nothing
+     written.
+- **What to point at:** the panel itself — plain words, never the value
+  (`"type your saved email into 'Email'"`, never the address itself), a
+  visible countdown, and `Enter`/`Esc` both work without touching a mouse.
+
+---
+
 ## THE HONEST CAVEATS
 
 Have these ready. Being the one to raise a limitation is much stronger than being caught

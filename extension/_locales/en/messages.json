@@ -1,0 +1,458 @@
+{
+  "appName": {
+    "message": "Dhristi - A Privacy-Preserving Browser Tool"
+  },
+  "appDescription": {
+    "message": "Phase 4: full on-device privacy-preserving browser agent loop. Captures the visible tab, runs local WebGPU object detection (Xenova/yolos-tiny), scans the DOM for PII, redacts both the screenshot and the DOM snapshot client-side, and only then sends the redacted result to a local FastAPI server for the next action -- zero raw PII ever leaves the client."
+  },
+  "brandSub": {
+    "message": "Nothing leaves the client"
+  },
+  "languageSwitcherLabel": {
+    "message": "Language / भाषा"
+  },
+  "langEnAriaLabel": {
+    "message": "English"
+  },
+  "langHiAriaLabel": {
+    "message": "हिन्दी"
+  },
+  "prewarmChecking": {
+    "message": "Checking model warm-up…"
+  },
+  "prewarmUnknown": {
+    "message": "Model warm-up status unknown (no response from background)."
+  },
+  "prewarmWarming": {
+    "message": "⏳ Model warming up (first run only, ~20s)—wait for this before Run Agent Loop, or step 1 will silently eat the same ~20s."
+  },
+  "prewarmWarm": {
+    "message": "✓ Model warm and ready (pre-warm took $1s). Run Agent Loop will run at full speed."
+  },
+  "prewarmFailed": {
+    "message": "✗ Pre-warm FAILED: $1. Check the background service worker console."
+  },
+  "prewarmStatusGeneric": {
+    "message": "Model status: $1"
+  },
+  "taskSectionAriaLabel": {
+    "message": "Task"
+  },
+  "taskGoalLabel": {
+    "message": "Task goal"
+  },
+  "taskGoalPlaceholder": {
+    "message": "e.g. fill out the shipping address form"
+  },
+  "saveGoalBtn": {
+    "message": "Save goal"
+  },
+  "runAgentLoopBtn": {
+    "message": "Run agent loop"
+  },
+  "stopBtn": {
+    "message": "Stop"
+  },
+  "stopBtnStopping": {
+    "message": "Stopping…"
+  },
+  "taskHint": {
+    "message": "Runs capture &rarr; detect &rarr; scan &rarr; redact &rarr; send &rarr; act on the current tab, up to 25 steps or until the agent reports done. Uses the last <strong>saved</strong> goal above, and needs the server from Settings reachable."
+  },
+  "runStatusSectionAriaLabel": {
+    "message": "Run status"
+  },
+  "runStatusHint": {
+    "message": "A <strong class=\"k-blocked\">BLOCKED</strong> banner below means a guard refused an unsafe action on its own &mdash; that's the safeguard working, not something gone wrong."
+  },
+  "runStateRunning": {
+    "message": "Running"
+  },
+  "runStateFinished": {
+    "message": "Finished"
+  },
+  "stepOfTotal": {
+    "message": "Step $1 / $2"
+  },
+  "stepOnly": {
+    "message": "Step $1"
+  },
+  "runStatusLine": {
+    "message": "stage: $1"
+  },
+  "goalLabel": {
+    "message": "Goal: $1"
+  },
+  "lastActionLabel": {
+    "message": "Last action: $1"
+  },
+  "blockedBannerTitle": {
+    "message": "BLOCKED (step $1): $2"
+  },
+  "errorWithStep": {
+    "message": "Error (step $1):"
+  },
+  "errorNoStep": {
+    "message": "Error:"
+  },
+  "outcomeLabel": {
+    "message": "Outcome: $1"
+  },
+  "savingEllipsis": {
+    "message": "Saving…"
+  },
+  "savedAt": {
+    "message": "Saved at $1."
+  },
+  "clearedAt": {
+    "message": "Cleared at $1."
+  },
+  "unexpectedResponse": {
+    "message": "Unexpected response from background: $1"
+  },
+  "failedToSave": {
+    "message": "Failed to save: $1"
+  },
+  "failedToReachBackground": {
+    "message": "Failed to reach background service worker: $1"
+  },
+  "errorPrefix": {
+    "message": "ERROR: $1"
+  },
+  "testDetectRunning": {
+    "message": "Capturing current tab and running on-device detection...\n(first run loads the model -- Phase 0 measured warm WebGPU inference at 8,432ms; cold load was 14,097ms. Be patient.)"
+  },
+  "testDetectOk": {
+    "message": "OK in $1ms -- $2 detection(s):"
+  },
+  "runAgentLoopRunning": {
+    "message": "Running full agent loop on the current tab... (up to 25 steps; first detection may be slow if the model hasn't pre-warmed yet). Live progress is shown above; the page's own DevTools console has the full instrumentation."
+  },
+  "runAgentLoopFinished": {
+    "message": "Loop finished: outcome=$1, steps=$2, totalMs=$3.\nFull instrumentation is in the PAGE's console (not this popup) -- look for the \"RUN SUMMARY\" block."
+  },
+  "stopRequestFailed": {
+    "message": "Stop request failed: $1"
+  },
+  "failedToSendStop": {
+    "message": "Failed to send stop request: $1"
+  },
+  "settingsSummary": {
+    "message": "Settings"
+  },
+  "serverUrlHint": {
+    "message": "Server URL for the FastAPI backend (default <code>http://localhost:8000</code>). Must be within this extension's permitted hosts (<code>http://localhost/*</code>, <code>http://127.0.0.1/*</code>) &mdash; Chrome blocks anything else at the network layer regardless of what's typed here."
+  },
+  "serverUrlLabel": {
+    "message": "Server URL"
+  },
+  "serverUrlPlaceholder": {
+    "message": "http://localhost:8000"
+  },
+  "saveServerUrlBtn": {
+    "message": "Save server URL"
+  },
+  "serverUrlSaved": {
+    "message": "Saved: $1 (background.js picks this up immediately, no reload needed)."
+  },
+  "fullPageCaptureHint": {
+    "message": "Full-page capture: scroll the page in steps and stitch the captures into one image before detection, instead of the visible viewport only. <strong>Default off</strong> (viewport-only remains the known-good fallback). Slower per step and uses more memory &mdash; see the RUN SUMMARY's <code>fullPage</code> fields for real numbers on a given page."
+  },
+  "fullPageCaptureToggleLabel": {
+    "message": "Enable full-page scroll-and-stitch capture"
+  },
+  "fullPageCaptureOn": {
+    "message": "On -- the next run will scroll and stitch the whole page before detection."
+  },
+  "fullPageCaptureOff": {
+    "message": "Off -- the next run captures the current viewport only (default, known-good)."
+  },
+  "pipelineVersionHint": {
+    "message": "Pipeline: <strong>v2</strong> (tokenized structure, semantic-first egress, local NER, real consent UI) or <strong>v1</strong> (the original image-first loop, kept for comparison). Takes effect on the next <em>Run agent loop</em> click."
+  },
+  "pipelineVersionLabel": {
+    "message": "Pipeline version"
+  },
+  "pipelineVersionV2Option": {
+    "message": "v2 (default)"
+  },
+  "pipelineVersionV1Option": {
+    "message": "v1"
+  },
+  "pipelineSetTo": {
+    "message": "Pipeline set to $1. Takes effect on the next Run agent loop click."
+  },
+  "plannerBackendHint": {
+    "message": "Planner backend (v2 only). <strong>Local is the product default</strong> and sends nothing to the internet -- the server talks to Ollama on this machine. Claude/Gemini are an explicit opt-in for a faster live demo; either way the planner receives only tokenized structure and geometry, never a raw value. The actual server process is started with <code>-Planner local|claude|gemini</code> (see <code>start-demo.ps1</code>) -- this selector records your intent locally and is what the demo operator matches the launch flag to; the popup never sees or stores an API key, which always stays in the server's own environment variables."
+  },
+  "plannerBackendLabel": {
+    "message": "Planner backend"
+  },
+  "plannerLocalOption": {
+    "message": "Local (Ollama) -- default"
+  },
+  "plannerClaudeOption": {
+    "message": "Claude (cloud, opt-in)"
+  },
+  "plannerGeminiOption": {
+    "message": "Gemini (cloud, opt-in)"
+  },
+  "plannerCloudNote": {
+    "message": "This sends the tokenized scene (element structure, geometry, and opaque region kinds) to a cloud API for planning speed. No personal values, no raw PII, and no image unless the planner explicitly escalates to <code>need_visual</code> (in which case the image sent is already redacted). Confirm you understand this before saving."
+  },
+  "plannerCloudConfirmLabel": {
+    "message": "I understand -- send tokenized structure only, never raw values, to this cloud planner."
+  },
+  "savePlannerBackendBtn": {
+    "message": "Save planner choice"
+  },
+  "plannerConfirmRequired": {
+    "message": "Check the box above to confirm the opt-in before saving a cloud planner."
+  },
+  "plannerSavedCloud": {
+    "message": "Saved: $1 (cloud, opt-in confirmed). Start the server with -Planner $1 to match."
+  },
+  "plannerSavedLocal": {
+    "message": "Saved: local (default). Sends nothing to the internet -- the server talks to Ollama on this machine."
+  },
+  "profileSummary": {
+    "message": "Your profile (autofill)"
+  },
+  "profileHint": {
+    "message": "Saved here <strong>stays on this device</strong> in this browser's local extension storage. The model never sees it and it is never sent to the server &mdash; when a page wants one of these fields, the model only ever names <em>which category</em> it wants (e.g. &ldquo;email&rdquo;), and this extension fills the value in locally. That is what lets the agent autofill a field it would otherwise have to refuse."
+  },
+  "profileFullNameLabel": {
+    "message": "Full name"
+  },
+  "profileFullNamePlaceholder": {
+    "message": "e.g. Priya Sharma"
+  },
+  "profileEmailLabel": {
+    "message": "Email"
+  },
+  "profileEmailPlaceholder": {
+    "message": "e.g. priya@example.com"
+  },
+  "profilePhoneLabel": {
+    "message": "Phone"
+  },
+  "profilePhonePlaceholder": {
+    "message": "e.g. +91 98765 43210"
+  },
+  "saveProfileBtn": {
+    "message": "Save profile"
+  },
+  "profileSaved": {
+    "message": "Saved on this device. Never sent to the server or the model."
+  },
+  "diagnosticsSummary": {
+    "message": "Advanced diagnostics"
+  },
+  "diagnosticsHint": {
+    "message": "Captures the current tab and runs the on-device object detector end-to-end through background.js and the offscreen document &mdash; a developer diagnostic, not something normal use needs. First run loads the model and can take much longer than later runs."
+  },
+  "testDetectBtn": {
+    "message": "Run test detection on current tab"
+  },
+  "consentEyebrow": {
+    "message": "Agent is asking for your approval"
+  },
+  "consentApproveBtn": {
+    "message": "Approve"
+  },
+  "consentDenyBtn": {
+    "message": "Deny"
+  },
+  "consentCountdownText": {
+    "message": "Deny is the default in $1s if you don't respond."
+  },
+  "policyDetailPrefix": {
+    "message": "Policy detail: $1"
+  },
+  "goalPrivacyEyebrow": {
+    "message": "Review before sending"
+  },
+  "goalPrivacyKeepPrivateBtn": {
+    "message": "Keep private"
+  },
+  "goalPrivacyNotPrivateBtn": {
+    "message": "Not private"
+  },
+  "goalPrivacyActionText": {
+    "message": "Treat '$1' as private?"
+  },
+  "goalPrivacyReasonText": {
+    "message": "Automatic detection flagged this part of your instruction as possibly personal information. “Keep private” sends only a token in its place; “Not private” sends it exactly as you wrote it."
+  },
+  "goalPrivacyCountdownText": {
+    "message": "Kept private by default in $1s if you don't respond."
+  },
+  "outcome_done": {
+    "message": "Done"
+  },
+  "outcome_stopped": {
+    "message": "Stopped by you"
+  },
+  "outcome_blocked": {
+    "message": "Stopped safely -- refused an unsafe action"
+  },
+  "outcome_stalled": {
+    "message": "Stopped: no progress detected"
+  },
+  "outcome_maxStepsReached": {
+    "message": "Stopped: step limit reached"
+  },
+  "outcome_captureFailed": {
+    "message": "Failed: could not capture/detect the page"
+  },
+  "outcome_analyzeFailed": {
+    "message": "Failed: server request failed"
+  },
+  "outcome_actFailed": {
+    "message": "Failed: could not complete the action"
+  },
+  "outcome_section5Violation": {
+    "message": "Stopped: internal safety check failed"
+  },
+  "outcome_failed": {
+    "message": "Failed: unexpected error"
+  },
+  "outcome_inProgress": {
+    "message": "In progress"
+  },
+  "pending_performAction": {
+    "message": "perform an action"
+  },
+  "pending_typeWithValue": {
+    "message": "type $1 into '$2'"
+  },
+  "pending_typeValueOnly": {
+    "message": "type $1"
+  },
+  "pending_typeIntoLabel": {
+    "message": "type into '$1'"
+  },
+  "pending_typeIntoField": {
+    "message": "type into a field"
+  },
+  "pending_fillProfileGeneric": {
+    "message": "fill '$1' with your saved profile info"
+  },
+  "pending_fillProfileCategory": {
+    "message": "fill '$1' with your saved $2"
+  },
+  "pending_fieldFallback": {
+    "message": "a field"
+  },
+  "pending_click": {
+    "message": "click '$1'"
+  },
+  "pending_clickElement": {
+    "message": "click an element"
+  },
+  "pending_pressKeyOn": {
+    "message": "press $1 on '$2'"
+  },
+  "pending_pressKey": {
+    "message": "press $1"
+  },
+  "pending_aKey": {
+    "message": "a key"
+  },
+  "pending_scroll": {
+    "message": "scroll the page"
+  },
+  "pending_done": {
+    "message": "mark the task as done"
+  },
+  "pending_genericOn": {
+    "message": "$1 on '$2'"
+  },
+  "pending_genericAction": {
+    "message": "perform $1"
+  },
+  "profileField_fullName": {
+    "message": "full name"
+  },
+  "profileField_email": {
+    "message": "email"
+  },
+  "profileField_phone": {
+    "message": "phone"
+  },
+  "profileField_generic": {
+    "message": "a field"
+  },
+  "tokenPhrase_profileName": {
+    "message": "your saved name"
+  },
+  "tokenPhrase_profileEmail": {
+    "message": "your saved email"
+  },
+  "tokenPhrase_profilePhone": {
+    "message": "your saved phone number"
+  },
+  "tokenPhrase_email": {
+    "message": "a previously-seen email address"
+  },
+  "tokenPhrase_phone": {
+    "message": "a previously-seen phone number"
+  },
+  "tokenPhrase_aadhaar": {
+    "message": "a previously-seen Aadhaar-shaped number"
+  },
+  "tokenPhrase_pan": {
+    "message": "a previously-seen PAN-shaped ID"
+  },
+  "tokenPhrase_card": {
+    "message": "a previously-seen card number"
+  },
+  "tokenPhrase_upi": {
+    "message": "a previously-seen UPI ID"
+  },
+  "tokenPhrase_ifsc": {
+    "message": "a previously-seen bank IFSC code"
+  },
+  "tokenPhrase_gstin": {
+    "message": "a previously-seen GSTIN"
+  },
+  "tokenPhrase_passport": {
+    "message": "a previously-seen passport-shaped ID"
+  },
+  "tokenPhrase_personName": {
+    "message": "a previously-seen name"
+  },
+  "tokenPhrase_address": {
+    "message": "a previously-seen address"
+  },
+  "tokenPhrase_dob": {
+    "message": "a previously-seen date of birth"
+  },
+  "tokenPhrase_accountNumber": {
+    "message": "a previously-seen account number"
+  },
+  "tokenPhrase_password": {
+    "message": "a previously-seen password"
+  },
+  "tokenPhrase_other": {
+    "message": "a previously-seen sensitive value"
+  },
+  "tokenPhrase_genericFallback": {
+    "message": "a previously-seen value"
+  },
+  "policyReason_sensitiveTarget": {
+    "message": "This field is flagged as sensitive (for example a password, ID number, or contact field)."
+  },
+  "policyReason_irreversibleAction": {
+    "message": "This action may be hard to undo (for example a purchase, deletion, or account change)."
+  },
+  "policyReason_intentMismatch": {
+    "message": "This action doesn't clearly match what you asked the agent to do."
+  },
+  "policyReason_serverTightened": {
+    "message": "The server flagged this action as needing your confirmation."
+  },
+  "policyReason_generic": {
+    "message": "The agent's safety policy wants your confirmation before doing this."
+  }
+}

@@ -182,14 +182,46 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
 # 2. Demo page (separate terminal)
 cd demo && python -m http.server 5500
 
-# 3. Extension deps + bundle
-cd extension && npm install && npm run build
+# 3. Extension deps + ML assets + bundle
+cd extension && npm install && npm run fetch-assets   # runs `npm run build` itself when assets check out
 ```
 
 Then: `chrome://extensions` → Developer mode → **Load unpacked** → select `extension/`.
 Open **http://localhost:5500/test-page.html**, wait for the popup's green ✓, and click **Run Agent Loop**.
 
-> ⚠️ ML binaries (~48 MB of ONNX weights + runtime) are gitignored. See `spike/README.md` to fetch them.
+### Fresh clone setup — the ML binaries `.gitignore` excludes
+
+`extension/models/` and `extension/ort/` are gitignored *except* for 2 files under `models/ultraface/`
+`.gitignore` carves back out (~64 MB of ONNX weights + ONNX Runtime Web binaries are still excluded — see
+the "Vendored ML binaries" comment in `.gitignore`). A fresh clone needs to fetch the excluded ones before
+`npm run build` will produce a loadable extension; the 2 carved-out files come with the clone already.
+
+```bash
+cd extension
+npm install
+node scripts/fetch-assets.mjs          # fetch the 8 excluded files + verify all 10 + npm run build
+# or, for CI / verification without touching real files:
+node scripts/fetch-assets.mjs --dest /tmp/verify-assets
+```
+
+`fetch-assets.mjs` downloads the 8 excluded files (3 `Xenova/yolos-tiny` weights from the Hugging Face Hub,
+5 ONNX Runtime Web files from npm/jsdelivr) and sha256-verifies all 10 — those 8 plus the 2 tracked files,
+checked in place, never downloaded — against `extension/scripts/assets.lock.json` (generated from this
+working copy). **On a normal checkout this reports 0 mismatches** and proceeds to `npm run build`.
+
+**Only 2 files are tracked in git instead of fetched** (full detail in `extension/README.md`):
+`models/ultraface/ultraface-rfb320.onnx` (a genuinely **derived** file — `sih-2026`'s
+`scripts/optimize-vision-model.py` produced it from the upstream Linzaer RFB-320 export, 1,270,727 bytes,
+so it's not a re-downloadable copy of that blob) and its `ULTRAFACE-LICENSE.txt`. A `.gitattributes` entry
+keeps both from ever being line-ending-converted on checkout.
+
+*Correction: an earlier pass also tracked two ONNX Runtime glue files after finding small byte diffs from
+onnxruntime-web@1.23.2, wrongly attributed to a hand-applied patch. The diffs (68 and 7 bytes) were exactly
+those files' CR counts — a Windows CRLF conversion, the same benign mechanism already correctly identified
+for the license file. Both were replaced with the unmodified upstream bytes and now fetch normally again.*
+
+`fetch-assets.mjs` never downloads or overwrites the 2 tracked files — it only verifies them in place — and
+would report any drift precisely rather than silently re-fetching or re-deriving them.
 
 ### Choosing a model backend
 

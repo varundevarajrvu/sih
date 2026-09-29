@@ -1,0 +1,686 @@
+{
+  "description": "JS/Python PII regex parity fixture (orchestrator, 2026-09-24). Every case is run through extension/lib/pii-regex.js findRegexSpans() (tests/unit/test_pii_parity.mjs) AND server/pii_regex_v2.py find_regex_spans() (tests/unit/test_pii_parity.py); expected is derived from the JS implementation (the more extensively hand-verified side across V1a's prior work, including an empirical probe that corrected two wrong-by-hand predictions of this fixture's own author -- see the two ids below whose text still carries an outdated hypothesis in their id/description: they are accurate). Covers every C1 regex label (EMAIL, PHONE, AADHAAR, PAN, CARD, UPI, IFSC, GSTIN, PASSPORT) with positives and near-miss negatives, all four documented ordering hazards (card-before-phone/aadhaar, GSTIN-before-PAN, UPI-before-PHONE, IFSC-before-PASSPORT), every phone prefix form (+91, 0091, 91-, leading-0 trunk, generic international bare and grouped), UPI with both a common (formerly-allowlisted) and a deliberately arbitrary/uncommon handle (proving server/pii_regex_v2.py's PSP-handle allowlist removal), emails/UPI-lookalikes in both directions, and token-wrapped strings that must yield zero spans under the server's masking mode (find_regex_spans masks tokens first; the client-side findRegexSpans() never needs to, since it only ever runs on raw pre-tokenization text in production -- these specific fixtures happen to yield zero spans in BOTH regardless, because no token-shaped substring accidentally matches any PII pattern). LANDLINE FOLLOW-UP (same day): added a shared JS/Python false negative for Indian landline numbers (STD 2-4 digits + subscriber 6-8 digits, always exactly 10 significant digits) in hyphen/paren/space-grouped and +91/91-/bare-trunk-0 forms, near-miss negatives (ISO dates, 6-digit pincodes, time ranges), and two non-splitting cases proving landline cannot steal a substring from an already-claimed mobile number, a genuinely Luhn-valid card, or an AADHAAR grouped match.",
+  "cases": [
+    {
+      "id": "email_basic",
+      "text": "Email me at jane.doe+work@example.co.uk please.",
+      "expected": [
+        {
+          "label": "EMAIL",
+          "text": "jane.doe+work@example.co.uk"
+        }
+      ]
+    },
+    {
+      "id": "phone_bare10",
+      "text": "Call 9876543210 today.",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "9876543210"
+        }
+      ]
+    },
+    {
+      "id": "aadhaar_bare_unconditional",
+      "text": "ID number 234567890123 was issued.",
+      "expected": [
+        {
+          "label": "AADHAAR",
+          "text": "234567890123"
+        }
+      ]
+    },
+    {
+      "id": "pan_lowercase",
+      "text": "PAN bnzpm2501f on file.",
+      "expected": [
+        {
+          "label": "PAN",
+          "text": "bnzpm2501f"
+        }
+      ]
+    },
+    {
+      "id": "card_visa_valid",
+      "text": "Card 4111111111111111 charged.",
+      "expected": [
+        {
+          "label": "CARD",
+          "text": "4111111111111111"
+        }
+      ]
+    },
+    {
+      "id": "upi_uncommon_handle",
+      "text": "Pay to ramesh.k@unknownbankhandle please.",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "ramesh.k@unknownbankhandle"
+        }
+      ]
+    },
+    {
+      "id": "ifsc_basic",
+      "text": "IFSC code SBIN0001234 for the branch.",
+      "expected": [
+        {
+          "label": "IFSC",
+          "text": "SBIN0001234"
+        }
+      ]
+    },
+    {
+      "id": "gstin_basic",
+      "text": "GSTIN 27AAAAA0000A1Z5 registered.",
+      "expected": [
+        {
+          "label": "GSTIN",
+          "text": "27AAAAA0000A1Z5"
+        }
+      ]
+    },
+    {
+      "id": "passport_basic",
+      "text": "Passport number M1234567 renewed.",
+      "expected": [
+        {
+          "label": "PASSPORT",
+          "text": "M1234567"
+        }
+      ]
+    },
+    {
+      "id": "dotless_localhost_becomes_upi_not_email",
+      "text": "Reach me at user@localhost for now.",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "user@localhost"
+        }
+      ]
+    },
+    {
+      "id": "phone_near_miss_wrong_leading_digit",
+      "text": "Call 1234567890 today.",
+      "expected": []
+    },
+    {
+      "id": "aadhaar_near_miss_11_digits",
+      "text": "Order 12345678901 total.",
+      "expected": []
+    },
+    {
+      "id": "pan_near_miss_no_trailing_letter",
+      "text": "Ref ABCDE12345 noted.",
+      "expected": []
+    },
+    {
+      "id": "card_near_miss_luhn_invalid_contiguous",
+      "text": "Tracking 4111111111111112 shipped.",
+      "expected": []
+    },
+    {
+      "id": "upi_near_miss_no_local_part",
+      "text": "Contact @justhandle here.",
+      "expected": []
+    },
+    {
+      "id": "ifsc_near_miss_no_literal_zero",
+      "text": "ABCD1234567 is not an IFSC.",
+      "expected": []
+    },
+    {
+      "id": "gstin_truncated_by_one_char_no_boundary_for_pan_either",
+      "text": "Truncated code 27AAAAA0000A1Z noted.",
+      "expected": []
+    },
+    {
+      "id": "passport_near_miss_6_digits",
+      "text": "Ref A123456 noted.",
+      "expected": []
+    },
+    {
+      "id": "generic_near_miss_totally_unrelated_shape",
+      "text": "Code AB1234567C validated.",
+      "expected": []
+    },
+    {
+      "id": "hazard_card_before_phone_aadhaar",
+      "text": "Card 4111 1111 1111 1111 was used. Call me at 9876543210 to confirm.",
+      "expected": [
+        {
+          "label": "CARD",
+          "text": "4111 1111 1111 1111"
+        },
+        {
+          "label": "PHONE",
+          "text": "9876543210"
+        }
+      ]
+    },
+    {
+      "id": "hazard_gstin_before_pan",
+      "text": "GSTIN 29ABCDE1234F1Z5 is on the invoice. My PAN is BNZPM2501F for tax purposes.",
+      "expected": [
+        {
+          "label": "GSTIN",
+          "text": "29ABCDE1234F1Z5"
+        },
+        {
+          "label": "PAN",
+          "text": "BNZPM2501F"
+        }
+      ]
+    },
+    {
+      "id": "hazard_upi_before_phone",
+      "text": "Pay to 9876543210@ybl via UPI.",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "9876543210@ybl"
+        }
+      ]
+    },
+    {
+      "id": "hazard_ifsc_before_passport",
+      "text": "Branch IFSC is HDFC0001234 for this account.",
+      "expected": [
+        {
+          "label": "IFSC",
+          "text": "HDFC0001234"
+        }
+      ]
+    },
+    {
+      "id": "phone_prefix_plus91_5_5_grouped",
+      "text": "call +91 98450 12345 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "+91 98450 12345"
+        }
+      ]
+    },
+    {
+      "id": "phone_prefix_0091_bare10",
+      "text": "call 0091 9845012345 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "0091 9845012345"
+        }
+      ]
+    },
+    {
+      "id": "phone_prefix_91_hyphen_bare10",
+      "text": "call 91-9845012345 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "91-9845012345"
+        }
+      ]
+    },
+    {
+      "id": "phone_prefix_leading_zero_trunk",
+      "text": "call 09845012345 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "09845012345"
+        }
+      ]
+    },
+    {
+      "id": "phone_prefix_plus91_3_3_4_grouped",
+      "text": "call +91 984 501 2345 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "+91 984 501 2345"
+        }
+      ]
+    },
+    {
+      "id": "phone_generic_intl_contiguous",
+      "text": "call +14155552671 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "+14155552671"
+        }
+      ]
+    },
+    {
+      "id": "phone_generic_intl_grouped",
+      "text": "call +44 20 7946 0958 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "+44 20 7946 0958"
+        }
+      ]
+    },
+    {
+      "id": "upi_common_handle",
+      "text": "Send to 9876543210@ybl please",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "9876543210@ybl"
+        }
+      ]
+    },
+    {
+      "id": "upi_uncommon_handle_2",
+      "text": "Send to merchant.shop@newbankxyz please",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "merchant.shop@newbankxyz"
+        }
+      ]
+    },
+    {
+      "id": "email_not_upi_short_tld",
+      "text": "Contact ops@vendor.io for support",
+      "expected": [
+        {
+          "label": "EMAIL",
+          "text": "ops@vendor.io"
+        }
+      ]
+    },
+    {
+      "id": "upi_numeric_local_wins_over_phone",
+      "text": "Pay 9123456789@paytm now",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "9123456789@paytm"
+        }
+      ]
+    },
+    {
+      "id": "dotless_handle_becomes_upi_not_email",
+      "text": "Reach admin@corp internally",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "admin@corp"
+        }
+      ]
+    },
+    {
+      "id": "token_phone_prefix_yields_nothing",
+      "text": "+91 PHONE#1",
+      "expected": []
+    },
+    {
+      "id": "token_email_profilephone_yields_nothing",
+      "text": "Contact EMAIL#1 or PROFILEPHONE#2 for details",
+      "expected": []
+    },
+    {
+      "id": "token_pan_gstin_yields_nothing",
+      "text": "PAN#1 and GSTIN#1 are on file",
+      "expected": []
+    },
+    {
+      "id": "multi_pii_sentence",
+      "text": "Hi, I'm reachable at priya.k@example.com or 9876543210. My PAN is ABCPK1234F and Aadhaar is 234567890123.",
+      "expected": [
+        {
+          "label": "EMAIL",
+          "text": "priya.k@example.com"
+        },
+        {
+          "label": "PHONE",
+          "text": "9876543210"
+        },
+        {
+          "label": "PAN",
+          "text": "ABCPK1234F"
+        },
+        {
+          "label": "AADHAAR",
+          "text": "234567890123"
+        }
+      ]
+    },
+    {
+      "id": "password_shaped_text_not_regex_scope",
+      "text": "My password is hunter2demo",
+      "expected": []
+    },
+    {
+      "id": "name_address_shaped_text_not_regex_scope",
+      "text": "My name is Priya Sharma and I live at 42 MG Road, Bangalore.",
+      "expected": []
+    },
+    {
+      "id": "dob_shaped_text_not_regex_scope",
+      "text": "Born on 15/08/1990 in Delhi.",
+      "expected": []
+    },
+    {
+      "id": "card_hyphen_separators",
+      "text": "Card: 4111-1111-1111-1111 used.",
+      "expected": [
+        {
+          "label": "CARD",
+          "text": "4111-1111-1111-1111"
+        }
+      ]
+    },
+    {
+      "id": "passport_lowercase",
+      "text": "passport z7654321 shown",
+      "expected": [
+        {
+          "label": "PASSPORT",
+          "text": "z7654321"
+        }
+      ]
+    },
+    {
+      "id": "aadhaar_grouped_hyphens",
+      "text": "Aadhaar 2345-6789-0123 verified.",
+      "expected": [
+        {
+          "label": "AADHAAR",
+          "text": "2345-6789-0123"
+        }
+      ]
+    },
+    {
+      "id": "phone_3_3_4_no_prefix",
+      "text": "Reach 987 654 3210 anytime",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "987 654 3210"
+        }
+      ]
+    },
+    {
+      "id": "gstin_digit_checksum",
+      "text": "GSTIN 07AAAAA0000A1Z9 filed.",
+      "expected": [
+        {
+          "label": "GSTIN",
+          "text": "07AAAAA0000A1Z9"
+        }
+      ]
+    },
+    {
+      "id": "gstin_non_literal_z_entity_type",
+      "text": "GSTIN 07AAAAA0000A1B5 filed.",
+      "expected": [
+        {
+          "label": "GSTIN",
+          "text": "07AAAAA0000A1B5"
+        }
+      ]
+    },
+    {
+      "id": "email_rfc_special_local_part",
+      "text": "Contact j.o'brien@example.com now",
+      "expected": [
+        {
+          "label": "EMAIL",
+          "text": "j.o'brien@example.com"
+        }
+      ]
+    },
+    {
+      "id": "email_hyphenated_domain",
+      "text": "Email support@my-shop.com for help",
+      "expected": [
+        {
+          "label": "EMAIL",
+          "text": "support@my-shop.com"
+        }
+      ]
+    },
+    {
+      "id": "upi_mixed_case_handle",
+      "text": "Pay ARJUN@PAYTM now",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "ARJUN@PAYTM"
+        }
+      ]
+    },
+    {
+      "id": "card_spaces_amex_like",
+      "text": "Please charge 4111 1111 1111 1111 now.",
+      "expected": [
+        {
+          "label": "CARD",
+          "text": "4111 1111 1111 1111"
+        }
+      ]
+    },
+    {
+      "id": "card_amex_15_digit_valid",
+      "text": "Card 378282246310005 used.",
+      "expected": [
+        {
+          "label": "CARD",
+          "text": "378282246310005"
+        }
+      ]
+    },
+    {
+      "id": "phone_9_digits_near_miss",
+      "text": "Ref 987654321 only.",
+      "expected": []
+    },
+    {
+      "id": "card_13_digit_luhn_invalid",
+      "text": "Tracking 1234567890123 shipped.",
+      "expected": []
+    },
+    {
+      "id": "aadhaar_malformed_grouping_near_miss",
+      "text": "Number 1234 5678 901 was given.",
+      "expected": []
+    },
+    {
+      "id": "all_five_ids_one_paragraph",
+      "text": "GSTIN 29ABCDE1234F1Z5, IFSC HDFC0001234, PAN BNZPM2501F, UPI 9876543210@ybl, Passport Z1234567 -- all on file.",
+      "expected": [
+        {
+          "label": "GSTIN",
+          "text": "29ABCDE1234F1Z5"
+        },
+        {
+          "label": "IFSC",
+          "text": "HDFC0001234"
+        },
+        {
+          "label": "PAN",
+          "text": "BNZPM2501F"
+        },
+        {
+          "label": "UPI",
+          "text": "9876543210@ybl"
+        },
+        {
+          "label": "PASSPORT",
+          "text": "Z1234567"
+        }
+      ]
+    },
+    {
+      "id": "card_19_digit_upper_bound",
+      "text": "Reference 1234567890123456785 recorded.",
+      "expected": [
+        {
+          "label": "CARD",
+          "text": "1234567890123456785"
+        }
+      ]
+    },
+    {
+      "id": "upi_trailing_dot_no_letters_still_matches_handle",
+      "text": "reach john@example.",
+      "expected": [
+        {
+          "label": "UPI",
+          "text": "john@example"
+        }
+      ]
+    },
+    {
+      "id": "phone_plus_country_code_too_short_near_miss",
+      "text": "call +123 now",
+      "expected": []
+    },
+    {
+      "id": "email_plus_tag_and_subdomain",
+      "text": "Send to alerts+billing@mail.corp.example.com now",
+      "expected": [
+        {
+          "label": "EMAIL",
+          "text": "alerts+billing@mail.corp.example.com"
+        }
+      ]
+    },
+    {
+      "id": "card_hyphen_and_space_mixed_separators",
+      "text": "Number 4111-1111 1111-1111 used.",
+      "expected": [
+        {
+          "label": "CARD",
+          "text": "4111-1111 1111-1111"
+        }
+      ]
+    },
+    {
+      "id": "pan_embedded_in_longer_alnum_no_boundary",
+      "text": "RefABCPK1234Fend",
+      "expected": []
+    },
+    {
+      "id": "ifsc_lowercase_not_matched_case_sensitive",
+      "text": "ifsc hdfc0001234 lower",
+      "expected": []
+    },
+    {
+      "id": "upi_handle_too_short_one_letter_near_miss",
+      "text": "pay ram@x now",
+      "expected": []
+    },
+    {
+      "id": "landline_hyphen_4_4_grouped",
+      "text": "call 080-2345-6789 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "080-2345-6789"
+        }
+      ]
+    },
+    {
+      "id": "landline_parens_space_grouped",
+      "text": "call (080) 2345 6789 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "(080) 2345 6789"
+        }
+      ]
+    },
+    {
+      "id": "landline_bare_zero_space_grouped",
+      "text": "call 022 2345 6789 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "022 2345 6789"
+        }
+      ]
+    },
+    {
+      "id": "landline_plus91_intl_no_trunk",
+      "text": "call +91 80 2345 6789 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "+91 80 2345 6789"
+        }
+      ]
+    },
+    {
+      "id": "landline_hyphen_ungrouped_subscriber",
+      "text": "call 0484-2345678 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "0484-2345678"
+        }
+      ]
+    },
+    {
+      "id": "landline_bare91_hyphen_no_plus",
+      "text": "call 91-80-2345-6789 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "91-80-2345-6789"
+        }
+      ]
+    },
+    {
+      "id": "landline_near_miss_date_iso",
+      "text": "date 2026-09-24 noted",
+      "expected": []
+    },
+    {
+      "id": "landline_near_miss_pincode",
+      "text": "pincode 560038 area",
+      "expected": []
+    },
+    {
+      "id": "landline_near_miss_time_range",
+      "text": "time 10:30-11:45 slot",
+      "expected": []
+    },
+    {
+      "id": "landline_does_not_split_mobile_after_trunk_zero",
+      "text": "call 09876543210 now",
+      "expected": [
+        {
+          "label": "PHONE",
+          "text": "09876543210"
+        }
+      ]
+    },
+    {
+      "id": "landline_does_not_split_valid_card_with_zero_leading_group",
+      "text": "Card 4111 0555 1234 5671 used.",
+      "expected": [
+        {
+          "label": "CARD",
+          "text": "4111 0555 1234 5671"
+        }
+      ]
+    },
+    {
+      "id": "landline_does_not_steal_from_aadhaar_grouped_claim",
+      "text": "Card 4111 0234 5678 9012 used.",
+      "expected": [
+        {
+          "label": "AADHAAR",
+          "text": "4111 0234 5678"
+        }
+      ]
+    }
+  ]
+}

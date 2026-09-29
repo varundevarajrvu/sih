@@ -1,0 +1,6 @@
+{
+  "description": "Two occurrences of the exact same email, byte-for-byte, must dedupe to one token (EMAIL#1) both times. Two occurrences differing only in case/whitespace must ALSO dedupe to one token, per C2's 'normalize case/whitespace for email/phone matching only' rule -- a third, unrelated email must mint a second, distinct token (EMAIL#2).",
+  "exactRepeatText": "Send it to john@example.com and cc john@example.com as well.",
+  "caseVariantText": "Contact John@Example.com or   john@example.com   for details.",
+  "distinctEmailsText": "Primary: john@example.com. Secondary: jane@example.com."
+}

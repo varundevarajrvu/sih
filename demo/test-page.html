@@ -199,6 +199,32 @@
   -->
   <div id="checkoutCardMount"></div>
 
+  <!--
+    Shipping-address card (V4b, demo scenario S6) -- same conditional-mount
+    pattern as the checkout card directly above, for the exact same reason:
+    action-executor.js's ACTIONABLE_SELECTOR matches every <input
+    type=text>, unconditionally, so an ALWAYS-present name/address field
+    would become a NEW candidate for MockVLMClient's/ScenarioVLMClient's own
+    "first non-sensitive text-typed field" branch on scenarios 1/2/3/4 -- a
+    fallback insertion that would silently change their already-documented,
+    browser-verified step counts and outcomes. Mounted ONLY under
+    ?scenario=shipping, so every other scenario's byte-identical actionable-
+    element count is preserved.
+
+    S6's own point: the goal "Ship to Meera Iyer, 14 MG Road, Pune 411001"
+    is tokenized (name -> PERSONNAME#n, address -> ADDRESS#n by the real
+    regex+NER pipeline, C1/C2) before it ever leaves the browser, and the
+    planner can only ever echo those TOKENS back -- never the raw name or
+    address -- into "value". Neither field is autocomplete="name"/
+    "street-address" (dom-scanner.js's own deliberate ruling: those generic
+    autocomplete tokens are NOT flagged sensitive, or nearly every ordinary
+    form would redact itself into uselessness), so these fill via the
+    ORDINARY `type` action + C2 tokenization, not fill_profile/the vault --
+    a different, complementary path to the same "no raw value in any
+    request" guarantee fill_profile already demonstrates for profile data.
+  -->
+  <div id="shippingCardMount"></div>
+
   <p class="field-hint">
     Tip: this page has three states the agent should walk through in
     order: (1) type into "Full name" &rarr; the field KEEPS its value
@@ -325,6 +351,53 @@
       var placeOrderInert = document.getElementById("placeOrderInert");
       placeOrderBtn.addEventListener("click", function () {
         placeOrderInert.hidden = false;
+      });
+    }
+
+    // ---------------------------------------------------------------
+    // V4b, demo scenario S6 -- shipping-address card. Same conditional-
+    // mount reasoning as the checkout card above (see the mount div's own
+    // comment): only present under ?scenario=shipping, so scenarios 1-5's
+    // documented actionable-element counts stay byte-identical.
+    // ---------------------------------------------------------------
+    if (params.get("scenario") === "shipping") {
+      var shipMount = document.getElementById("shippingCardMount");
+      shipMount.innerHTML =
+        '<div class="card">' +
+        "<h2>Shipping address</h2>" +
+        '<label for="shipName">Recipient name</label>' +
+        '<input type="text" id="shipName" name="ship_name" placeholder="Full name" />' +
+        '<span id="shipNameConfirm" class="field-confirm"><span class="check">&#10003;</span> Agent filled this field</span>' +
+        '<label for="shipAddress">Address</label>' +
+        '<input type="text" id="shipAddress" name="ship_address" placeholder="Street, city, PIN code" />' +
+        '<span id="shipAddressConfirm" class="field-confirm"><span class="check">&#10003;</span> Agent filled this field</span>' +
+        '<p class="field-hint">' +
+        "Deliberately plain <code>type=text</code> fields with no PII-shaped " +
+        '<code>autocomplete</code> value (dom-scanner’s own accepted scope ' +
+        "limit: generic name/address autocomplete tokens are not flagged, or " +
+        "most ordinary forms would redact themselves into uselessness). Goal " +
+        '<code>Ship to Meera Iyer, 14 MG Road, Pune 411001</code> tokenizes the ' +
+        "name and address BEFORE the goal ever leaves the browser -- the planner " +
+        "can only ever echo those tokens back, never the raw value." +
+        "</p>" +
+        "</div>";
+
+      var shipNameInput = document.getElementById("shipName");
+      var shipNameConfirm = document.getElementById("shipNameConfirm");
+      var shipAddressInput = document.getElementById("shipAddress");
+      var shipAddressConfirm = document.getElementById("shipAddressConfirm");
+
+      shipNameInput.addEventListener("input", function () {
+        if (shipNameInput.value && shipNameInput.value.trim().length > 0) {
+          shipNameInput.classList.add("field-filled");
+          shipNameConfirm.classList.add("visible");
+        }
+      });
+      shipAddressInput.addEventListener("input", function () {
+        if (shipAddressInput.value && shipAddressInput.value.trim().length > 0) {
+          shipAddressInput.classList.add("field-filled");
+          shipAddressConfirm.classList.add("visible");
+        }
       });
     }
   </script>

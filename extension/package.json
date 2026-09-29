@@ -5,7 +5,8 @@
   "description": "Phase 1 (extension-scaffold): MV3 extension shell -- manifest, background service worker, offscreen inference document wired to Phase 0's confirmed Xenova/yolos-tiny + WebGPU inference call, popup, and a content-script stub for Phase 2a/3. See extension/README.md for load-unpacked steps.",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/offscreen.entry.js --bundle --format=esm --platform=browser --outfile=offscreen.bundle.js"
+    "build": "esbuild src/offscreen.entry.js --bundle --format=esm --platform=browser --outfile=offscreen.bundle.js",
+    "fetch-assets": "node scripts/fetch-assets.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
@@ -13,6 +14,7 @@
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.9",
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "web-ext": "^10.7.0"
   }
 }

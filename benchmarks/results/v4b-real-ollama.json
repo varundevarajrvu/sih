@@ -1,0 +1,128 @@
+{
+  "bench": "v4b-real-ollama",
+  "phase": "V4b integration-v2 (part B) -- real local planner (llama3.1:8b)",
+  "date": "2026-09-27T17:10:31.178Z",
+  "backend": "VLM_BACKEND_V2=ollama, model=llama3.1:8b (server default per get_vlm_client_v2)",
+  "machine": {
+    "platform": "win32",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "cpuCount": 12,
+    "totalMemGB": 16.8
+  },
+  "scenario": {
+    "name": "S1_fill_name_real_ollama",
+    "goal": "fill the name as Simon"
+  },
+  "crashed": false,
+  "memoryPrecheck": {
+    "requiredFreeMB": 3500,
+    "measuredFreeMB": 6331,
+    "precheckPassed": true
+  },
+  "extensionId": "ehoiodnkobmecgjolanepmfbheciklfi",
+  "prewarm": {
+    "type": "PREWARM_STATUS",
+    "status": "warm",
+    "startedAt": 1790529042444,
+    "finishedAt": 1790529043349,
+    "elapsedMs": 525.6000000238419,
+    "error": null
+  },
+  "outcome": "blocked",
+  "steps": 3,
+  "wallMs": 228797,
+  "stepResults": [
+    {
+      "step": 1,
+      "timings": {
+        "captureMs": 40.60000002384186,
+        "detectMs": 27.899999976158142,
+        "scanMs": 4.7,
+        "rankMs": 0.1,
+        "actionableNodes": 5,
+        "rankSelected": 5,
+        "rankDropped": 0,
+        "nerMs": 19,
+        "egressTextCount": 5,
+        "framesReported": 0,
+        "framesMerged": 0,
+        "framesDropped": 0,
+        "defensivelyRedactedIframeCount": 0,
+        "unscannableRegions": 0,
+        "egressAssertMs": 0.1,
+        "sendMs": 100924.9,
+        "policyMs": 0.8,
+        "actMs": 25
+      },
+      "memory": {
+        "usedJSHeapSize": 2421173,
+        "totalJSHeapSize": 3372245,
+        "jsHeapSizeLimit": 4395630592
+      },
+      "action": {
+        "action": "type",
+        "targetId": "agent-4"
+      },
+      "execResult": {
+        "ok": true,
+        "action": "type",
+        "targetId": "agent-4",
+        "value": "Simon"
+      }
+    },
+    {
+      "step": 2,
+      "timings": {
+        "captureMs": 107.09999990463257,
+        "detectMs": 65.59999990463257
+      },
+      "memory": {
+        "usedJSHeapSize": 2706465,
+        "totalJSHeapSize": 3650809,
+        "jsHeapSizeLimit": 4395630592
+      },
+      "skipped": "stale_capture",
+      "verdict": {
+        "dimensionMismatch": null,
+        "hashRecurrence": {
+          "stale": true,
+          "hash": "e0ab7cf3b46064ded9e77c5eef640ff86f27d2a7bfa63b49ace65eca115ea3a7",
+          "firstSeenScrollY": 0,
+          "currentScrollY": 646.4000244140625,
+          "scrollDelta": 646.4000244140625
+        }
+      }
+    },
+    {
+      "step": 3,
+      "timings": {
+        "captureMs": 245.80000007152557,
+        "detectMs": 30.5,
+        "scanMs": 2.5,
+        "rankMs": 0.1,
+        "actionableNodes": 4,
+        "rankSelected": 4,
+        "rankDropped": 0,
+        "nerMs": 10.3,
+        "egressTextCount": 4,
+        "framesReported": 0,
+        "framesMerged": 0,
+        "framesDropped": 0,
+        "defensivelyRedactedIframeCount": 0,
+        "unscannableRegions": 0,
+        "egressAssertMs": 0,
+        "sendMs": 66695.3,
+        "policyMs": 0.1,
+        "consentMs": 60017.5
+      },
+      "memory": {
+        "usedJSHeapSize": 3236267,
+        "totalJSHeapSize": 4023355,
+        "jsHeapSizeLimit": 4395630592
+      },
+      "blocked": "SENSITIVE_TARGET_BLOCKED",
+      "reason": "target element is flagged sensitive"
+    }
+  ],
+  "secondsPerStep": 76.27
+}

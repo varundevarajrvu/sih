@@ -31,9 +31,11 @@ import pytest
 from google.genai import errors as genai_errors
 
 from schemas import BBox, DomNode, RedactedRegion
+from schemas_v2 import PAGE_TARGET_ID_V2, SceneMode
 from vlm_client import (
     ACTION_RESPONSE_JSON_SCHEMA,
     DEFAULT_GEMINI_MODEL,
+    MODEL_ACTION_V2_JSON_SCHEMA,
     GeminiAPIError,
     GeminiConnectionError,
     GeminiCredentialsMissing,
@@ -41,7 +43,9 @@ from vlm_client import (
     GeminiRateLimited,
     GeminiVLMClient,
     VLMRequestContext,
+    VLMRequestContextV2,
     build_prompt,
+    build_prompt_v2,
     list_gemini_models,
 )
 
@@ -581,3 +585,96 @@ def test_outgoing_request_never_independently_serializes_dom_snapshot_or_redacte
     kwargs = fake.models.last_call_kwargs
     assert set(kwargs.keys()) <= {"model", "contents", "config"}
     assert len(kwargs["contents"]) == 2  # exactly image + text, nothing per-node appended
+
+
+# ---------------------------------------------------------------------------
+# V3 (planner-local): analyze_v2 — explicit opt-in, reuses this class's own
+# credentials/error-mapping machinery. No live API call is ever made here,
+# same posture as every test above.
+# ---------------------------------------------------------------------------
+
+
+def _context_v2(mode=SceneMode.SEMANTIC, elements=None, regions=None, history=None,
+                 task_goal="do the task", image_b64=None):
+    elements = elements or []
+    regions = regions or []
+    history = history or []
+    prompt = build_prompt_v2(mode=mode, task_goal=task_goal, elements=elements, regions=regions, history=history)
+    return VLMRequestContextV2(
+        mode=mode, task_goal=task_goal, elements=elements, regions=regions,
+        history=history, image_b64=image_b64, prompt=prompt,
+    )
+
+
+DONE_RESPONSE_V2 = {"action": "done", "targetId": PAGE_TARGET_ID_V2, "value": None, "profileField": None, "key": None}
+
+
+def test_v2_analyze_returns_parsed_action_dict():
+    fake = FakeGeminiClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = GeminiVLMClient(client=fake)
+    result = client.analyze_v2(_context_v2())
+    assert result == DONE_RESPONSE_V2
+
+
+def test_v2_semantic_mode_sends_no_image_part():
+    fake = FakeGeminiClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = GeminiVLMClient(client=fake)
+    client.analyze_v2(_context_v2(mode=SceneMode.SEMANTIC, image_b64=None))
+    contents = fake.models.last_call_kwargs["contents"]
+    assert len(contents) == 1
+    assert contents[0].text is not None
+
+
+def test_v2_image_mode_sends_image_part_first():
+    fake = FakeGeminiClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = GeminiVLMClient(client=fake)
+    client.analyze_v2(_context_v2(mode=SceneMode.IMAGE, image_b64="cmVkYWN0ZWQtcG5n"))
+    contents = fake.models.last_call_kwargs["contents"]
+    assert len(contents) == 2
+    assert contents[0].inline_data.data == b"redacted-png"
+    assert contents[1].text is not None
+
+
+def test_v2_text_part_is_build_prompt_v2_output_verbatim():
+    fake = FakeGeminiClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = GeminiVLMClient(client=fake)
+    ctx = _context_v2(task_goal="Log in with EMAIL#1")
+    client.analyze_v2(ctx)
+    contents = fake.models.last_call_kwargs["contents"]
+    assert contents[0].text == ctx.prompt
+
+
+def test_v2_config_uses_model_action_v2_json_schema():
+    fake = FakeGeminiClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = GeminiVLMClient(client=fake)
+    client.analyze_v2(_context_v2())
+    config = fake.models.last_call_kwargs["config"]
+    assert config.response_json_schema == MODEL_ACTION_V2_JSON_SCHEMA
+    assert config.response_mime_type == "application/json"
+
+
+def test_v2_missing_credentials_raises_gemini_credentials_missing(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    client = GeminiVLMClient()  # no injected client — real genai.Client() path
+
+    with pytest.raises(GeminiCredentialsMissing) as excinfo:
+        client.analyze_v2(_context_v2())
+
+    assert "GEMINI_API_KEY" in str(excinfo.value)
+
+
+def test_v2_rate_limit_client_error_wrapped_as_gemini_rate_limited():
+    exc = genai_errors.ClientError(429, {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "quota"})
+    fake = FakeGeminiClient(exception=exc)
+    client = GeminiVLMClient(client=fake)
+    with pytest.raises(GeminiRateLimited):
+        client.analyze_v2(_context_v2())
+
+
+def test_v2_not_found_client_error_wrapped_as_gemini_model_not_found():
+    exc = genai_errors.ClientError(404, {"code": 404, "status": "NOT_FOUND", "message": "model not found"})
+    fake = FakeGeminiClient(exception=exc)
+    client = GeminiVLMClient(client=fake)
+    with pytest.raises(GeminiModelNotFound):
+        client.analyze_v2(_context_v2())

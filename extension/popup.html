@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" id="htmlRoot">
 <head>
 <meta charset="utf-8">
 <title>Dhristi</title>
@@ -27,13 +27,26 @@
   --surface:   #141414;
   --on-dark:   #F2F1EE;
   --dim:       rgba(242, 241, 238, 0.72);
-  --faint:     rgba(242, 241, 238, 0.45);
+  /* Was 0.45 -- ~4.15:1 on --dark, below the 4.5:1 AA floor for the small
+     (10-12px) hint/status text this variable is used for. 0.6 measures
+     ~6.5:1 on --dark and ~6.2:1 on --surface, with margin for either
+     background this theme actually composites against. */
+  --faint:     rgba(242, 241, 238, 0.6);
   --rule:      rgba(242, 241, 238, 0.16);
   --rule-firm: rgba(242, 241, 238, 0.34);
 
   --pass:    #6FAE7E;
   --blocked: #D98B7A;
   --warn:    #D9C27A;
+  /* Aliases -- popup.js sets inline `style.color` to var(--redact) and
+     var(--text-muted) for status text (save/error states) but this file
+     never defined either name. An undefined custom property makes the
+     whole `color` declaration compute as `unset`, which for an inherited
+     property like `color` falls back to the parent's colour -- not a
+     contrast failure by luck, but the intended red/neutral state colour
+     never actually applied. Defined here so that styling takes effect. */
+  --redact:     var(--blocked);
+  --text-muted: var(--faint);
 
   --font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -43,8 +56,15 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+html { max-width: 100%; }
 body {
+  /* 400px is the normal popup size; max-width keeps it from forcing
+     horizontal scroll when the available viewport is narrower than that
+     (browser zoom, OS display scaling, or a constrained popup frame --
+     e.g. a 360px-wide viewport at 200% zoom). box-sizing: border-box
+     (set globally below) keeps the side padding inside this width. */
   width: 400px;
+  max-width: 100%;
   margin: 0;
   padding: 0;
   background: var(--dark);
@@ -53,6 +73,7 @@ body {
   font-size: 13px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 h1, p, pre { margin: 0; }
@@ -67,6 +88,45 @@ h1, p, pre { margin: 0; }
 .topbar {
   padding: 16px 18px 14px;
   border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.topbar-brand { min-width: 0; }
+
+/* Language toggle -- same flat/monochrome/sharp-rectangle system as
+   .btn, deliberately smaller. "EN"/"हिं" are language labels, not prose,
+   so they stay literal regardless of the active language (see
+   tests/unit/test_i18n.mjs's allowlist). */
+.lang-toggle {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--rule-firm);
+}
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-family: var(--font);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 150ms var(--ease), color 150ms var(--ease);
+}
+.lang-btn + .lang-btn { border-left: 1px solid var(--rule-firm); }
+.lang-btn[aria-pressed="true"] { background: var(--on-dark); color: var(--dark); }
+.lang-btn:hover:not([aria-pressed="true"]) { color: var(--on-dark); }
+.lang-btn:focus-visible {
+  outline: 2px solid var(--on-dark);
+  outline-offset: 1px;
 }
 
 /* The wordmark carries the same glitch as the site's hero: two tinted copies
@@ -186,8 +246,18 @@ textarea, input[type="text"] {
 }
 textarea::placeholder, input::placeholder { color: var(--faint); }
 textarea:focus, input[type="text"]:focus {
-  outline: none;
   border-color: var(--rule-firm);
+}
+/* Was `outline: none` unconditionally on :focus, which (being a more
+   specific selector than the generic `:focus-visible` rule above) fully
+   removed the keyboard focus indicator from every text field -- a
+   WCAG 2.4.7 Focus Visible failure caught by the keyboard-only pass, not
+   by axe (axe's default ruleset has no automated check for this). The
+   border-color change alone is not a sufficient focus indicator. Restore
+   the outline specifically for keyboard focus. */
+textarea:focus-visible, input[type="text"]:focus-visible {
+  outline: 2px solid var(--on-dark);
+  outline-offset: 2px;
 }
 
 .btn {
@@ -367,6 +437,149 @@ textarea:focus, input[type="text"]:focus {
 }
 .toggle-row input { accent-color: var(--on-dark); }
 
+.select-row {
+  margin-top: 10px;
+}
+.select-row label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 5px;
+}
+select {
+  width: 100%;
+  background: var(--surface);
+  color: var(--on-dark);
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 8px 10px;
+  font-family: var(--font);
+  font-size: 13px;
+}
+select:focus { border-color: var(--rule-firm); }
+/* Same fix as textarea/input[type="text"] above -- the unconditional
+   `outline: none` on :focus removed the keyboard focus ring. */
+select:focus-visible {
+  outline: 2px solid var(--on-dark);
+  outline-offset: 2px;
+}
+
+.opt-in-note {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.opt-in-note.hidden { display: none; }
+.confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+.confirm-row input { accent-color: var(--warn); }
+
+/* --------------------------- CONSENT PANEL ------------------------------- */
+/* V4b: replaces V4a's window.confirm(). A real in-popup panel, never a
+   native dialog -- see popup.js's CONSENT_REQUEST listener. Positioned as
+   a full-bleed overlay so it cannot be mistaken for ordinary page content,
+   and so a keyboard user tabbing through the popup lands on it first. */
+#consentPanel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(13, 13, 13, 0.94);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 18px;
+  overflow-y: auto;
+}
+#consentPanel[hidden] { display: none; }
+#consentPanel:focus { outline: none; }
+.consent-panel-inner {
+  width: 100%;
+  border: 1px solid var(--warn);
+  background: var(--surface);
+  padding: 16px 16px 14px;
+}
+.consent-eyebrow {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--warn);
+  margin: 0 0 8px;
+}
+.consent-action {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--on-dark);
+  line-height: 1.4;
+  margin: 0 0 8px;
+}
+.consent-reason {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.55;
+  margin: 0 0 4px;
+}
+.consent-reason-detail {
+  font-size: 10.5px;
+  color: var(--faint);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+.consent-countdown {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blocked);
+  margin: 0 0 12px;
+}
+.consent-actions { display: flex; gap: 8px; }
+.consent-actions .btn { flex: 1; height: 36px; font-size: 10.5px; }
+#consentApprove { border-color: var(--pass); background: var(--pass); color: var(--dark); }
+#consentApprove:hover:not(:disabled) { background: #85c393; }
+#consentDeny { border-color: var(--blocked); color: var(--blocked); background: transparent; }
+#consentDeny:hover:not(:disabled) { background: var(--blocked); color: var(--dark); }
+
+/* ----------------------- GOAL PRIVACY REVIEW PANEL ----------------------- */
+/* C5/C2 amendment (2026-09-26): a SEPARATE panel from #consentPanel above --
+   same overlay/keyboard/aria-live pattern (reuses .consent-panel-inner and
+   its children's classes directly), but with the OPPOSITE safe default:
+   "Keep private" is the safe/default answer here, so IT gets the
+   reassuring pass-green treatment (mirroring #consentApprove's role as
+   "the outcome that proceeds safely"), and "Not private" gets the
+   deliberate-choice outline treatment (mirroring #consentDeny's role as
+   "the one that needs a second thought"). */
+#goalPrivacyPanel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(13, 13, 13, 0.94);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 18px;
+  overflow-y: auto;
+}
+#goalPrivacyPanel[hidden] { display: none; }
+#goalPrivacyPanel:focus { outline: none; }
+#goalPrivacyKeepPrivate { border-color: var(--pass); background: var(--pass); color: var(--dark); }
+#goalPrivacyKeepPrivate:hover:not(:disabled) { background: #85c393; }
+#goalPrivacyNotPrivate { border-color: var(--blocked); color: var(--blocked); background: transparent; }
+#goalPrivacyNotPrivate:hover:not(:disabled) { background: var(--blocked); color: var(--dark); }
+
 /* --------------------------- REDUCED MOTION ------------------------------ */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -385,30 +598,87 @@ textarea:focus, input[type="text"]:focus {
 
   <div class="shell">
 
+    <!-- ============ V4b: real consent panel (C4's "ask" verdict) ============
+         Replaces V4a's window.confirm(). NEVER alert/confirm/prompt --
+         see popup.js's CONSENT_REQUEST listener. role="alertdialog" +
+         aria-modal so a screen reader announces it as an interruption;
+         focus moves here the moment it's shown (popup.js). Deny is the
+         fail-closed default: both a visible countdown AND background.js's
+         own independent 60s server-side timer enforce it, in that order --
+         this panel's countdown is advisory/UX only, the timeout that
+         actually matters lives in background.js regardless of whether
+         this popup is even open. -->
+    <div id="consentPanel" class="consent-panel" role="alertdialog" aria-modal="true"
+         aria-labelledby="consentAction" aria-describedby="consentReason consentReasonDetail consentCountdown"
+         tabindex="-1" hidden>
+      <div class="consent-panel-inner">
+        <p class="consent-eyebrow" data-i18n="consentEyebrow">Agent is asking for your approval</p>
+        <p id="consentAction" class="consent-action"></p>
+        <p id="consentReason" class="consent-reason"></p>
+        <p id="consentReasonDetail" class="consent-reason-detail"></p>
+        <p id="consentCountdown" class="consent-countdown" aria-live="polite"></p>
+        <div class="consent-actions">
+          <button id="consentApprove" type="button" class="btn" data-i18n="consentApproveBtn">Approve</button>
+          <button id="consentDeny" type="button" class="btn" data-i18n="consentDenyBtn">Deny</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ C5/C2 amendment (2026-09-26): goal ask-band privacy
+         review panel ============
+         Shown BEFORE step 1, once per ask-band span NER/regex found in the
+         user's own taskGoal (never for page-label spans -- those stay
+         held/tokenized without a prompt, per the amendment). Same
+         keyboard/aria-live/never-alert-confirm-prompt posture as
+         #consentPanel above, but a SEPARATE panel: the safe/default
+         answer here is "Keep private" (opposite of #consentPanel's
+         deny-by-default), and reusing the same panel would conflate two
+         different default semantics. -->
+    <div id="goalPrivacyPanel" role="alertdialog" aria-modal="true"
+         aria-labelledby="goalPrivacyAction" aria-describedby="goalPrivacyReason goalPrivacyCountdown"
+         tabindex="-1" hidden>
+      <div class="consent-panel-inner">
+        <p class="consent-eyebrow" data-i18n="goalPrivacyEyebrow">Review before sending</p>
+        <p id="goalPrivacyAction" class="consent-action"></p>
+        <p id="goalPrivacyReason" class="consent-reason"></p>
+        <p id="goalPrivacyCountdown" class="consent-countdown" aria-live="polite"></p>
+        <div class="consent-actions">
+          <button id="goalPrivacyKeepPrivate" type="button" class="btn" data-i18n="goalPrivacyKeepPrivateBtn">Keep private</button>
+          <button id="goalPrivacyNotPrivate" type="button" class="btn" data-i18n="goalPrivacyNotPrivateBtn">Not private</button>
+        </div>
+      </div>
+    </div>
+
     <header class="topbar">
-      <h1 class="brand" data-text="Dhristi">Dhristi</h1>
-      <p class="brand-sub">Nothing leaves the client</p>
+      <div class="topbar-brand">
+        <h1 class="brand" data-text="Dhristi">Dhristi</h1>
+        <p class="brand-sub" data-i18n="brandSub">Nothing leaves the client</p>
+      </div>
+      <div class="lang-toggle" role="group" data-i18n-aria-label="languageSwitcherLabel" aria-label="Language / भाषा">
+        <button id="langEnBtn" type="button" class="lang-btn" data-lang="en" aria-pressed="true" data-i18n-aria-label="langEnAriaLabel" aria-label="English">EN</button>
+        <button id="langHiBtn" type="button" class="lang-btn" data-lang="hi" aria-pressed="false" data-i18n-aria-label="langHiAriaLabel" aria-label="हिन्दी">हिं</button>
+      </div>
     </header>
 
-    <div id="prewarmStatus" class="status-pending" aria-live="polite">Checking model warm-up&hellip;</div>
+    <div id="prewarmStatus" class="status-pending" aria-live="polite" data-i18n="prewarmChecking">Checking model warm-up&hellip;</div>
 
     <main>
 
       <!-- ================= TASK: the primary surface ================= -->
-      <section aria-label="Task">
-        <label class="eyebrow" for="taskGoal">Task goal</label>
-        <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form"></textarea>
+      <section aria-label="Task" data-i18n-aria-label="taskSectionAriaLabel">
+        <label class="eyebrow" for="taskGoal" data-i18n="taskGoalLabel">Task goal</label>
+        <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form" data-i18n-placeholder="taskGoalPlaceholder"></textarea>
 
         <div class="task-actions">
-          <button id="saveGoal" type="button" class="btn btn-ghost">Save goal</button>
+          <button id="saveGoal" type="button" class="btn btn-ghost" data-i18n="saveGoalBtn">Save goal</button>
           <p id="saveStatus" aria-live="polite"></p>
         </div>
 
         <div class="run-row">
-          <button id="runAgentLoop" type="button" class="btn btn-primary">Run agent loop</button>
-          <button id="stopAgentLoop" type="button" class="btn btn-stop" disabled>Stop</button>
+          <button id="runAgentLoop" type="button" class="btn btn-primary" data-i18n="runAgentLoopBtn">Run agent loop</button>
+          <button id="stopAgentLoop" type="button" class="btn btn-stop" disabled data-i18n="stopBtn">Stop</button>
         </div>
-        <p class="hint">
+        <p class="hint" data-i18n-html="taskHint">
           Runs capture &rarr; detect &rarr; scan &rarr; redact &rarr; send &rarr; act on the
           current tab, up to 25 steps or until the agent reports done. Uses the last
           <strong>saved</strong> goal above, and needs the server from Settings reachable.
@@ -416,8 +686,8 @@ textarea:focus, input[type="text"]:focus {
       </section>
 
       <!-- ================= LIVE STATUS + BLOCKED/ERROR/OUTCOME ================= -->
-      <section aria-label="Run status">
-        <p class="hint hint-note">
+      <section aria-label="Run status" data-i18n-aria-label="runStatusSectionAriaLabel">
+        <p class="hint hint-note" data-i18n-html="runStatusHint">
           A <strong class="k-blocked">BLOCKED</strong> banner below means a guard refused an unsafe action on
           its own &mdash; that's the safeguard working, not something gone wrong.
         </p>
@@ -427,19 +697,20 @@ textarea:focus, input[type="text"]:focus {
 
       <!-- ================= DEMOTED: settings + dev diagnostics ================= -->
       <details class="disclosure">
-        <summary>Settings</summary>
+        <summary data-i18n="settingsSummary">Settings</summary>
         <div class="disclosure-body">
-          <p class="hint">
+          <p class="hint" data-i18n-html="serverUrlHint">
             Server URL for the FastAPI backend (default <code>http://localhost:8000</code>).
             Must be within this extension's permitted hosts (<code>http://localhost/*</code>,
             <code>http://127.0.0.1/*</code>) &mdash; Chrome blocks anything else at the
             network layer regardless of what's typed here.
           </p>
-          <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" />
-          <button id="saveServerUrl" type="button" class="btn btn-ghost">Save server URL</button>
+          <label class="eyebrow" for="serverUrlInput" data-i18n="serverUrlLabel">Server URL</label>
+          <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" data-i18n-placeholder="serverUrlPlaceholder" />
+          <button id="saveServerUrl" type="button" class="btn btn-ghost" data-i18n="saveServerUrlBtn">Save server URL</button>
           <p id="serverUrlStatus" aria-live="polite"></p>
 
-          <p class="hint" style="margin-top: 14px;">
+          <p class="hint" style="margin-top: 14px;" data-i18n-html="fullPageCaptureHint">
             Full-page capture: scroll the page in steps and stitch the captures into one
             image before detection, instead of the visible viewport only. <strong>Default
             off</strong> (viewport-only remains the known-good fallback). Slower per step
@@ -448,44 +719,91 @@ textarea:focus, input[type="text"]:focus {
           </p>
           <label class="toggle-row">
             <input id="fullPageCaptureToggle" type="checkbox" />
-            <span>Enable full-page scroll-and-stitch capture</span>
+            <span data-i18n="fullPageCaptureToggleLabel">Enable full-page scroll-and-stitch capture</span>
           </label>
           <p id="fullPageCaptureStatus" class="hint" aria-live="polite"></p>
+
+          <!-- ============ V4b: pipeline version toggle ============ -->
+          <p class="hint" style="margin-top: 14px;" data-i18n-html="pipelineVersionHint">
+            Pipeline: <strong>v2</strong> (tokenized structure, semantic-first egress, local NER, real
+            consent UI) or <strong>v1</strong> (the original image-first loop, kept for comparison).
+            Takes effect on the next <em>Run agent loop</em> click.
+          </p>
+          <div class="select-row">
+            <label for="pipelineVersionSelect" data-i18n="pipelineVersionLabel">Pipeline version</label>
+            <select id="pipelineVersionSelect">
+              <option value="v2" data-i18n="pipelineVersionV2Option">v2 (default)</option>
+              <option value="v1" data-i18n="pipelineVersionV1Option">v1</option>
+            </select>
+          </div>
+          <p id="pipelineVersionStatus" class="hint" aria-live="polite"></p>
+
+          <!-- ============ V4b: planner backend selector ============ -->
+          <p class="hint" style="margin-top: 14px;" data-i18n-html="plannerBackendHint">
+            Planner backend (v2 only). <strong>Local is the product default</strong> and sends nothing
+            to the internet -- the server talks to Ollama on this machine. Claude/Gemini are an
+            explicit opt-in for a faster live demo; either way the planner receives only tokenized
+            structure and geometry, never a raw value. The actual server process is started with
+            <code>-Planner local|claude|gemini</code> (see <code>start-demo.ps1</code>) -- this selector
+            records your intent locally and is what the demo operator matches the launch flag to; the
+            popup never sees or stores an API key, which always stays in the server's own environment
+            variables.
+          </p>
+          <div class="select-row">
+            <label for="plannerBackendSelect" data-i18n="plannerBackendLabel">Planner backend</label>
+            <select id="plannerBackendSelect">
+              <option value="local" data-i18n="plannerLocalOption">Local (Ollama) -- default</option>
+              <option value="claude" data-i18n="plannerClaudeOption">Claude (cloud, opt-in)</option>
+              <option value="gemini" data-i18n="plannerGeminiOption">Gemini (cloud, opt-in)</option>
+            </select>
+          </div>
+          <p id="plannerCloudNote" class="opt-in-note hidden" data-i18n-html="plannerCloudNote">
+            This sends the tokenized scene (element structure, geometry, and opaque region kinds) to a
+            cloud API for planning speed. No personal values, no raw PII, and no image unless the
+            planner explicitly escalates to <code>need_visual</code> (in which case the image sent is
+            already redacted). Confirm you understand this before saving.
+          </p>
+          <label id="plannerCloudConfirmRow" class="confirm-row hidden">
+            <input id="plannerCloudConfirm" type="checkbox" />
+            <span data-i18n="plannerCloudConfirmLabel">I understand -- send tokenized structure only, never raw values, to this cloud planner.</span>
+          </label>
+          <button id="savePlannerBackend" type="button" class="btn btn-ghost" style="margin-top: 8px;" data-i18n="savePlannerBackendBtn">Save planner choice</button>
+          <p id="plannerBackendStatus" class="hint" aria-live="polite"></p>
         </div>
       </details>
 
       <!-- ================= PROFILE VAULT: on-device only ================= -->
       <details class="disclosure">
-        <summary>Your profile (autofill)</summary>
+        <summary data-i18n="profileSummary">Your profile (autofill)</summary>
         <div class="disclosure-body">
-          <p class="hint">
+          <p class="hint" data-i18n-html="profileHint">
             Saved here <strong>stays on this device</strong> in this browser's local extension
             storage. The model never sees it and it is never sent to the server &mdash; when a page
             wants one of these fields, the model only ever names <em>which category</em> it wants
             (e.g. &ldquo;email&rdquo;), and this extension fills the value in locally. That is what
             lets the agent autofill a field it would otherwise have to refuse.
           </p>
-          <label class="eyebrow" for="profileFullName" style="margin-top: 12px;">Full name</label>
-          <input id="profileFullName" type="text" placeholder="e.g. Priya Sharma" autocomplete="off" />
-          <label class="eyebrow" for="profileEmail" style="margin-top: 12px;">Email</label>
-          <input id="profileEmail" type="text" placeholder="e.g. priya@example.com" autocomplete="off" />
-          <label class="eyebrow" for="profilePhone" style="margin-top: 12px;">Phone</label>
-          <input id="profilePhone" type="text" placeholder="e.g. +91 98765 43210" autocomplete="off" />
-          <button id="saveProfile" type="button" class="btn btn-ghost" style="margin-top: 12px;">Save profile</button>
+          <label class="eyebrow" for="profileFullName" style="margin-top: 12px;" data-i18n="profileFullNameLabel">Full name</label>
+          <input id="profileFullName" type="text" placeholder="e.g. Priya Sharma" autocomplete="off" data-i18n-placeholder="profileFullNamePlaceholder" />
+          <label class="eyebrow" for="profileEmail" style="margin-top: 12px;" data-i18n="profileEmailLabel">Email</label>
+          <input id="profileEmail" type="text" placeholder="e.g. priya@example.com" autocomplete="off" data-i18n-placeholder="profileEmailPlaceholder" />
+          <label class="eyebrow" for="profilePhone" style="margin-top: 12px;" data-i18n="profilePhoneLabel">Phone</label>
+          <input id="profilePhone" type="text" placeholder="e.g. +91 98765 43210" autocomplete="off" data-i18n-placeholder="profilePhonePlaceholder" />
+          <button id="saveProfile" type="button" class="btn btn-ghost" style="margin-top: 12px;" data-i18n="saveProfileBtn">Save profile</button>
           <p id="profileStatus" aria-live="polite"></p>
         </div>
       </details>
 
       <details class="disclosure">
-        <summary>Advanced diagnostics</summary>
+        <summary data-i18n="diagnosticsSummary">Advanced diagnostics</summary>
         <div class="disclosure-body">
-          <p class="hint">
+          <p class="hint" data-i18n-html="diagnosticsHint">
             Captures the current tab and runs the on-device object detector end-to-end
             through background.js and the offscreen document &mdash; a developer diagnostic,
             not something normal use needs. First run loads the model and can take much
             longer than later runs.
           </p>
-          <button id="testDetect" type="button" class="btn btn-ghost">Run test detection on current tab</button>
+          <button id="testDetect" type="button" class="btn btn-ghost" data-i18n="testDetectBtn">Run test detection on current tab</button>
           <pre id="detectResult" class="log-pre"></pre>
         </div>
       </details>

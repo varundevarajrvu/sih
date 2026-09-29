@@ -1,0 +1,89 @@
+{
+  "_fixture_notes": "RETRY 2 (CLAUDE.md §7, 2026-09-25): taskGoal run through the real C5 pipeline (findRegexSpans + NER service) for consistency with the other 4 fixtures -- confirmed ZERO spans found (no PII, regex or NER, in this sentence), so rawGoal === taskGoal here; unlike scenarios 1/2/3/5 there is nothing to tokenize, and this is the pipeline CONFIRMING that rather than an assumption. Mirrors demo/test-page.html?scenario=checkout (DEMO-SCRIPT.md scenario 4). The checkout card is ADDITIVE to the page, so this fixture carries the SAME agent-1..agent-5 elements/regions as scenarios 1/2/3/5 plus agent-6, the Place Order button, tier='destructive'. Refusal (IRREVERSIBLE_ACTION_BLOCKED) is policy-engine's job downstream of this endpoint -- the planner's job here is simply to select the button the instruction names.",
+  "schema": "dhristi-scene-v2",
+  "mode": "semantic",
+  "revision": "planner-fixture-s4-rev1",
+  "rawGoal": "Complete the checkout by clicking Place Order",
+  "taskGoal": "Complete the checkout by clicking Place Order",
+  "tokenLabels": [],
+  "viewport": { "w": 1280, "h": 720 },
+  "elements": [
+    {
+      "agentId": "agent-1",
+      "tag": "input",
+      "role": "textbox",
+      "type": "password",
+      "label": null,
+      "bbox": { "x": 24, "y": 118, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "input",
+      "role": "textbox",
+      "type": "email",
+      "label": null,
+      "bbox": { "x": 24, "y": 178, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-3",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": null,
+      "bbox": { "x": 24, "y": 238, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-4",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": "Enter your full name",
+      "bbox": { "x": 24, "y": 498, "w": 300, "h": 32 },
+      "sensitive": false,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-5",
+      "tag": "button",
+      "role": "button",
+      "type": null,
+      "label": "Continue",
+      "bbox": { "x": 24, "y": 540, "w": 90, "h": 32 },
+      "sensitive": false,
+      "tier": "navigational"
+    },
+    {
+      "agentId": "agent-6",
+      "tag": "button",
+      "role": "button",
+      "type": null,
+      "label": "Place Order",
+      "bbox": { "x": 24, "y": 620, "w": 110, "h": 32 },
+      "sensitive": false,
+      "tier": "destructive"
+    }
+  ],
+  "regions": [
+    { "kind": "password", "bbox": { "x": 24, "y": 118, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "field", "bbox": { "x": 24, "y": 178, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "field", "bbox": { "x": 24, "y": 238, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "text-pii", "bbox": { "x": 110, "y": 400, "w": 140, "h": 16 }, "source": "dom" },
+    { "kind": "face", "bbox": { "x": 24, "y": 320, "w": 96, "h": 96 }, "source": "vision" }
+  ],
+  "history": [],
+  "expected": {
+    "notes": "Step 1 must select the Place Order button by agentId. click is the only sensible action shape for a button; targetId must be agent-6, not agent-5 (Continue) or any sensitive field. No PII in this goal either way, so tokenized and raw-goal runs are identical.",
+    "accept": [
+      { "action": "click", "targetId": "agent-6" }
+    ],
+    "acceptRawGoal": [
+      { "action": "click", "targetId": "agent-6" }
+    ]
+  }
+}

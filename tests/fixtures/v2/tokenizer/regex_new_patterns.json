@@ -1,0 +1,8 @@
+{
+  "description": "One example each of the three newly-authored (not in Project B's cited source) patterns: UPI VPA, IFSC, GSTIN. GSTIN's characters 3-12 are PAN-shaped by construction, so this fixture also proves GSTIN-before-PAN ordering: the text additionally contains a real standalone PAN a few words away, which must ALSO be detected on its own (proving GSTIN's precedence over PAN isn't achieved by disabling PAN detection generally, only by the embedded-substring overlap rule).",
+  "text": "Pay to 9876543210@ybl via UPI. Branch IFSC is HDFC0001234. GSTIN 29ABCDE1234F1Z5 is on the invoice. My PAN is BNZPM2501F for tax purposes.",
+  "upiValue": "9876543210@ybl",
+  "ifscValue": "HDFC0001234",
+  "gstinValue": "29ABCDE1234F1Z5",
+  "standalonePanValue": "BNZPM2501F"
+}

@@ -1,0 +1,9 @@
+{
+  "description": "PASSPORT (C1 ruling: added to PiiLabel after the initial V1a port). Ported from Project B's redactor.js/redactor.py `\\b[A-Za-z][0-9]{7}\\b`. Case 1: a genuine passport number. Case 2: the accepted false positive -- an 8-character alphanumeric order/reference ID that happens to be passport-shaped IS tokenized (harmless: rehydration restores it exactly; the dangerous direction is a MISSED real passport, not an over-flagged order ID). Case 3: the IFSC-before-PASSPORT ordering hazard -- a real IFSC with an all-numeric branch code (the common case) embeds a passport-shaped 8-character substring (letter + 7 digits) in its own tail; IFSC must claim the whole 11-character span first or it degrades into a mislabeled PASSPORT plus stray unflagged letters.",
+  "genuineText": "Please renew passport Z1234567 before travel.",
+  "genuinePassportValue": "Z1234567",
+  "orderIdFalsePositiveText": "Order ID A1234567 was shipped today.",
+  "orderIdValue": "A1234567",
+  "ifscHazardText": "Branch IFSC is HDFC0001234 for this account.",
+  "ifscValue": "HDFC0001234"
+}

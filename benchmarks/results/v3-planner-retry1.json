@@ -1,0 +1,845 @@
+{
+  "generated_at": "2026-09-25T13:43:27+0530",
+  "fixtures": [
+    "scenario-1-fill-name",
+    "scenario-2-password-block",
+    "scenario-3-name-and-email",
+    "scenario-4-checkout-block",
+    "scenario-5-profile-autofill"
+  ],
+  "trials_per_fixture": 3,
+  "temperature": 0.0,
+  "models": [
+    {
+      "model": "qwen2.5:1.5b",
+      "score": 6,
+      "total": 15,
+      "s_step_p50": 4.544,
+      "s_step_p95": 18.184,
+      "prompt_tokens_mean": 789.4,
+      "prompt_tokens_samples": [
+        780,
+        780,
+        780,
+        780,
+        785,
+        785,
+        785,
+        790,
+        790,
+        790,
+        810,
+        810,
+        810,
+        785,
+        785,
+        785
+      ],
+      "cpu_load_percent_at_measurement": 8.0,
+      "warmup_latency_s": 25.47,
+      "trials": [
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 4.866530100000091,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 4.630420200061053,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 4.647761299973354,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 19.026123499963433,
+          "action": {
+            "action": "type",
+            "targetId": "agent-1",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 4.3960759999463335,
+          "action": {
+            "action": "type",
+            "targetId": "agent-1",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 4.33855390001554,
+          "action": {
+            "action": "type",
+            "targetId": "agent-1",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 16.819408499985002,
+          "action": {
+            "action": "click",
+            "targetId": "agent-2",
+            "value": "EMAIL#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 4.407593399984762,
+          "action": {
+            "action": "click",
+            "targetId": "agent-2",
+            "value": "EMAIL#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 4.380357299931347,
+          "action": {
+            "action": "click",
+            "targetId": "agent-2",
+            "value": "EMAIL#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 17.500134699977934,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 4.322232599952258,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 4.263074500020593,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 17.823714099940844,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 4.498952500056475,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 4.544107499998063,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "model": "qwen2.5:3b",
+      "score": 3,
+      "total": 15,
+      "s_step_p50": 6.175,
+      "s_step_p95": 32.794,
+      "prompt_tokens_mean": 789.4,
+      "prompt_tokens_samples": [
+        780,
+        780,
+        780,
+        780,
+        785,
+        785,
+        785,
+        790,
+        790,
+        790,
+        810,
+        810,
+        810,
+        785,
+        785,
+        785
+      ],
+      "cpu_load_percent_at_measurement": 7.0,
+      "warmup_latency_s": 37.51,
+      "trials": [
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 6.7724879999877885,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 5.8252945999847725,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 5.816953699919395,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 32.33779110002797,
+          "action": {
+            "action": "type",
+            "targetId": "agent-5",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 5.916680800030008,
+          "action": {
+            "action": "type",
+            "targetId": "agent-5",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 5.955359899904579,
+          "action": {
+            "action": "type",
+            "targetId": "agent-5",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 32.21520800003782,
+          "action": {
+            "action": "type",
+            "targetId": "agent-2",
+            "value": "EMAIL#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 6.1861746000358835,
+          "action": {
+            "action": "type",
+            "targetId": "agent-2",
+            "value": "EMAIL#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 5.945205600000918,
+          "action": {
+            "action": "type",
+            "targetId": "agent-2",
+            "value": "EMAIL#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 33.21289949992206,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 6.105138699989766,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 5.901723799994215,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 32.61494070000481,
+          "action": {
+            "action": "type",
+            "targetId": "agent-3",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 6.217860400094651,
+          "action": {
+            "action": "type",
+            "targetId": "agent-3",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 6.174523700028658,
+          "action": {
+            "action": "type",
+            "targetId": "agent-3",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "model": "llama3.1:8b",
+      "score": 12,
+      "total": 15,
+      "s_step_p50": 10.338,
+      "s_step_p95": 72.442,
+      "prompt_tokens_mean": 740.4,
+      "prompt_tokens_samples": [
+        731,
+        731,
+        731,
+        731,
+        736,
+        736,
+        736,
+        741,
+        741,
+        741,
+        761,
+        761,
+        761,
+        736,
+        736,
+        736
+      ],
+      "cpu_load_percent_at_measurement": 4.0,
+      "warmup_latency_s": 92.49,
+      "trials": [
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 10.442821600008756,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 10.420622299890965,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 10.263185999938287,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 70.2073764000088,
+          "action": {
+            "action": "type",
+            "targetId": "agent-1",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 9.855473199975677,
+          "action": {
+            "action": "type",
+            "targetId": "agent-1",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 9.637420800048858,
+          "action": {
+            "action": "type",
+            "targetId": "agent-1",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 72.41670519998297,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 10.7420659000054,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 10.338255099952221,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 72.50119879993144,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 9.47520440001972,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 9.547727000084706,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 71.01255380001385,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 10.310146299889311,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 10.29072430008091,
+          "action": {
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "PROFILENAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        }
+      ]
+    }
+  ],
+  "gate_passed": false,
+  "chosen_default_model": "llama3.1:8b",
+  "chosen_default_score": "12/15"
+}

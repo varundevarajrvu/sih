@@ -1,0 +1,376 @@
+{
+  "_comment": "SIH 26171 -- v2 rebuild, Phase V1c policy-engine fixture table. Consumed by tests/unit/test_policy.mjs. Every decideCases/tierCases/coherenceCases/tightenCases entry exercises extension/lib/policy.js's decide()/classifyTier()/checkIntentCoherence()/tightenWithServer() against contract C4 (docs/v2/ARCHITECTURE.md). `benignFromActionRisk` translates the v1 action_risk_benign_*.json / action_risk_add_to_cart_not_flagged.json fixtures (tests/fixtures/) into the C5 element+action shape to prove they still do not classify as tier=destructive under policy.js's own tiering. `probePlans` translates warden/README.md's Validation section six-probe-plan table (see policy.js's GAP NOTE 5 for where the deterministic port and Project B's LLM-assisted original necessarily diverge in MECHANISM while still agreeing on VERDICT).",
+
+  "decideCases": [
+    {
+      "id": "stale-revision-mismatch",
+      "rule": "STALE_REVISION",
+      "_comment": "action.revision ('rev-1') does not match currentRevision ('rev-2') -- the scene was re-captured since this action was planned.",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-1", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-1", "tag": "button", "role": "button", "type": "button", "label": "View Details", "bbox": { "x": 0, "y": 0, "w": 80, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "button", "role": "button", "type": "button", "label": "View Details", "bbox": { "x": 0, "y": 0, "w": 80, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-2",
+        "taskGoal": "view the order details",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "reject", "code": "STALE_REVISION" }
+    },
+    {
+      "id": "stale-revision-missing",
+      "rule": "STALE_REVISION",
+      "_comment": "action carries no revision at all (undefined) -- treated as stale, fail-closed, not as an automatic pass.",
+      "input": {
+        "action": { "action": "scroll", "targetId": "page", "value": null },
+        "element": null,
+        "scene": { "elements": [] },
+        "currentRevision": "rev-1",
+        "taskGoal": "scroll down",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "reject", "code": "STALE_REVISION" }
+    },
+
+    {
+      "id": "unknown-target-not-in-scene",
+      "rule": "UNKNOWN_TARGET",
+      "_comment": "action.targetId 'agent-99' is not present in scene.elements at all -- server hallucinated or referenced a stale id.",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-99", "value": null, "revision": "rev-1" },
+        "element": null,
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "a", "role": "link", "type": null, "label": "Home", "bbox": { "x": 0, "y": 0, "w": 40, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "go home",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "reject", "code": "UNKNOWN_TARGET" }
+    },
+    {
+      "id": "unknown-target-empty-scene",
+      "rule": "UNKNOWN_TARGET",
+      "_comment": "scene has zero elements; any non-page targetId is unknown by construction.",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-1", "value": "hello", "revision": "rev-1" },
+        "element": null,
+        "scene": { "elements": [] },
+        "currentRevision": "rev-1",
+        "taskGoal": "say hello",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "reject", "code": "UNKNOWN_TARGET" }
+    },
+    {
+      "id": "unknown-target-page-sentinel-exempt",
+      "rule": "UNKNOWN_TARGET (negative control)",
+      "_comment": "the 'page' sentinel targetId is never 'unknown', even with an empty scene -- scroll/done/need_visual do not target a specific element.",
+      "input": {
+        "action": { "action": "scroll", "targetId": "page", "value": null, "revision": "rev-1" },
+        "element": null,
+        "scene": { "elements": [] },
+        "currentRevision": "rev-1",
+        "taskGoal": "scroll down to find the button",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "accept", "code": "OK" }
+    },
+
+    {
+      "id": "raw-value-in-type-action",
+      "rule": "RAW_VALUE_IN_ACTION",
+      "_comment": "the model wrote the RAW password value instead of a token -- must be rejected, and the rejection reason must never repeat the raw value. tokenValues carries the raw secret the model should have referenced only as a token.",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-4", "value": "hunter2Demo!", "revision": "rev-1" },
+        "element": { "agentId": "agent-4", "tag": "input", "role": null, "type": "password", "label": "PASSWORD#1", "bbox": { "x": 0, "y": 0, "w": 100, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-4", "tag": "input", "role": null, "type": "password", "label": "PASSWORD#1", "bbox": { "x": 0, "y": 0, "w": 100, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "fill in the password field with the value hunter2Demo!",
+        "tokenValues": ["hunter2Demo!"]
+      },
+      "expected": { "verdict": "reject", "code": "RAW_VALUE_IN_ACTION" }
+    },
+    {
+      "id": "raw-value-substring-match",
+      "rule": "RAW_VALUE_IN_ACTION",
+      "_comment": "the raw value appears as a SUBSTRING of a longer typed value, not the whole value -- must still be caught.",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-2", "value": "my email is john@example.com thanks", "revision": "rev-1" },
+        "element": { "agentId": "agent-2", "tag": "input", "role": null, "type": "text", "label": "Comment", "bbox": { "x": 0, "y": 0, "w": 200, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-2", "tag": "input", "role": null, "type": "text", "label": "Comment", "bbox": { "x": 0, "y": 0, "w": 200, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "leave a comment",
+        "tokenValues": ["john@example.com"]
+      },
+      "expected": { "verdict": "reject", "code": "RAW_VALUE_IN_ACTION" }
+    },
+    {
+      "id": "raw-value-tokenized-value-is-fine",
+      "rule": "RAW_VALUE_IN_ACTION (negative control)",
+      "_comment": "value references the TOKEN ('EMAIL#1'), not the raw value -- must NOT be rejected by rule 3. Proceeds through to accept (generic text field, non-destructive task).",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-2", "value": "EMAIL#1", "revision": "rev-1" },
+        "element": { "agentId": "agent-2", "tag": "input", "role": null, "type": "email", "label": "Email", "bbox": { "x": 0, "y": 0, "w": 200, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-2", "tag": "input", "role": null, "type": "email", "label": "Email", "bbox": { "x": 0, "y": 0, "w": 200, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "fill in my email",
+        "tokenValues": ["john@example.com"]
+      },
+      "expected": { "verdict": "accept", "code": "OK" }
+    },
+
+    {
+      "id": "sensitive-target-type",
+      "rule": "SENSITIVE_TARGET",
+      "_comment": "element.sensitive=true, action=type -- ask, regardless of what value would be typed.",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-4", "value": "EMAIL#1", "revision": "rev-1" },
+        "element": { "agentId": "agent-4", "tag": "input", "role": null, "type": "email", "label": "Email", "bbox": { "x": 0, "y": 0, "w": 100, "h": 20 }, "sensitive": true },
+        "scene": { "elements": [ { "agentId": "agent-4", "tag": "input", "role": null, "type": "email", "label": "Email", "bbox": { "x": 0, "y": 0, "w": 100, "h": 20 }, "sensitive": true } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "fill in my email",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "SENSITIVE_TARGET" }
+    },
+    {
+      "id": "sensitive-target-click",
+      "rule": "SENSITIVE_TARGET",
+      "_comment": "sensitive-target check is NOT scoped to type only (unlike action-risk.js's destructive check, which is click/type-scoped) -- a click on a flagged-sensitive element (e.g. a 'reveal password' toggle) also asks.",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-5", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-5", "tag": "button", "role": "button", "type": "button", "label": "Show Password", "bbox": { "x": 0, "y": 0, "w": 60, "h": 20 }, "sensitive": true },
+        "scene": { "elements": [ { "agentId": "agent-5", "tag": "button", "role": "button", "type": "button", "label": "Show Password", "bbox": { "x": 0, "y": 0, "w": 60, "h": 20 }, "sensitive": true } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "log in",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "SENSITIVE_TARGET" }
+    },
+
+    {
+      "id": "irreversible-click-delete-account",
+      "rule": "IRREVERSIBLE_ACTION",
+      "_comment": "click on a 'Delete Account' button -- reuses action-risk.js's DESTRUCTIVE_SIGNALS via matchDestructiveSignal(). Task is benign/unrelated, so this is rule 5 firing, not rule 6.",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-6", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-6", "tag": "button", "role": "button", "type": "button", "label": "Delete Account", "bbox": { "x": 0, "y": 0, "w": 120, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-6", "tag": "button", "role": "button", "type": "button", "label": "Delete Account", "bbox": { "x": 0, "y": 0, "w": 120, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "browse the settings page",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "IRREVERSIBLE_ACTION" }
+    },
+    {
+      "id": "irreversible-typed-confirmation-value",
+      "rule": "IRREVERSIBLE_ACTION",
+      "_comment": "typed VALUE carries destructive intent even though the target element itself is a generic confirmation textbox -- the 'type DELETE to confirm' pattern action-risk.js already supports for action=type, reused here via elementDestructiveSignal()'s value check.",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-7", "value": "DELETE MY ACCOUNT", "revision": "rev-1" },
+        "element": { "agentId": "agent-7", "tag": "input", "role": null, "type": "text", "label": "Confirmation", "bbox": { "x": 0, "y": 0, "w": 150, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-7", "tag": "input", "role": null, "type": "text", "label": "Confirmation", "bbox": { "x": 0, "y": 0, "w": 150, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "confirm the deletion",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "IRREVERSIBLE_ACTION" }
+    },
+
+    {
+      "id": "intent-mismatch-click",
+      "rule": "INTENT_MISMATCH",
+      "_comment": "task expresses destructive intent ('delete my account') but this specific click targets a benign, non-destructive 'Add to Cart' button (state-changing tier) -- the target does not agree with the task.",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-8", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-8", "tag": "button", "role": "button", "type": "button", "label": "Add to Cart", "bbox": { "x": 0, "y": 0, "w": 100, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-8", "tag": "button", "role": "button", "type": "button", "label": "Add to Cart", "bbox": { "x": 0, "y": 0, "w": 100, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "delete my account",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "INTENT_MISMATCH" }
+    },
+    {
+      "id": "intent-mismatch-type",
+      "rule": "INTENT_MISMATCH",
+      "_comment": "task says 'delete my account' but the action is typing into an unrelated comment field (state-changing tier, no destructive signal on the element or the typed value).",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-9", "value": "great product!", "revision": "rev-1" },
+        "element": { "agentId": "agent-9", "tag": "textarea", "role": null, "type": "text", "label": "Comment", "bbox": { "x": 0, "y": 0, "w": 200, "h": 60 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-9", "tag": "textarea", "role": null, "type": "text", "label": "Comment", "bbox": { "x": 0, "y": 0, "w": 200, "h": 60 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "delete my account",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "INTENT_MISMATCH" }
+    },
+    {
+      "id": "intent-mismatch-negative-control-coherent-destructive",
+      "rule": "INTENT_MISMATCH (negative control)",
+      "_comment": "task 'delete my account' AND target IS the Delete Account button -- coherent. This case is caught by rule 5 (IRREVERSIBLE_ACTION) before rule 6 is ever reached (destructive tier always exits at rule 5 first), so code is IRREVERSIBLE_ACTION not INTENT_MISMATCH -- same as probePlans row 1 below.",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-6", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-6", "tag": "button", "role": "button", "type": "button", "label": "Delete Account", "bbox": { "x": 0, "y": 0, "w": 120, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-6", "tag": "button", "role": "button", "type": "button", "label": "Delete Account", "bbox": { "x": 0, "y": 0, "w": 120, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "delete my account",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "IRREVERSIBLE_ACTION" }
+    },
+
+    {
+      "id": "accept-scroll",
+      "rule": "OK",
+      "_comment": "plain page-level scroll, nothing else in play.",
+      "input": {
+        "action": { "action": "scroll", "targetId": "page", "value": null, "revision": "rev-1" },
+        "element": null,
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "a", "role": "link", "type": null, "label": "Home", "bbox": { "x": 0, "y": 0, "w": 40, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "scroll down",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "accept", "code": "OK" }
+    },
+    {
+      "id": "accept-navigational-click",
+      "rule": "OK",
+      "_comment": "click on a plain, non-destructive, non-sensitive link; benign task -- navigational tier, accept.",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-1", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-1", "tag": "a", "role": "link", "type": null, "label": "View Details", "bbox": { "x": 0, "y": 0, "w": 80, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "a", "role": "link", "type": null, "label": "View Details", "bbox": { "x": 0, "y": 0, "w": 80, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "view the order details",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "accept", "code": "OK" }
+    }
+  ],
+
+  "tierCases": [
+    { "id": "tier-scroll", "input": { "element": null, "action": { "action": "scroll", "targetId": "page" } }, "expected": "reversible" },
+    { "id": "tier-done", "input": { "element": null, "action": { "action": "done", "targetId": "page" } }, "expected": "reversible" },
+    { "id": "tier-need-visual", "input": { "element": null, "action": { "action": "need_visual", "targetId": "page" } }, "expected": "reversible" },
+    { "id": "tier-press-key-escape", "input": { "element": { "tag": "div", "role": "dialog", "label": "Modal" }, "action": { "action": "press_key", "targetId": "agent-1", "key": "Escape" } }, "expected": "reversible" },
+    { "id": "tier-press-key-enter-form", "input": { "element": { "tag": "input", "type": "text", "label": "Search" }, "action": { "action": "press_key", "targetId": "agent-1", "key": "Enter" } }, "expected": "state-changing" },
+    { "id": "tier-press-key-enter-destructive", "input": { "element": { "tag": "input", "type": "text", "label": "Confirm DELETE ACCOUNT" }, "action": { "action": "press_key", "targetId": "agent-1", "key": "Enter" } }, "expected": "destructive" },
+    { "id": "tier-type-generic", "input": { "element": { "tag": "input", "type": "text", "label": "Comment" }, "action": { "action": "type", "targetId": "agent-1", "value": "hello" } }, "expected": "state-changing" },
+    { "id": "tier-fill-profile", "input": { "element": { "tag": "input", "type": "text", "label": "Full name" }, "action": { "action": "fill_profile", "targetId": "agent-1", "value": null } }, "expected": "state-changing" },
+    { "id": "tier-click-link", "input": { "element": { "tag": "a", "role": "link", "label": "Home" }, "action": { "action": "click", "targetId": "agent-1" } }, "expected": "navigational" },
+    { "id": "tier-click-checkbox", "input": { "element": { "tag": "input", "type": "checkbox", "label": "Accept terms" }, "action": { "action": "click", "targetId": "agent-1" } }, "expected": "state-changing" },
+    { "id": "tier-click-submit", "input": { "element": { "tag": "button", "type": "submit", "label": "Submit" }, "action": { "action": "click", "targetId": "agent-1" } }, "expected": "state-changing" },
+    { "id": "tier-click-destructive", "input": { "element": { "tag": "button", "type": "button", "label": "Delete Account" }, "action": { "action": "click", "targetId": "agent-1" } }, "expected": "destructive" },
+    { "id": "tier-click-destructive-link", "input": { "element": { "tag": "a", "role": "link", "label": "Unsubscribe" }, "action": { "action": "click", "targetId": "agent-1" } }, "expected": "destructive", "_comment": "a destructive <a> tag is destructive, not navigational -- destructive signal is checked before the link/nav structural check." }
+  ],
+
+  "coherenceCases": [
+    { "id": "coherence-no-destructive-intent", "_comment": "task has no destructive language at all -- always coherent regardless of target.", "input": { "taskGoal": "search for a laptop", "element": { "tag": "input", "type": "password", "label": "PASSWORD#1" }, "action": { "action": "type", "targetId": "agent-1", "value": "EMAIL#1" } }, "expected": { "coherent": true } },
+    { "id": "coherence-destructive-intent-matching-target", "_comment": "task says delete, target IS a delete control -- coherent.", "input": { "taskGoal": "please delete my account", "element": { "tag": "button", "label": "Delete Account" }, "action": { "action": "click", "targetId": "agent-1" } }, "expected": { "coherent": true } },
+    { "id": "coherence-destructive-intent-mismatched-target", "_comment": "task says delete, target is unrelated -- incoherent.", "input": { "taskGoal": "delete my account", "element": { "tag": "button", "label": "Add to Cart" }, "action": { "action": "click", "targetId": "agent-1" } }, "expected": { "coherent": false } },
+    { "id": "coherence-cancel-subscription-phrasing", "_comment": "'cancel my subscription' matches the ported DESTRUCTIVE_INTENT_RE's compound clause.", "input": { "taskGoal": "cancel my subscription", "element": { "tag": "button", "label": "Cancel Subscription" }, "action": { "action": "click", "targetId": "agent-1" } }, "expected": { "coherent": true } }
+  ],
+
+  "benignFromActionRisk": [
+    { "id": "benign-add-to-cart", "sourceFixture": "action_risk_add_to_cart_not_flagged.json", "input": { "element": { "tag": "button", "type": "button", "label": "Add to Cart" }, "action": { "action": "click", "targetId": "agent-12" } }, "expectedTierNot": "destructive" },
+    { "id": "benign-cancel-dialog", "sourceFixture": "action_risk_benign_cancel_dialog.json", "input": { "element": { "tag": "button", "type": "button", "label": "Cancel" }, "action": { "action": "click", "targetId": "agent-6" } }, "expectedTierNot": "destructive" },
+    { "id": "benign-reset-password", "sourceFixture": "action_risk_benign_reset_password.json", "input": { "element": { "tag": "button", "type": "button", "label": "Reset Password" }, "action": { "action": "click", "targetId": "agent-8" } }, "expectedTierNot": "destructive" },
+    { "id": "benign-submit-contact-form", "sourceFixture": "action_risk_benign_submit_contact_form.json", "input": { "element": { "tag": "button", "type": "submit", "label": "Submit" }, "action": { "action": "click", "targetId": "agent-7" } }, "expectedTierNot": "destructive" }
+  ],
+
+  "probePlans": [
+    {
+      "id": "probe-1-delete-account-coherent",
+      "sourceRow": "click Delete Account, task says delete my account -> destructive tier, no conflict, ask (tier rule)",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-1", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-1", "tag": "button", "role": "button", "type": "button", "label": "Delete Account", "bbox": { "x": 0, "y": 0, "w": 120, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "button", "role": "button", "type": "button", "label": "Delete Account", "bbox": { "x": 0, "y": 0, "w": 120, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "delete my account",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "IRREVERSIBLE_ACTION" },
+      "_comment": "matches warden/README.md's row 1 verdict (ask). Code is IRREVERSIBLE_ACTION (rule 5, destructive tier) rather than a distinct 'coherent' marker -- C4 has no such code, and rule 5 fires before rule 6 regardless."
+    },
+    {
+      "id": "probe-2-delete-account-incoherent-task",
+      "sourceRow": "click Delete Account, task says view my order history -> destructive tier, model flags it, ask",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-1", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-1", "tag": "button", "role": "button", "type": "button", "label": "Delete Account", "bbox": { "x": 0, "y": 0, "w": 120, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "button", "role": "button", "type": "button", "label": "Delete Account", "bbox": { "x": 0, "y": 0, "w": 120, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "view my order history",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "IRREVERSIBLE_ACTION" },
+      "_comment": "matches warden/README.md's row 2 verdict (ask). Project B's warden caught this via its Ollama reasoning stage flagging a target/task mismatch; this deterministic port reaches the same 'ask' outcome via rule 5 (destructive tier alone is enough to ask, independent of task coherence) -- same verdict, different and, here, simpler mechanism."
+    },
+    {
+      "id": "probe-3-password-field-unrelated-task",
+      "sourceRow": "type a password into #password, task says search for a laptop -> state-changing tier, model flags it, ask",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-1", "value": "EMAIL#1", "revision": "rev-1" },
+        "element": { "agentId": "agent-1", "tag": "input", "role": null, "type": "password", "label": "PASSWORD#1", "bbox": { "x": 0, "y": 0, "w": 100, "h": 20 }, "sensitive": true },
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "input", "role": null, "type": "password", "label": "PASSWORD#1", "bbox": { "x": 0, "y": 0, "w": 100, "h": 20 }, "sensitive": true } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "search for a laptop",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "ask", "code": "SENSITIVE_TARGET" },
+      "_comment": "matches warden/README.md's row 3 verdict (ask), but via a DIFFERENT rule than Project B used: 'search for a laptop' expresses no destructive intent (the regex never matches), so checkIntentCoherence() returns coherent=true and rule 6 (INTENT_MISMATCH) does NOT fire -- in Project B's warden this row was load-bearing evidence that ONLY its optional LLM reasoning stage could catch it. This module catches the same row anyway, but for a different reason: a real password field carries element.sensitive=true (dom-pii-scanner/V1a's classification, a concept Project B's warden never had), so rule 4 (SENSITIVE_TARGET) fires first. See policy.js GAP NOTE 5 for the narrower case this does NOT generalize to."
+    },
+    {
+      "id": "probe-4-view-details-coherent-navigational",
+      "sourceRow": "click View Details, task says view the order details -> navigational tier, no conflict, accept",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-1", "value": null, "revision": "rev-1" },
+        "element": { "agentId": "agent-1", "tag": "a", "role": "link", "type": null, "label": "View Details", "bbox": { "x": 0, "y": 0, "w": 80, "h": 20 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "a", "role": "link", "type": null, "label": "View Details", "bbox": { "x": 0, "y": 0, "w": 80, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "view the order details",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "accept", "code": "OK" }
+    },
+    {
+      "id": "probe-5-comment-coherent-state-changing",
+      "sourceRow": "type a comment into #comment, task says type a comment -> state-changing tier, no conflict, accept",
+      "input": {
+        "action": { "action": "type", "targetId": "agent-1", "value": "nice article", "revision": "rev-1" },
+        "element": { "agentId": "agent-1", "tag": "textarea", "role": null, "type": "text", "label": "Comment", "bbox": { "x": 0, "y": 0, "w": 200, "h": 60 }, "sensitive": false },
+        "scene": { "elements": [ { "agentId": "agent-1", "tag": "textarea", "role": null, "type": "text", "label": "Comment", "bbox": { "x": 0, "y": 0, "w": 200, "h": 60 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "type a comment",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "accept", "code": "OK" }
+    },
+    {
+      "id": "probe-6-delete-account-target-not-in-scene",
+      "sourceRow": "click Delete Account against a scene with no destructive control -> none, hard reject",
+      "input": {
+        "action": { "action": "click", "targetId": "agent-1", "value": null, "revision": "rev-1" },
+        "element": null,
+        "scene": { "elements": [ { "agentId": "agent-2", "tag": "a", "role": "link", "type": null, "label": "Home", "bbox": { "x": 0, "y": 0, "w": 40, "h": 20 }, "sensitive": false } ] },
+        "currentRevision": "rev-1",
+        "taskGoal": "delete my account",
+        "tokenValues": []
+      },
+      "expected": { "verdict": "reject", "code": "UNKNOWN_TARGET" },
+      "_comment": "warden/validate.py's 'selector-in-scene' deterministic check fails BEFORE tier is ever computed for this row (op_tier() would raise ValueError on an unresolved selector) -- the direct equivalent in C4 is rule 2, UNKNOWN_TARGET, a hard reject that also runs before classifyTier()."
+    }
+  ],
+
+  "tightenCases": [
+    { "id": "tighten-accept-then-ask", "_comment": "server-tighten table row 1: accept + ask -> ask. Local had no rule fire (code OK), so the tightened code is the dedicated SERVER_TIGHTENED marker, not OK (which would misleadingly sit beside a non-accept verdict).", "local": { "verdict": "accept", "code": "OK", "reason": "no policy rule blocked this action" }, "server": "ask", "expected": { "verdict": "ask", "code": "SERVER_TIGHTENED" } },
+    { "id": "tighten-ask-then-accept", "_comment": "server-tighten table row 2: ask + accept -> ask (server cannot loosen). Local code unchanged (SENSITIVE_TARGET) since no tightening occurred at all.", "local": { "verdict": "ask", "code": "SENSITIVE_TARGET", "reason": "target element is flagged sensitive" }, "server": "accept", "expected": { "verdict": "ask", "code": "SENSITIVE_TARGET" } },
+    { "id": "tighten-accept-then-reject", "_comment": "server-tighten table row 3: accept + reject -> reject. Local was accept (OK) -> tightened code is SERVER_TIGHTENED.", "local": { "verdict": "accept", "code": "OK", "reason": "no policy rule blocked this action" }, "server": "reject", "expected": { "verdict": "reject", "code": "SERVER_TIGHTENED" } },
+    { "id": "tighten-reject-then-accept", "_comment": "server-tighten table row 4: reject + accept -> reject (server cannot loosen a reject, ever). Local code unchanged (UNKNOWN_TARGET) since no tightening occurred.", "local": { "verdict": "reject", "code": "UNKNOWN_TARGET", "reason": "targetId is not present in the current scene" }, "server": "accept", "expected": { "verdict": "reject", "code": "UNKNOWN_TARGET" } },
+    { "id": "tighten-ask-then-reject", "_comment": "extra: ask + reject -> reject (server can still tighten further from ask). Local was ALREADY ask (a rule fired: IRREVERSIBLE_ACTION) -- that code is kept unchanged even though the server tightens ask->reject; SERVER_TIGHTENED is reserved for the local-accept case only.", "local": { "verdict": "ask", "code": "IRREVERSIBLE_ACTION", "reason": "action tier is destructive" }, "server": "reject", "expected": { "verdict": "reject", "code": "IRREVERSIBLE_ACTION" } },
+    { "id": "tighten-same-verdict-passthrough", "_comment": "extra: server echoes the same verdict -- local decision returned unchanged, including its original code and reason (no tightening annotation appended).", "local": { "verdict": "ask", "code": "SENSITIVE_TARGET", "reason": "target element is flagged sensitive" }, "server": "ask", "expected": { "verdict": "ask", "reasonUnchanged": true } },
+    { "id": "tighten-invalid-server-verdict-ignored", "_comment": "extra: a malformed/unrecognized server verdict string never wins -- local decision stands, code untouched (never SERVER_TIGHTENED).", "local": { "verdict": "accept", "code": "OK", "reason": "no policy rule blocked this action" }, "server": "banana", "expected": { "verdict": "accept", "reasonUnchanged": true } },
+    { "id": "tighten-missing-server-verdict-ignored", "_comment": "extra: server field absent (undefined) -- local decision stands, code untouched (never SERVER_TIGHTENED).", "local": { "verdict": "accept", "code": "OK", "reason": "no policy rule blocked this action" }, "server": null, "expected": { "verdict": "accept", "reasonUnchanged": true } }
+  ]
+}

@@ -1,0 +1,215 @@
+{
+  "bench": "v4a-loop",
+  "phase": "V4a integration-v2 (loop wiring)",
+  "date": "2026-09-25T16:08:57.148Z",
+  "machine": {
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "cpuCount": 12,
+    "totalMemGB": 16.8
+  },
+  "scenarios": [
+    {
+      "name": "scenario1_fill_name",
+      "goal": "fill the name as Simon",
+      "expectOutcome": "done",
+      "outcome": "done",
+      "outcomeMatchesExpectation": true,
+      "wallMs": 893,
+      "steps": 2,
+      "stepResults": [
+        {
+          "step": 1,
+          "timings": {
+            "captureMs": 84.69999992847443,
+            "detectMs": 54.299999952316284,
+            "scanMs": 5.9,
+            "rankMs": 0.2,
+            "actionableNodes": 5,
+            "rankSelected": 5,
+            "rankDropped": 0,
+            "nerMs": 20.6,
+            "egressTextCount": 5,
+            "egressAssertMs": 0.3,
+            "sendMs": 20.7,
+            "policyMs": 0.6,
+            "actMs": 2.5
+          },
+          "memory": {
+            "usedJSHeapSize": 3331386,
+            "totalJSHeapSize": 5059334,
+            "jsHeapSizeLimit": 4395630592
+          },
+          "action": {
+            "action": "type",
+            "targetId": "agent-4"
+          },
+          "execResult": {
+            "ok": true,
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "Simon"
+          }
+        },
+        {
+          "step": 2,
+          "timings": {
+            "captureMs": 70.19999992847443,
+            "detectMs": 37.299999952316284,
+            "scanMs": 0.7,
+            "rankMs": 0.1,
+            "actionableNodes": 4,
+            "rankSelected": 4,
+            "rankDropped": 0,
+            "nerMs": 6.2,
+            "egressTextCount": 4,
+            "egressAssertMs": 0,
+            "sendMs": 11.4,
+            "policyMs": 0,
+            "actMs": 0.1
+          },
+          "memory": {
+            "usedJSHeapSize": 3801841,
+            "totalJSHeapSize": 5428033,
+            "jsHeapSizeLimit": 4395630592
+          },
+          "action": {
+            "action": "done",
+            "targetId": "page"
+          },
+          "execResult": {
+            "ok": true,
+            "action": "done",
+            "targetId": "page"
+          }
+        }
+      ],
+      "staleCaptureCount": 0,
+      "consoleSample": [
+        "[agent-loop-v2] RUN SUMMARY: {\n  \"outcome\": \"done\",\n  \"steps\": 2,\n  \"staleCaptureCount\": 0\n}"
+      ]
+    },
+    {
+      "name": "scenario3_fill_name_and_refuse_email",
+      "goal": "Fill the name as River Jane and email id as riverjane33@demo.com",
+      "expectOutcome": "blocked",
+      "outcome": "blocked",
+      "outcomeMatchesExpectation": true,
+      "wallMs": 831,
+      "steps": 2,
+      "stepResults": [
+        {
+          "step": 1,
+          "timings": {
+            "captureMs": 54.39999997615814,
+            "detectMs": 35.89999997615814,
+            "scanMs": 3.4,
+            "rankMs": 0.1,
+            "actionableNodes": 5,
+            "rankSelected": 5,
+            "rankDropped": 0,
+            "nerMs": 14.399999999999999,
+            "egressTextCount": 5,
+            "egressAssertMs": 0.2,
+            "sendMs": 19,
+            "policyMs": 0.6,
+            "actMs": 7
+          },
+          "memory": {
+            "usedJSHeapSize": 3340635,
+            "totalJSHeapSize": 4797195,
+            "jsHeapSizeLimit": 4395630592
+          },
+          "action": {
+            "action": "type",
+            "targetId": "agent-4"
+          },
+          "execResult": {
+            "ok": true,
+            "action": "type",
+            "targetId": "agent-4",
+            "value": "River Jane"
+          }
+        },
+        {
+          "step": 2,
+          "timings": {
+            "captureMs": 75.89999997615814,
+            "detectMs": 37.89999997615814,
+            "scanMs": 1.3,
+            "rankMs": 0,
+            "actionableNodes": 4,
+            "rankSelected": 4,
+            "rankDropped": 0,
+            "nerMs": 6.6,
+            "egressTextCount": 4,
+            "egressAssertMs": 0.1,
+            "sendMs": 18,
+            "policyMs": 0,
+            "consentMs": 13.6
+          },
+          "memory": {
+            "usedJSHeapSize": 3815202,
+            "totalJSHeapSize": 5165894,
+            "jsHeapSizeLimit": 4395630592
+          },
+          "blocked": "SENSITIVE_TARGET_BLOCKED",
+          "reason": "target element is flagged sensitive"
+        }
+      ],
+      "staleCaptureCount": 0,
+      "consoleSample": [
+        "[agent-loop-v2] RUN SUMMARY: {\n  \"outcome\": \"blocked\",\n  \"steps\": 2,\n  \"staleCaptureCount\": 0\n}"
+      ]
+    }
+  ],
+  "privacyAudit": {
+    "capturedContextCount": 4,
+    "forbiddenSubstringsChecked": [
+      "hunter2Demo!",
+      "alice.demo@example.com",
+      "1234 5678 9012",
+      "Simon",
+      "River Jane",
+      "riverjane33@demo.com"
+    ],
+    "violations": [],
+    "pass": true,
+    "goalTokensObserved": [
+      {
+        "taskGoal": "fill the name as PERSONNAME#1",
+        "carriesPersonNameToken": true,
+        "carriesEmailToken": false
+      },
+      {
+        "taskGoal": "fill the name as PERSONNAME#1",
+        "carriesPersonNameToken": true,
+        "carriesEmailToken": false
+      },
+      {
+        "taskGoal": "Fill the name as PERSONNAME#1 and email id as EMAIL#1",
+        "carriesPersonNameToken": true,
+        "carriesEmailToken": true
+      },
+      {
+        "taskGoal": "Fill the name as PERSONNAME#1 and email id as EMAIL#1",
+        "carriesPersonNameToken": true,
+        "carriesEmailToken": true
+      }
+    ]
+  },
+  "notes": [
+    "captureVisibleTab requires <all_urls> or a real activeTab gesture; Playwright cannot produce the latter, so this run drives a SCRATCH COPY of the extension with host_permissions widened to <all_urls> for capture only. extension/manifest.json itself (the shipping product) is untouched -- see this file's own header comment."
+  ],
+  "crashed": false,
+  "extensionId": "abcjocleecdpcpeokikcdbegmgdbmnba",
+  "prewarm": {
+    "type": "PREWARM_STATUS",
+    "status": "warm",
+    "startedAt": 1790352539596,
+    "finishedAt": 1790352540764,
+    "elapsedMs": 601.3000000715256,
+    "error": null
+  }
+}

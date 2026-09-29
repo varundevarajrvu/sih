@@ -1,0 +1,5 @@
+{
+  "description": "Same 16-digit shape as the known-valid Visa test number 4111111111111111, with the last digit changed 1->2 so the Luhn checksum fails. Digits are written with NO separators (fully contiguous), so even though CARD's validate() vetoes it, no other pattern (PHONE/AADHAAR) can grab an internal substring either -- both require a non-digit boundary that a fully contiguous digit run never provides internally. Expected: zero spans.",
+  "text": "Order total charged to 4111111111111112 today.",
+  "invalidCardValue": "4111111111111112"
+}

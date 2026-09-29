@@ -1,0 +1,383 @@
+{
+  "spike": "v0b-ultraface",
+  "date": "2026-09-24T06:22:12.022Z",
+  "machine": {
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "cpuCount": 12,
+    "totalMemGB": 16.8
+  },
+  "chrome": {
+    "playwrightReportedVersion": "153.0.8010.12",
+    "chromeExeVersion": "\r\nHKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon\r\n    version    REG_SZ    153.0.8010.36\r\n\r\n"
+  },
+  "gpu": {
+    "webgpuAvailable": false,
+    "reason": "no adapter"
+  },
+  "yolos": {
+    "productionLoad": {
+      "ok": false,
+      "device": "wasm",
+      "error": "no available backend found. ERR: [webgpu] Error: Failed to get GPU adapter. You may need to enable flag \"--enable-unsafe-webgpu\" if you are using Chrome.",
+      "loadMs": 1032.5299999713898
+    }
+  },
+  "ultraface": {
+    "wasm": {
+      "demoFace": {
+        "detections": [
+          {
+            "kind": "face",
+            "x": 83.02061259746552,
+            "y": 0.4026832580566406,
+            "width": 283.2768112421036,
+            "height": 332.59731674194336,
+            "confidence": 0.9999998807907104
+          }
+        ],
+        "ms": 190.30000007152557,
+        "inferOnlyMs": 156.3400000333786,
+        "backend": "wasm",
+        "inputWidth": 500,
+        "inputHeight": 333
+      },
+      "scaleLadder": {
+        "40": {
+          "detections": [],
+          "ms": 71.13499999046326,
+          "inferOnlyMs": 63.9449999332428,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "60": {
+          "detections": [],
+          "ms": 72.41500008106232,
+          "inferOnlyMs": 64.02999997138977,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "80": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 599.1460418701172,
+              "y": 322.34294414520264,
+              "width": 70.86402893066406,
+              "height": 73.93914699554443,
+              "confidence": 0.9226194024085999
+            }
+          ],
+          "ms": 67.31000006198883,
+          "inferOnlyMs": 61.389999985694885,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "96": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 589.9576568603516,
+              "y": 310.3877377510071,
+              "width": 86.629638671875,
+              "height": 98.4139609336853,
+              "confidence": 0.985247015953064
+            }
+          ],
+          "ms": 62.730000019073486,
+          "inferOnlyMs": 56.110000014305115,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "120": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 579.9221420288086,
+              "y": 298.4987497329712,
+              "width": 99.93061065673828,
+              "height": 112.53634929656982,
+              "confidence": 0.9905836582183838
+            }
+          ],
+          "ms": 64.17500007152557,
+          "inferOnlyMs": 55.19500005245209,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "200": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 544.6379852294922,
+              "y": 270.21170139312744,
+              "width": 163.04946899414062,
+              "height": 190.3534984588623,
+              "confidence": 0.9992856383323669
+            }
+          ],
+          "ms": 58.52499997615814,
+          "inferOnlyMs": 53.205000042915344,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        }
+      },
+      "falsePositives": {
+        "no-face-testpage.png": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 352.215576171875,
+              "y": 94.28243637084961,
+              "width": 89.94171142578125,
+              "height": 96.12354755401611,
+              "confidence": 0.9805874824523926
+            }
+          ],
+          "ms": 66.09500002861023,
+          "inferOnlyMs": 61.36500000953674,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "no-face-wikipedia.png": {
+          "detections": [],
+          "ms": 68.98000001907349,
+          "inferOnlyMs": 64.15499997138977,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "no-face-loginform.png": {
+          "detections": [],
+          "ms": 78.54499995708466,
+          "inferOnlyMs": 66.86499989032745,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        }
+      },
+      "latency": {
+        "samples": [
+          67.68499994277954,
+          59.39999997615814,
+          66.54499995708466,
+          70.76499998569489,
+          62.0699999332428,
+          58.014999985694885,
+          58.07000005245209,
+          58.824999928474426,
+          64.48500001430511,
+          58.28000009059906,
+          59.62000000476837,
+          60.93499994277954,
+          65.40499997138977,
+          68.77999997138977,
+          68.08000004291534,
+          63.83500003814697,
+          57.69500005245209,
+          59.62000000476837,
+          70.0699999332428,
+          58.60000002384186
+        ],
+        "p50": 60.93499994277954,
+        "p95": 70.0699999332428
+      },
+      "backend": "wasm",
+      "coldLoadMs": 1777.3100000619888
+    },
+    "webgpu": {
+      "demoFace": {
+        "detections": [
+          {
+            "kind": "face",
+            "x": 83.02061259746552,
+            "y": 0.4026832580566406,
+            "width": 283.2768112421036,
+            "height": 332.59731674194336,
+            "confidence": 0.9999998807907104
+          }
+        ],
+        "ms": 245.53000009059906,
+        "inferOnlyMs": 238.67499995231628,
+        "backend": "webgpu",
+        "inputWidth": 500,
+        "inputHeight": 333
+      },
+      "scaleLadder": {
+        "40": {
+          "detections": [],
+          "ms": 75.63999998569489,
+          "inferOnlyMs": 69.17999994754791,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "60": {
+          "detections": [],
+          "ms": 71.61500000953674,
+          "inferOnlyMs": 59.0550000667572,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "80": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 599.1460418701172,
+              "y": 322.34294414520264,
+              "width": 70.86402893066406,
+              "height": 73.93914699554443,
+              "confidence": 0.9226194024085999
+            }
+          ],
+          "ms": 64.49499988555908,
+          "inferOnlyMs": 58.91500008106232,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "96": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 589.9576568603516,
+              "y": 310.3877377510071,
+              "width": 86.629638671875,
+              "height": 98.4139609336853,
+              "confidence": 0.985247015953064
+            }
+          ],
+          "ms": 71.82500004768372,
+          "inferOnlyMs": 66.29500007629395,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "120": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 579.9221420288086,
+              "y": 298.4987497329712,
+              "width": 99.93061065673828,
+              "height": 112.53634929656982,
+              "confidence": 0.9905836582183838
+            }
+          ],
+          "ms": 61.87999999523163,
+          "inferOnlyMs": 57,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "200": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 544.6379852294922,
+              "y": 270.21170139312744,
+              "width": 163.04946899414062,
+              "height": 190.3534984588623,
+              "confidence": 0.9992856383323669
+            }
+          ],
+          "ms": 61.59500002861023,
+          "inferOnlyMs": 56.37999999523163,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        }
+      },
+      "falsePositives": {
+        "no-face-testpage.png": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 352.215576171875,
+              "y": 94.28243637084961,
+              "width": 89.94171142578125,
+              "height": 96.12354755401611,
+              "confidence": 0.9805874824523926
+            }
+          ],
+          "ms": 62.56500005722046,
+          "inferOnlyMs": 57.97000002861023,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "no-face-wikipedia.png": {
+          "detections": [],
+          "ms": 56.54000008106232,
+          "inferOnlyMs": 52.08499991893768,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "no-face-loginform.png": {
+          "detections": [],
+          "ms": 59.13499999046326,
+          "inferOnlyMs": 54.8400000333786,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        }
+      },
+      "latency": {
+        "samples": [
+          54.330000042915344,
+          55.455000042915344,
+          57.82000005245209,
+          59.9099999666214,
+          61.31000006198883,
+          69.25,
+          67.06500005722046,
+          72.6949999332428,
+          90.37999999523163,
+          81.82499992847443,
+          79.62999999523163,
+          86.78500008583069,
+          76.27999997138977,
+          69.11500000953674,
+          69.22000002861023,
+          66.04999995231628,
+          65.2299998998642,
+          73.09500002861023,
+          70.625,
+          79.48000001907349
+        ],
+        "p50": 69.22000002861023,
+        "p95": 86.78500008583069
+      },
+      "backend": "webgpu-requested",
+      "coldLoadMs": 2333.7150000333786
+    }
+  },
+  "notes": [
+    "no-face fixture 1 (demo/test-page.html, scrolled): idCard still in viewport = true",
+    "no-face fixture 2 (wikipedia/Bengaluru top): live fetch succeeded",
+    "no-face fixture 3 (hand-written login form): OK",
+    "navigator.gpu adapter in this headless session: {\"webgpuAvailable\":false,\"reason\":\"no adapter\"}",
+    "yolos webgpu load failed (no available backend found. ERR: [webgpu] Error: Failed to get GPU adapter. You may need to enable flag \"--enable-unsafe-webgpu\" if you are using Chrome.) -- falling back to wasm, matching offscreen.entry.js's own fallback behaviour",
+    "yolos wasm load ALSO failed (no available backend found. ERR: [webgpu] Error: Failed to get GPU adapter. You may need to enable flag \"--enable-unsafe-webgpu\" if you are using Chrome.) -- yolos cannot be benchmarked"
+  ],
+  "consoleLog": [
+    "[log] [harness] ready",
+    "[warning] No available adapters.",
+    "[warning] The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127",
+    "[warning] No available adapters.",
+    "[error] \u001b[0;93m2026-09-24 11:52:27.374149 [W:onnxruntime:Default, cpuid_info.cc:91 LogEarlyWarning] Unknown CPU vendor. cpuinfo_vendor value: 0\u001b[m",
+    "[warning] No available adapters.",
+    "[warning] removing requested execution provider \"webgpu\" from session options because it is not available: Error: Failed to get GPU adapter. You may need to enable flag \"--enable-unsafe-webgpu\" if you are using Chrome."
+  ],
+  "crashed": false
+}

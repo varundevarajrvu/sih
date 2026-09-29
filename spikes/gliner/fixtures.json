@@ -1,0 +1,142 @@
+{
+  "fixtures": [
+    {
+      "id": "f01_imperative_name",
+      "text": "Log in as Francis Reuben R",
+      "note": "Imperative command form naming a person. Known-hard case per architecture doc.",
+      "expected": [
+        {
+          "start": 10,
+          "end": 26,
+          "label": "PERSONNAME",
+          "text": "Francis Reuben R"
+        }
+      ]
+    },
+    {
+      "id": "f02_declarative_name",
+      "text": "Hi, I am Priya Sharma and I need help with my order",
+      "expected": [
+        {
+          "start": 9,
+          "end": 21,
+          "label": "PERSONNAME",
+          "text": "Priya Sharma"
+        }
+      ]
+    },
+    {
+      "id": "f03_address",
+      "text": "Ship to 42, 3rd Cross, Indiranagar, Bengaluru, Karnataka 560038",
+      "expected": [
+        {
+          "start": 8,
+          "end": 65,
+          "label": "ADDRESS",
+          "text": "42, 3rd Cross, Indiranagar, Bengaluru, Karnataka 560038"
+        }
+      ]
+    },
+    {
+      "id": "f04_dob",
+      "text": "Date of birth: 14/08/1999",
+      "expected": [
+        {
+          "start": 15,
+          "end": 25,
+          "label": "DOB",
+          "text": "14/08/1999"
+        }
+      ]
+    },
+    {
+      "id": "f05_account_number",
+      "text": "Account number 00112233445566 at SBI",
+      "expected": [
+        {
+          "start": 15,
+          "end": 29,
+          "label": "ACCOUNTNUMBER",
+          "text": "00112233445566"
+        }
+      ]
+    },
+    {
+      "id": "f06_multi_entity",
+      "text": "Contact Rahul Verma at rahul.v@example.com or +91 98450 12345",
+      "expected": [
+        {
+          "start": 8,
+          "end": 19,
+          "label": "PERSONNAME",
+          "text": "Rahul Verma"
+        },
+        {
+          "start": 23,
+          "end": 42,
+          "label": "EMAIL",
+          "text": "rahul.v@example.com"
+        },
+        {
+          "start": 46,
+          "end": 61,
+          "label": "PHONE",
+          "text": "+91 98450 12345"
+        }
+      ]
+    },
+    {
+      "id": "f07_control_no_pii_a",
+      "text": "Click the Next button to continue",
+      "expected": []
+    },
+    {
+      "id": "f08_control_no_pii_b",
+      "text": "Search for a laptop under 50000 rupees",
+      "expected": []
+    },
+    {
+      "id": "f09_password",
+      "text": "My password is Tr0ub4dor&3",
+      "expected": [
+        {
+          "start": 15,
+          "end": 26,
+          "label": "PASSWORD",
+          "text": "Tr0ub4dor&3"
+        }
+      ]
+    },
+    {
+      "id": "f10_checkout_blob",
+      "text": "FlipKart Bazaar - Secure Checkout\nStep 3 of 4: Delivery & Payment\nYour session is protected. All payments are processed over a secure encrypted connection.\n\nYour Cart (4 items)\n1x Wireless Mouse (Black, 2.4GHz) - Rs. 799\n1x USB-C Cable 1m (Braided, Fast Charging) - Rs. 299\n1x Laptop Stand (Adjustable, Aluminium) - Rs. 1,499\n1x Bluetooth Keyboard (Compact, Backlit) - Rs. 1,999\nSubtotal: Rs. 4,596\nDelivery: FREE\nCoupon Applied (WELCOME10): -Rs. 460\nTotal: Rs. 4,136\n\nDelivery Address\nFull Name: Ananya Krishnan\nMobile Number: +91 90080 12345\nEmail: ananya.krishnan88@gmail.com\nAddress: Flat 302, Sunshine Residency, 7th Main Road, Koramangala 4th Block, Bengaluru, Karnataka 560034\nLandmark: Near Forum Mall\nAddress Type: Home\n\n[Change Address] [Add New Address]\n\nDelivery Options\n( ) Standard Delivery - 3-5 business days - FREE\n(x) Express Delivery - 1-2 business days - Rs. 49\n( ) Scheduled Delivery - choose a slot - Rs. 99\n\nPayment Method\n( ) Credit / Debit Card\n( ) UPI\n(x) Cash on Delivery\n( ) Net Banking\n( ) EMI (available on orders above Rs. 3,000)\n\nOrder Summary\nItems Total: Rs. 4,596\nDiscount: -Rs. 460\nDelivery Charges: Rs. 49\nTaxes Included in Price\nGrand Total: Rs. 4,185\n\nBy placing this order, you agree to our Terms of Service, Return Policy, and Privacy Policy.\nEstimated delivery: Tuesday, 30 September, between 10 AM and 8 PM.\n\n[Place Order] [Edit Cart] [Apply Coupon] [Save for Later]\n\nCustomers who bought this also viewed: Wireless Charging Pad, Laptop Sleeve 15.6\", Screen Protector Pack of 3, Ergonomic Mouse Pad.\n\nRecent reviews on Bluetooth Keyboard: \"Great build quality, backlight is a nice touch.\" - Verified Purchase. \"Battery lasts almost a month on a single charge.\" - Verified Purchase.\n\nNeed help? Chat with support or call our 24x7 helpline. Track your order anytime from the My Orders page. Free returns within 7 days of delivery, no questions asked. Cash on Delivery is available in your area for orders under Rs. 20,000. Download our app for faster checkout next time.",
+      "note": "~2KB realistic Indian e-commerce checkout page text blob. This is the fixture the pre-registered decision rule warm-p95 gate is measured against.",
+      "expected": [
+        {
+          "start": 497,
+          "end": 512,
+          "label": "PERSONNAME",
+          "text": "Ananya Krishnan"
+        },
+        {
+          "start": 528,
+          "end": 543,
+          "label": "PHONE",
+          "text": "+91 90080 12345"
+        },
+        {
+          "start": 551,
+          "end": 578,
+          "label": "EMAIL",
+          "text": "ananya.krishnan88@gmail.com"
+        },
+        {
+          "start": 588,
+          "end": 683,
+          "label": "ADDRESS",
+          "text": "Flat 302, Sunshine Residency, 7th Main Road, Koramangala 4th Block, Bengaluru, Karnataka 560034"
+        }
+      ]
+    }
+  ]
+}

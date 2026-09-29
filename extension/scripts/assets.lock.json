@@ -1,0 +1,96 @@
+{
+  "generatedAt": "2026-09-27T09:04:37.166Z",
+  "note": "sha256 manifest generated FROM local files already present in this working copy -- NOT re-derived from upstream. See fetch-assets.mjs SOURCES for provenance and known upstream mismatches.",
+  "files": {
+    "models/Xenova/yolos-tiny/onnx/model.onnx": {
+      "sha256": "0dbdd37573fb6b6ed836aa980ab729c81b659deec900799f37b6a09a57762e88",
+      "size": 26227993,
+      "tracked": false,
+      "url": "https://huggingface.co/Xenova/yolos-tiny/resolve/main/onnx/model.onnx",
+      "verified": "byte-identical to local copy (26,227,993 bytes).",
+      "provenance": null
+    },
+    "models/Xenova/yolos-tiny/config.json": {
+      "sha256": "ce8640ba6bd97a7b36ccf2d0dba9a6ac233211e2dc0c5dc4c63d922e80338c08",
+      "size": 4145,
+      "tracked": false,
+      "url": "https://huggingface.co/Xenova/yolos-tiny/resolve/main/config.json",
+      "verified": "byte-identical to local copy.",
+      "provenance": null
+    },
+    "models/Xenova/yolos-tiny/preprocessor_config.json": {
+      "sha256": "b010730968cdbccf8767b61b0a8e903396d831fd97f3c44cc9f0c0437deb7b7f",
+      "size": 457,
+      "tracked": false,
+      "url": "https://huggingface.co/Xenova/yolos-tiny/resolve/main/preprocessor_config.json",
+      "verified": "byte-identical to local copy.",
+      "provenance": null
+    },
+    "models/ultraface/ultraface-rfb320.onnx": {
+      "sha256": "22bd2fbe053a8e54d54b44b25901f0f6260059ac9ae7d3cc8720f5f7c0d936fa",
+      "size": 1257907,
+      "tracked": true,
+      "url": null,
+      "verified": null,
+      "provenance": {
+        "upstreamUrl": "https://raw.githubusercontent.com/Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB/dffdddda9794a50607cba8f318507a28c1c27cab/models/onnx/version-RFB-320.onnx",
+        "upstreamSha256": "34cd7e60aeff28744c657de7a3dc64e872d506741de66987f3426f2b79f88017",
+        "upstreamSize": 1270727,
+        "note": "Derived, not a re-download: sih-2026's scripts/optimize-vision-model.py produced this file from the upstream ONNX at upstreamUrl (1,270,727 bytes). This tracked copy is 1,257,907 bytes -- same architecture, different export. See extension/README.md."
+      }
+    },
+    "models/ultraface/ULTRAFACE-LICENSE.txt": {
+      "sha256": "08a1af34951f01ad335a93887308956daa8c8d33585089baaf9fe6aa5cc6548a",
+      "size": 1084,
+      "tracked": true,
+      "url": null,
+      "verified": null,
+      "provenance": {
+        "upstreamUrl": "https://raw.githubusercontent.com/Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB/dffdddda9794a50607cba8f318507a28c1c27cab/LICENSE",
+        "upstreamSha256": "21f0df2b54c9fef1b4f4061dd0b153bc72f071b5ce9fc04234f13ebfd093b44c",
+        "upstreamSize": 1063,
+        "note": "Text byte-identical to upstream; tracked copy has CRLF line endings (upstream is LF). Benign."
+      }
+    },
+    "ort/ort-wasm-simd-threaded.jsep.mjs": {
+      "sha256": "08fb86ec433c78bfb032c5d84a68b8e8e5a8d81268fa39e24314179a5767a5b9",
+      "size": 44484,
+      "tracked": false,
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250409-89f8206ba4/dist/ort-wasm-simd-threaded.jsep.mjs",
+      "verified": "byte-identical to local copy and to node_modules/onnxruntime-web/dist/ at this pinned version.",
+      "provenance": null
+    },
+    "ort/ort-wasm-simd-threaded.jsep.wasm": {
+      "sha256": "c46655e8a94afc45338d4cb2b840475f88e5012d524509916e505079c00bfa39",
+      "size": 21596019,
+      "tracked": false,
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0-dev.20250409-89f8206ba4/dist/ort-wasm-simd-threaded.jsep.wasm",
+      "verified": "byte-identical to local copy and to node_modules/onnxruntime-web/dist/ at this pinned version.",
+      "provenance": null
+    },
+    "ort/ort-wasm-simd-threaded.wasm": {
+      "sha256": "45eaee27761ad883742a8d4b8fce1538d60ce43b51adf1726fafccc59b8c1a15",
+      "size": 11905541,
+      "tracked": false,
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/ort-wasm-simd-threaded.wasm",
+      "verified": "byte-identical to local copy (11,905,541 bytes).",
+      "provenance": null
+    },
+    "ort/ort-wasm-simd-threaded.mjs": {
+      "sha256": "90a557d15c02bac4504d95b67f431d8594635ed2a0a62a7f2cd83d090ff91d3e",
+      "size": 20321,
+      "tracked": false,
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/ort-wasm-simd-threaded.mjs",
+      "verified": "byte-identical to local copy (20,321 bytes) once the local copy's CRLF artifact was corrected.",
+      "provenance": null
+    },
+    "ort/ort.wasm.min.mjs": {
+      "sha256": "69751720f611e37d1ce2fa3c6ebaa80f949014752636c5f8887a63d40feadcc7",
+      "size": 49856,
+      "tracked": false,
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/ort.wasm.min.mjs",
+      "verified": "byte-identical to local copy (49,856 bytes) once the local copy's CRLF artifact was corrected.",
+      "provenance": null
+    }
+  }
+}

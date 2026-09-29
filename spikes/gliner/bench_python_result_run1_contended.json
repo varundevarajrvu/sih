@@ -1,0 +1,220 @@
+{
+  "path": "B_python_local_process",
+  "model_id": "urchade/gliner_multi_pii-v1",
+  "labels_requested": [
+    "person name",
+    "address",
+    "date of birth",
+    "account number",
+    "password",
+    "email",
+    "phone number"
+  ],
+  "threshold": 0.3,
+  "warm_runs_per_fixture": 20,
+  "cold_load_s": 50.121,
+  "model_size_on_disk_mb": 1102.36,
+  "peak_rss_mb": 1532.74,
+  "rss_before_load_mb": 19.88,
+  "rss_after_load_mb": 1470.01,
+  "python_version": "3.14.4 (tags/v3.14.4:23116f9, Apr  7 2026, 14:10:54) [MSC v.1944 64 bit (AMD64)]",
+  "torch_version": "2.14.0+cpu",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "results": [
+    {
+      "id": "f01_imperative_name",
+      "text_len_chars": 26,
+      "warm_runs": 20,
+      "p50_ms": 648.29,
+      "p95_ms": 1169.33,
+      "mean_ms": 720.97,
+      "min_ms": 377.59,
+      "max_ms": 1476.94,
+      "spans": [
+        {
+          "start": 10,
+          "end": 26,
+          "label": "person name",
+          "text": "Francis Reuben R",
+          "score": 0.4657
+        }
+      ]
+    },
+    {
+      "id": "f02_declarative_name",
+      "text_len_chars": 51,
+      "warm_runs": 20,
+      "p50_ms": 533.25,
+      "p95_ms": 712.37,
+      "mean_ms": 539.67,
+      "min_ms": 384.82,
+      "max_ms": 714.04,
+      "spans": [
+        {
+          "start": 9,
+          "end": 21,
+          "label": "person name",
+          "text": "Priya Sharma",
+          "score": 0.9473
+        }
+      ]
+    },
+    {
+      "id": "f03_address",
+      "text_len_chars": 63,
+      "warm_runs": 20,
+      "p50_ms": 852.92,
+      "p95_ms": 1121.96,
+      "mean_ms": 814.45,
+      "min_ms": 487.91,
+      "max_ms": 1282.0,
+      "spans": [
+        {
+          "start": 8,
+          "end": 63,
+          "label": "address",
+          "text": "42, 3rd Cross, Indiranagar, Bengaluru, Karnataka 560038",
+          "score": 0.4217
+        }
+      ]
+    },
+    {
+      "id": "f04_dob",
+      "text_len_chars": 25,
+      "warm_runs": 20,
+      "p50_ms": 479.13,
+      "p95_ms": 669.1,
+      "mean_ms": 515.64,
+      "min_ms": 404.51,
+      "max_ms": 818.66,
+      "spans": [
+        {
+          "start": 15,
+          "end": 25,
+          "label": "date of birth",
+          "text": "14/08/1999",
+          "score": 0.9378
+        }
+      ]
+    },
+    {
+      "id": "f05_account_number",
+      "text_len_chars": 36,
+      "warm_runs": 20,
+      "p50_ms": 686.1,
+      "p95_ms": 973.87,
+      "mean_ms": 691.68,
+      "min_ms": 370.97,
+      "max_ms": 1443.63,
+      "spans": [
+        {
+          "start": 15,
+          "end": 29,
+          "label": "account number",
+          "text": "00112233445566",
+          "score": 0.9894
+        }
+      ]
+    },
+    {
+      "id": "f06_multi_entity",
+      "text_len_chars": 61,
+      "warm_runs": 20,
+      "p50_ms": 1116.08,
+      "p95_ms": 3236.74,
+      "mean_ms": 1457.71,
+      "min_ms": 535.39,
+      "max_ms": 3476.54,
+      "spans": [
+        {
+          "start": 23,
+          "end": 42,
+          "label": "email",
+          "text": "rahul.v@example.com",
+          "score": 0.9957
+        },
+        {
+          "start": 46,
+          "end": 61,
+          "label": "phone number",
+          "text": "+91 98450 12345",
+          "score": 0.9928
+        }
+      ]
+    },
+    {
+      "id": "f07_control_no_pii_a",
+      "text_len_chars": 33,
+      "warm_runs": 20,
+      "p50_ms": 2901.08,
+      "p95_ms": 7584.33,
+      "mean_ms": 3555.23,
+      "min_ms": 1276.17,
+      "max_ms": 7843.48,
+      "spans": []
+    },
+    {
+      "id": "f08_control_no_pii_b",
+      "text_len_chars": 38,
+      "warm_runs": 20,
+      "p50_ms": 999.22,
+      "p95_ms": 5103.16,
+      "mean_ms": 1746.48,
+      "min_ms": 449.8,
+      "max_ms": 6102.81,
+      "spans": []
+    },
+    {
+      "id": "f09_password",
+      "text_len_chars": 26,
+      "warm_runs": 20,
+      "p50_ms": 666.96,
+      "p95_ms": 1706.6,
+      "mean_ms": 806.66,
+      "min_ms": 410.91,
+      "max_ms": 2245.9,
+      "spans": [
+        {
+          "start": 15,
+          "end": 26,
+          "label": "password",
+          "text": "Tr0ub4dor&3",
+          "score": 0.8316
+        }
+      ]
+    },
+    {
+      "id": "f10_checkout_blob",
+      "text_len_chars": 2011,
+      "warm_runs": 20,
+      "p50_ms": 5294.36,
+      "p95_ms": 7825.16,
+      "mean_ms": 5371.58,
+      "min_ms": 2932.81,
+      "max_ms": 10548.72,
+      "spans": [
+        {
+          "start": 497,
+          "end": 512,
+          "label": "person name",
+          "text": "Ananya Krishnan",
+          "score": 0.573
+        },
+        {
+          "start": 528,
+          "end": 543,
+          "label": "phone number",
+          "text": "+91 90080 12345",
+          "score": 0.9987
+        },
+        {
+          "start": 551,
+          "end": 578,
+          "label": "email",
+          "text": "ananya.krishnan88@gmail.com",
+          "score": 0.9988
+        }
+      ]
+    }
+  ]
+}

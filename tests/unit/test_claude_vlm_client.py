@@ -24,9 +24,11 @@ import httpx2
 import pytest
 
 from schemas import BBox, DomNode, RedactedRegion
+from schemas_v2 import PAGE_TARGET_ID_V2, SceneMode
 from vlm_client import (
     ACTION_RESPONSE_JSON_SCHEMA,
     DEFAULT_CLAUDE_MODEL,
+    MODEL_ACTION_V2_JSON_SCHEMA,
     ClaudeAPIError,
     ClaudeConnectionError,
     ClaudeCredentialsMissing,
@@ -34,7 +36,9 @@ from vlm_client import (
     ClaudeRateLimited,
     ClaudeVLMClient,
     VLMRequestContext,
+    VLMRequestContextV2,
     build_prompt,
+    build_prompt_v2,
 )
 
 
@@ -513,3 +517,99 @@ def test_outgoing_request_never_independently_serializes_dom_snapshot_or_redacte
     assert set(kwargs.keys()) <= {"model", "max_tokens", "messages", "output_config"}
     content = kwargs["messages"][0]["content"]
     assert len(content) == 2  # exactly image + text, nothing per-node appended
+
+
+# ---------------------------------------------------------------------------
+# V3 (planner-local): analyze_v2 — explicit opt-in, reuses this class's own
+# credentials/error-mapping machinery. No live API call is ever made here,
+# same posture as every test above.
+# ---------------------------------------------------------------------------
+
+
+def _context_v2(mode=SceneMode.SEMANTIC, elements=None, regions=None, history=None,
+                 task_goal="do the task", image_b64=None):
+    elements = elements or []
+    regions = regions or []
+    history = history or []
+    prompt = build_prompt_v2(mode=mode, task_goal=task_goal, elements=elements, regions=regions, history=history)
+    return VLMRequestContextV2(
+        mode=mode, task_goal=task_goal, elements=elements, regions=regions,
+        history=history, image_b64=image_b64, prompt=prompt,
+    )
+
+
+DONE_RESPONSE_V2 = {"action": "done", "targetId": PAGE_TARGET_ID_V2, "value": None, "profileField": None, "key": None}
+
+
+def test_v2_analyze_returns_parsed_action_dict():
+    fake = FakeAnthropicClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = ClaudeVLMClient(client=fake)
+    result = client.analyze_v2(_context_v2())
+    assert result == DONE_RESPONSE_V2
+
+
+def test_v2_semantic_mode_sends_no_image_block():
+    fake = FakeAnthropicClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = ClaudeVLMClient(client=fake)
+    client.analyze_v2(_context_v2(mode=SceneMode.SEMANTIC, image_b64=None))
+    content = fake.messages.last_call_kwargs["messages"][0]["content"]
+    assert len(content) == 1
+    assert content[0]["type"] == "text"
+
+
+def test_v2_image_mode_sends_image_block_first():
+    fake = FakeAnthropicClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = ClaudeVLMClient(client=fake)
+    client.analyze_v2(_context_v2(mode=SceneMode.IMAGE, image_b64="cmVkYWN0ZWQtcG5n"))
+    content = fake.messages.last_call_kwargs["messages"][0]["content"]
+    assert len(content) == 2
+    assert content[0] == {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": "cmVkYWN0ZWQtcG5n"},
+    }
+    assert content[1]["type"] == "text"
+
+
+def test_v2_text_block_is_build_prompt_v2_output_verbatim():
+    fake = FakeAnthropicClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = ClaudeVLMClient(client=fake)
+    ctx = _context_v2(task_goal="Log in with EMAIL#1")
+    client.analyze_v2(ctx)
+    text_block = fake.messages.last_call_kwargs["messages"][0]["content"][0]
+    assert text_block == {"type": "text", "text": ctx.prompt}
+
+
+def test_v2_output_config_uses_model_action_v2_json_schema():
+    fake = FakeAnthropicClient(response=_fake_text_response(DONE_RESPONSE_V2))
+    client = ClaudeVLMClient(client=fake)
+    client.analyze_v2(_context_v2())
+    fmt = fake.messages.last_call_kwargs["output_config"]["format"]
+    assert fmt["type"] == "json_schema"
+    assert fmt["schema"] == MODEL_ACTION_V2_JSON_SCHEMA
+
+
+def test_v2_missing_credentials_raises_claude_credentials_missing_and_never_calls():
+    fake = FakeAnthropicClient(response=_fake_text_response(DONE_RESPONSE_V2), api_key=None)
+    client = ClaudeVLMClient(client=fake)
+    with pytest.raises(ClaudeCredentialsMissing) as excinfo:
+        client.analyze_v2(_context_v2())
+    assert "ANTHROPIC_API_KEY" in str(excinfo.value)
+    assert fake.messages.call_count == 0
+
+
+def test_v2_not_found_error_wrapped_as_claude_model_not_found():
+    exc = anthropic.NotFoundError(
+        "model not found", response=_http_response(404), body={"error": {"type": "not_found_error"}}
+    )
+    fake = FakeAnthropicClient(exception=exc)
+    client = ClaudeVLMClient(client=fake)
+    with pytest.raises(ClaudeModelNotFound):
+        client.analyze_v2(_context_v2())
+
+
+def test_v2_rate_limit_error_wrapped_as_claude_rate_limited():
+    exc = anthropic.RateLimitError("rate limited", response=_http_response(429), body=None)
+    fake = FakeAnthropicClient(exception=exc)
+    client = ClaudeVLMClient(client=fake)
+    with pytest.raises(ClaudeRateLimited):
+        client.analyze_v2(_context_v2())

@@ -195,7 +195,7 @@ async function ensureOffscreenDocument() {
     url: OFFSCREEN_DOCUMENT_PATH,
     reasons: ["WORKERS"],
     justification:
-      "Run ONNX/WASM/WebGPU object-detection model inference (Xenova/yolos-tiny via @huggingface/transformers) off the visible extension pages.",
+      "Run ONNX/WASM/WebGPU face/object-detection model inference (UltraFace RFB-320 via onnxruntime-web; Xenova/yolos-tiny via @huggingface/transformers still bundled but not loaded by default -- see VISION_MODEL in offscreen.entry.js) off the visible extension pages.",
   });
 
   try {
@@ -731,6 +731,52 @@ browser.runtime.onMessage.addListener((message, sender) => {
       // detection ONCE on the composite image.
       return handleStitchAndDetect(message);
 
+    // ---- V4a (integration-v2) additions below. Only reached when
+    // content.js's runAgentLoopV2Adapter() is driving the loop
+    // (PIPELINE_VERSION === "v2", the default -- see lib/pipeline-version.js).
+    // CAPTURE_AND_DETECT above is REUSED as-is for v2's capture+detect --
+    // no new message needed there; see agent-loop-v2.js's own header on why
+    // capture/detect share one round trip. ----
+
+    case "NER_DETECT":
+      // content.js -> background.js -> C3's local NER service
+      // (127.0.0.1:8757/ner), one batched call per step (V4 design rule,
+      // docs/v2/ARCHITECTURE.md). Routed through the background service
+      // worker for the same reason ANALYZE is: one privileged context that
+      // talks to the network, consistent with the rest of this file.
+      return handleNerDetect(message.texts);
+
+    case "ANALYZE_V2":
+      // content.js -> background.js -> local FastAPI /v2/analyze (C5).
+      // Mirrors handleAnalyze()'s v1 pattern exactly (same
+      // activeAnalyzeAborters map, so Stop aborts whichever pipeline --
+      // v1 or v2 -- happens to be in flight for this tab).
+      return handleAnalyzeV2(message.payload, sender && sender.tab ? sender.tab.id : undefined);
+
+    case "REQUEST_CONSENT":
+      // content.js -> background.js -> (broadcast to any open popup, plus
+      // a 60s deny-by-default timeout). See handleRequestConsent()'s own
+      // comment -- V4b renders a real popup UI for this; V4a's contract is
+      // just "a message to the popup with a 60s timeout that DENIES by
+      // default" (CLAUDE.md's V4a brief, item 3).
+      return handleRequestConsent(message.request);
+
+    case "RESPOND_CONSENT":
+      // popup.js -> background.js, when a human answers a CONSENT_REQUEST
+      // broadcast before its 60s timeout fires.
+      return handleRespondConsent(message.requestId, message.approved);
+
+    case "REQUEST_GOAL_PRIVACY_REVIEW":
+      // content.js -> background.js -> (broadcast to any open popup, plus
+      // a 60s keep-private-by-default timeout). C5/C2 amendment
+      // (2026-09-26) -- see handleRequestGoalPrivacyReview()'s own comment.
+      return handleRequestGoalPrivacyReview(message.request);
+
+    case "RESPOND_GOAL_PRIVACY_REVIEW":
+      // popup.js -> background.js, when a human answers a
+      // GOAL_PRIVACY_REVIEW_REQUEST broadcast before its 60s timeout fires.
+      return handleRespondGoalPrivacyReview(message.requestId, message.keepPrivate);
+
     default:
       // Not recognized -- ignore rather than throw (matches this
       // listener's existing behaviour for any unrecognized message type).
@@ -1168,6 +1214,257 @@ async function handleAnalyze(payload, tabId) {
       activeAnalyzeAborters.delete(tabId);
     }
   }
+}
+
+// ---------------------------------------------------------------------
+// V4a (integration-v2) additions.
+// ---------------------------------------------------------------------
+
+// C3 (docs/v2/ARCHITECTURE.md): loopback-only local process, own port
+// 8757, endpoint POST /ner. Run with:
+//   spikes\gliner\.venv\Scripts\python.exe -m uvicorn ner.app:app --host 127.0.0.1 --port 8757
+// host_permissions already covers this: "http://127.0.0.1/*" matches any
+// port (manifest.json's own established rule -- host_permissions match
+// patterns do not support port wildcards, but the port-less form matches
+// every port implicitly; see CLAUDE.md Phase 4 RESULT item 4).
+const NER_SERVICE_URL = "http://127.0.0.1:8757/ner";
+
+/**
+ * content.js -> here -> POST /ner {texts} -> {spans}. Never retried here
+ * (agent-loop-v2.js's caller decides what an NER failure means -- C3: the
+ * run stops, there is no regex-only fallback) -- this function's only job
+ * is "did the call succeed, and if not, why", same shape as detectObjects().
+ */
+async function handleNerDetect(texts) {
+  if (!Array.isArray(texts)) {
+    return { type: "NER_DETECT_ERROR", error: "NER_DETECT called with a non-array `texts`" };
+  }
+  if (texts.length === 0) return { type: "NER_DETECT_RESULT", spans: [] };
+  try {
+    const res = await fetch(NER_SERVICE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texts }),
+    });
+    if (!res.ok) {
+      // 503 = model still loading (ner/app.py's own documented shape);
+      // any other non-OK is also surfaced as a failure -- the caller
+      // (agent-loop-v2.js) treats every NER_DETECT_ERROR identically:
+      // stop the run, C3.
+      let detail = `HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        detail = JSON.stringify(body);
+      } catch (_parseErr) {
+        /* non-JSON error body -- keep the bare status */
+      }
+      log("NER_DETECT: service returned non-OK:", detail);
+      return { type: "NER_DETECT_ERROR", error: `ner service returned HTTP ${res.status}: ${detail}` };
+    }
+    const body = await res.json();
+    return { type: "NER_DETECT_RESULT", spans: body.spans };
+  } catch (err) {
+    // Network-level failure: service not running, wrong port, etc. --
+    // err.message here is a browser-generated string, never derived from
+    // `texts` (which may itself contain page-derived PII-shaped text --
+    // this function must never echo it, matching this project's own "an
+    // error path is a data egress path" rule).
+    const message = err?.message || String(err);
+    console.error("[background] NER_DETECT network failure:", message);
+    return { type: "NER_DETECT_ERROR", error: message };
+  }
+}
+
+/**
+ * content.js -> here -> local FastAPI POST /v2/analyze (C5). Byte-for-byte
+ * the same shape/error-handling as handleAnalyze() (v1's /analyze) --
+ * deliberately duplicated rather than parameterizing handleAnalyze() over
+ * an endpoint path, so v1's already-verified function is never touched by
+ * this pass (CLAUDE.md's V4a brief: "don't touch the verified modules'
+ * internals"; background.js/content.js are explicitly the ONE place this
+ * pass is allowed to grow, but v1's own handler stays exactly as it was).
+ */
+async function handleAnalyzeV2(payload, tabId) {
+  if (!payload || typeof payload !== "object") {
+    return { type: "ANALYZE_V2_ERROR", status: 0, error: { message: "ANALYZE_V2 called with no payload" } };
+  }
+
+  if (!ServerUrlLib.isHostAllowed(serverUrl)) {
+    const message =
+      `Server URL "${serverUrl}" is outside this extension's permitted hosts ` +
+      `(${ServerUrlLib.DEFAULT_ALLOWED_HOST_PATTERNS.join(", ")}). Chrome blocks the request before it ever ` +
+      "leaves the extension. Fix the Server URL in the popup's Settings, or -- for a genuinely different host " +
+      "-- widen manifest.json's host_permissions and reload the extension; that is a deliberate, separate " +
+      "decision this popup does not make on its own.";
+    log("ANALYZE_V2 blocked before fetch -- server URL not covered by host_permissions:", serverUrl);
+    return { type: "ANALYZE_V2_ERROR", status: 0, error: { message, errorCode: "SERVER_URL_NOT_PERMITTED" }, humanMessage: message };
+  }
+
+  const controller = new AbortController();
+  if (tabId !== undefined && tabId !== null) activeAnalyzeAborters.set(tabId, controller);
+
+  try {
+    const res = await fetch(`${serverUrl}/v2/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    let body = null;
+    try {
+      body = await res.json();
+    } catch (_parseErr) {
+      body = null;
+    }
+    if (!res.ok) {
+      log(`ANALYZE_V2: server returned HTTP ${res.status}`, body);
+      return { type: "ANALYZE_V2_ERROR", status: res.status, error: body || { message: `HTTP ${res.status}` } };
+    }
+    return { type: "ANALYZE_V2_RESULT", action: body };
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      return { type: "ANALYZE_V2_ERROR", status: 0, error: { message: "request cancelled by Stop", errorCode: "STOPPED" } };
+    }
+    const message = err?.message || String(err);
+    console.error("[background] ANALYZE_V2 network failure:", message);
+    return { type: "ANALYZE_V2_ERROR", status: 0, error: { message } };
+  } finally {
+    if (tabId !== undefined && tabId !== null && activeAnalyzeAborters.get(tabId) === controller) {
+      activeAnalyzeAborters.delete(tabId);
+    }
+  }
+}
+
+// C4's "ask" verdict (docs/v2/ARCHITECTURE.md): "Consent UI denies by
+// default after 60s." V4b builds the REAL popup UI against this SAME
+// contract (requestId, a 60s timer, deny-by-default) -- nothing about the
+// timeout/broadcast mechanism below changed for V4b; only WHAT gets
+// broadcast grew (action/element, so the panel can describe the pending
+// action in plain words) and the deadline is now surfaced explicitly
+// (deadlineAt/timeoutMs) so the panel's countdown reflects the REAL server-
+// enforced deadline rather than a second, independently-started timer that
+// could drift out of sync with it.
+const CONSENT_TIMEOUT_MS = 60000;
+const pendingConsentRequests = new Map(); // requestId -> {resolve, timeoutId}
+
+async function handleRequestConsent(request) {
+  const requestId = `consent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const deadlineAt = Date.now() + CONSENT_TIMEOUT_MS;
+
+  const resultPromise = new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      pendingConsentRequests.delete(requestId);
+      log(`REQUEST_CONSENT ${requestId} timed out after ${CONSENT_TIMEOUT_MS}ms -- defaulting to DENY (fail-closed, C4).`);
+      resolve(false);
+    }, CONSENT_TIMEOUT_MS);
+    pendingConsentRequests.set(requestId, { resolve, timeoutId });
+  });
+
+  // Best-effort broadcast to any context listening (a popup that happens
+  // to be open -- see popup.js's own CONSENT_REQUEST listener). A
+  // broadcast with no listener is harmless: chrome.runtime.sendMessage
+  // simply resolves undefined, matching every other fire-and-forget
+  // broadcast already in this file (e.g. GET_PREWARM_STATUS callers). If
+  // nothing answers, the timeout above is what actually enforces
+  // deny-by-default -- this broadcast is not load-bearing for that
+  // guarantee, only for the (better) case where a human is watching.
+  try {
+    const maybePromise = browser.runtime.sendMessage({
+      type: "CONSENT_REQUEST",
+      requestId,
+      code: request && request.code,
+      reason: request && request.reason,
+      elementDescription: request && request.elementDescription,
+      // V4b additions -- see this function's own header comment. `action`
+      // still carries only a TOKEN in `.value` (never a raw value, never
+      // rehydrated -- see agent-loop-v2.js's own requestConsent() call
+      // site comment), so broadcasting it is not a new egress path.
+      action: request && request.action,
+      element: request && request.element,
+      deadlineAt,
+      timeoutMs: CONSENT_TIMEOUT_MS,
+    });
+    if (maybePromise && typeof maybePromise.catch === "function") maybePromise.catch(() => {});
+  } catch (_err) {
+    /* no listener -- fine, see comment above */
+  }
+
+  const approved = await resultPromise;
+  return { type: "CONSENT_RESULT", requestId, approved: approved === true };
+}
+
+function handleRespondConsent(requestId, approved) {
+  const pending = pendingConsentRequests.get(requestId);
+  if (!pending) {
+    return Promise.resolve({ ok: false, error: "no pending consent request with that id (already timed out or answered)" });
+  }
+  clearTimeout(pending.timeoutId);
+  pendingConsentRequests.delete(requestId);
+  pending.resolve(approved === true);
+  return Promise.resolve({ ok: true });
+}
+
+// ---------------------------------------------------------------------
+// C5/C2 amendment (2026-09-26): goal ask-band privacy review. SAME
+// request/timeout/broadcast shape as handleRequestConsent() above --
+// deliberately a SEPARATE map/timeout constant rather than reusing
+// pendingConsentRequests, because the two default answers point opposite
+// ways (consent denies by default; this KEEPS PRIVATE by default) and
+// conflating them would be exactly the kind of silent-default mixup this
+// project's own error-handling discipline exists to avoid.
+// ---------------------------------------------------------------------
+const GOAL_PRIVACY_REVIEW_TIMEOUT_MS = 60000;
+const pendingGoalPrivacyReviews = new Map(); // requestId -> {resolve, timeoutId}
+
+async function handleRequestGoalPrivacyReview(request) {
+  const requestId = `goalpriv-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const deadlineAt = Date.now() + GOAL_PRIVACY_REVIEW_TIMEOUT_MS;
+
+  const resultPromise = new Promise((resolve) => {
+    const timeoutId = setTimeout(() => {
+      pendingGoalPrivacyReviews.delete(requestId);
+      log(`REQUEST_GOAL_PRIVACY_REVIEW ${requestId} timed out after ${GOAL_PRIVACY_REVIEW_TIMEOUT_MS}ms -- defaulting to KEEP PRIVATE (fail-closed, C5/C2 amendment).`);
+      resolve(true);
+    }, GOAL_PRIVACY_REVIEW_TIMEOUT_MS);
+    pendingGoalPrivacyReviews.set(requestId, { resolve, timeoutId });
+  });
+
+  // Best-effort broadcast -- see handleRequestConsent()'s own comment on
+  // why a missing listener is harmless and not load-bearing for the
+  // fail-closed guarantee (the timeout above is). `text` here is the RAW
+  // ask-band span text -- shown ONLY in the popup UI, never sent onward;
+  // this broadcast (extension-internal messaging) is the one and only
+  // place it travels.
+  try {
+    const maybePromise = browser.runtime.sendMessage({
+      type: "GOAL_PRIVACY_REVIEW_REQUEST",
+      requestId,
+      text: request && request.text,
+      label: request && request.label,
+      score: request && request.score,
+      deadlineAt,
+      timeoutMs: GOAL_PRIVACY_REVIEW_TIMEOUT_MS,
+    });
+    if (maybePromise && typeof maybePromise.catch === "function") maybePromise.catch(() => {});
+  } catch (_err) {
+    /* no listener -- fine, see comment above */
+  }
+
+  const keepPrivate = await resultPromise;
+  return { type: "GOAL_PRIVACY_REVIEW_RESULT", requestId, keepPrivate: keepPrivate !== false };
+}
+
+function handleRespondGoalPrivacyReview(requestId, keepPrivate) {
+  const pending = pendingGoalPrivacyReviews.get(requestId);
+  if (!pending) {
+    return Promise.resolve({ ok: false, error: "no pending goal-privacy-review request with that id (already timed out or answered)" });
+  }
+  clearTimeout(pending.timeoutId);
+  pendingGoalPrivacyReviews.delete(requestId);
+  // Explicit `=== false` is the ONLY way to declassify -- anything else
+  // (including a malformed/undefined answer) keeps the safe default.
+  pending.resolve(keepPrivate !== false);
+  return Promise.resolve({ ok: true });
 }
 
 // ---------------------------------------------------------------------

@@ -1,0 +1,80 @@
+{
+  "_fixture_notes": "RETRY 2 (CLAUDE.md §7, 2026-09-25): rawGoal 'Fill in my full name' run through the REAL pipeline as required -- and the result is a genuine, honestly-recorded DEGENERATE case, not silently discarded. findRegexSpans found nothing; the NER service (urchade/gliner_multi_pii-v1) matched the ENTIRE sentence as a single low-confidence person-name span (score 0.427, ask-band -- between PERSONNAME's 0.12 floor and the 0.6 strip threshold), and tokenize() swallowed the whole string into one token, producing taskGoal='PERSONNAME#1' with ZERO surrounding instruction text left -- a false positive on GLiNER's part (this sentence names no person), not a bug in mergeSpans/tokenize, which did exactly what their contract says given that span. That raw PII-tokenization result is recorded below (see pureRegexNerTokenization) as an open finding but is NOT used as this fixture's primary taskGoal, because it destroys the scenario's testability outright. Per C2, profile-vault tokens are a SEPARATE mechanism from PII-scanning (seedVault(), not findRegexSpans/NER) -- extension/lib/pii-tokenizer.js's own PROFILE_FIELD_TOKEN_LABEL constant confirms the real label is 'PROFILENAME' (matching, not coincidentally, retry 1's hand-chosen token name). taskGoal below is the vault-seeded form: rawGoal with the vault token appended, exactly as retry 1 built it -- the goal-plus-vault-reference COMPOSITION step has no existing real implementation anywhere in this repo yet (that's V4 integration work), so this one piece remains a documented, deliberate construction rather than a pipeline call, unlike every other fixture in this set.",
+  "schema": "dhristi-scene-v2",
+  "mode": "semantic",
+  "revision": "planner-fixture-s5-rev1",
+  "rawGoal": "Fill in my full name",
+  "pureRegexNerTokenization": { "taskGoal": "PERSONNAME#1", "note": "degenerate whole-string NER false positive, ask-band 0.427 -- see _fixture_notes; not used for scoring" },
+  "taskGoal": "Fill in my full name using PROFILENAME#1",
+  "tokenLabels": ["PROFILENAME#1"],
+  "viewport": { "w": 1280, "h": 720 },
+  "elements": [
+    {
+      "agentId": "agent-1",
+      "tag": "input",
+      "role": "textbox",
+      "type": "password",
+      "label": null,
+      "bbox": { "x": 24, "y": 118, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "input",
+      "role": "textbox",
+      "type": "email",
+      "label": null,
+      "bbox": { "x": 24, "y": 178, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-3",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": null,
+      "bbox": { "x": 24, "y": 238, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-4",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": "Enter your full name",
+      "bbox": { "x": 24, "y": 498, "w": 300, "h": 32 },
+      "sensitive": false,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-5",
+      "tag": "button",
+      "role": "button",
+      "type": null,
+      "label": "Continue",
+      "bbox": { "x": 24, "y": 540, "w": 90, "h": 32 },
+      "sensitive": false,
+      "tier": "navigational"
+    }
+  ],
+  "regions": [
+    { "kind": "password", "bbox": { "x": 24, "y": 118, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "field", "bbox": { "x": 24, "y": 178, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "field", "bbox": { "x": 24, "y": 238, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "text-pii", "bbox": { "x": 110, "y": 400, "w": 140, "h": 16 }, "source": "dom" },
+    { "kind": "face", "bbox": { "x": 24, "y": 320, "w": 96, "h": 96 }, "source": "vision" }
+  ],
+  "history": [],
+  "expected": {
+    "notes": "fill_profile is not offered to the model at all (removed from the prompt/schema, retry 1). Tokenized run: type the PROFILENAME#1 token verbatim into the name field (agent-4). Raw-goal run: rawGoal carries no vault-token reference at all (that composition step doesn't exist upstream of this fixture yet -- see _fixture_notes), so the model has no concrete value available; scored on target+action only, any value accepted, since 'the right field, no usable value' is the honest ceiling here.",
+    "accept": [
+      { "action": "type", "targetId": "agent-4", "valueContains": "PROFILENAME#1" }
+    ],
+    "acceptRawGoal": [
+      { "action": "type", "targetId": "agent-4" }
+    ]
+  }
+}

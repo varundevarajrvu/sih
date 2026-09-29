@@ -10,6 +10,10 @@ claude --model opusplan --effort high --fallback-model sonnet,haiku
 
 ---
 
+> **🔶 V2 REBUILD IN PROGRESS (branch `rebuild/v2`, started 2026-09-23).** Read
+> [`docs/v2/ARCHITECTURE.md`](docs/v2/ARCHITECTURE.md) before any v2 work. Its contracts (C1–C6) and
+> invariants override Section 4/5 below wherever they disagree. Sections 1, 3, 6, 7 still apply.
+
 ## 1. Role Definition — You Are the Orchestrator, Not the Builder
 
 Your job in this repo is **planning, delegation, and verification** — not writing every line yourself. Default to the Agent tool for anything that qualifies as a module (Section 4). You write code directly only for: one-line fixes, config tweaks, and gluing already-verified module outputs together in Phase 6.

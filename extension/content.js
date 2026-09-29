@@ -112,6 +112,314 @@ async function loadLibModules() {
 }
 
 // ---------------------------------------------------------------------
+// V4a (integration-v2): the pure orchestrator (extension/lib/
+// agent-loop-v2.js) plus the one-place PIPELINE_VERSION switch (lib/
+// pipeline-version.js). Separate loader from loadLibModules() above so
+// selecting "v1" never pays for (or even fetches) v2's modules -- v1's own
+// runAgentLoop() calls loadLibModules() itself and knows nothing about
+// this function. See buildContentScriptIoV2()/runAgentLoopV2Adapter()
+// below for how these are wired into the actual loop.
+// ---------------------------------------------------------------------
+let AgentLoopV2 = null;
+let PipelineVersionLib = null;
+
+async function loadLibModulesV2() {
+  await loadLibModules(); // DomScanner/Redaction/ActionRisk/StallDetector/ProfileVault/CaptureHash -- reused as-is by the v2 io adapter
+  if (!AgentLoopV2) {
+    AgentLoopV2 = await import(browser.runtime.getURL("lib/agent-loop-v2.js"));
+  }
+  if (!PipelineVersionLib) {
+    PipelineVersionLib = await import(browser.runtime.getURL("lib/pipeline-version.js"));
+  }
+}
+
+let cachedPipelineVersion = null;
+async function resolvePipelineVersion() {
+  if (!PipelineVersionLib) {
+    PipelineVersionLib = await import(browser.runtime.getURL("lib/pipeline-version.js"));
+  }
+  cachedPipelineVersion = await PipelineVersionLib.getPipelineVersion(browser.storage.local);
+  return cachedPipelineVersion;
+}
+
+// ---------------------------------------------------------------------
+// V4a: the io adapter that gives agent-loop-v2.js's pure orchestrator real
+// chrome/DOM access. Every field here corresponds 1:1 to a field named in
+// agent-loop-v2.js's own "IO CONTRACT" header comment -- read that first if
+// a field's purpose isn't obvious from its one-line comment here.
+//
+// capture()/detect() SHARE ONE underlying round trip (the existing
+// CAPTURE_AND_DETECT message, byte-for-byte the same one v1's loop already
+// uses) -- see agent-loop-v2.js's header for why that's a documented,
+// deliberate simplification rather than an accidental coupling.
+// ---------------------------------------------------------------------
+function buildContentScriptIoV2({ runAbort, getProfileValue }) {
+  let lastCaptureAndDetectResp = null;
+
+  return {
+    getTaskGoal: async () => {
+      const stored = await browser.storage.local.get("taskGoal");
+      return typeof stored.taskGoal === "string" && stored.taskGoal.trim() ? stored.taskGoal.trim() : "(no task goal set)";
+    },
+    getProfile: async () => ProfileVault.getProfile(browser.storage.local),
+    getProfileValue,
+    getViewport: () => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio || 1,
+    }),
+    newRevision: () =>
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `rev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    now: () => performance.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    isAborted: () => runAbort.signal.aborted,
+    reportProgress: (patch) => reportProgress(patch),
+    // performance.memory is Chrome-only (non-standard) -- undefined
+    // elsewhere. Matches v1's own snapshotMemory() precedent in this file.
+    getMemoryUsage: () =>
+      typeof performance !== "undefined" && performance.memory
+        ? {
+            usedJSHeapSize: performance.memory.usedJSHeapSize,
+            totalJSHeapSize: performance.memory.totalJSHeapSize,
+            jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+          }
+        : null,
+
+    capture: async () => {
+      const resp = await browser.runtime.sendMessage({ type: "CAPTURE_AND_DETECT" });
+      if (!resp || resp.type !== "CAPTURE_AND_DETECT_RESULT") {
+        throw new Error((resp && resp.error) || "CAPTURE_AND_DETECT failed with no response from background");
+      }
+      lastCaptureAndDetectResp = resp;
+      return {
+        screenshotBase64: resp.screenshot,
+        screenshotWidthPx: resp.screenshotWidthPx,
+        screenshotHeightPx: resp.screenshotHeightPx,
+        screenshotHash: resp.screenshotHash,
+        captureMs: resp.captureMs,
+        throttleWaitMs: resp.throttleWaitMs,
+      };
+    },
+    // Returns the SAME round trip's boxes -- see this function's own
+    // header comment on why capture()/detect() are combined in production.
+    detect: async () => ({
+      boxes: (lastCaptureAndDetectResp && lastCaptureAndDetectResp.boxes) || [],
+      detectMs: (lastCaptureAndDetectResp && lastCaptureAndDetectResp.detectMs) || 0,
+    }),
+
+    // RULING 1 (unchanged from v1): action-executor FIRST (stamps
+    // data-agent-id), dom-scanner SECOND (reuses those ids) -- see
+    // computeMaxAgentIndex()'s own call site in v1's loop for why the
+    // fallback counter must continue action-executor's numbering rather
+    // than restart at 1 (CONTRACT MISMATCH #2, Phase 4 RESULT).
+    //
+    // V4b (integration-v2, part B): subframe + shadow-DOM parity. Closed
+    // shadow roots were ALREADY covered before this pass -- DomScanner.
+    // scanForPii()/ActionExecutor.buildDomSnapshot() are the SAME v1
+    // functions v1's own loop calls, and their `unscannableRegions` output
+    // already includes a defensively-redacted closed-shadow-host entry;
+    // V4a's io.scanDom() just never forwarded it anywhere useful
+    // downstream (agent-loop-v2.js now folds `unscannableRegions` into C5's
+    // `regions` and into need_visual's redact() call -- see that file's own
+    // V4b comments). What WAS missing is subframe merging: reuse v1's own
+    // collectAndMergeSubframeReports() (defined earlier in this file, TOP
+    // FRAME ONLY) VERBATIM -- same handshake, same FAIL LOUD / defensive-
+    // whole-iframe-redaction policy, same frame-coordination machinery that
+    // already runs unconditionally at this file's top level regardless of
+    // PIPELINE_VERSION (the FRAME_HELLO/SIH_FRAME_TOKEN wiring is not
+    // gated on v1 vs v2 at all -- only the LOOP that calls it is). A
+    // subframe never runs v2's loop (IS_TOP_FRAME's RUN_AGENT_LOOP guard,
+    // unchanged), so this call is only ever reached from the top frame,
+    // same as v1's own call site.
+    scanDom: async () => {
+      const {
+        domSnapshot,
+        idMap,
+        unscannableRegions: actionableUnscannable,
+      } = ActionExecutor.buildDomSnapshot(document);
+      const maxIndex = computeMaxAgentIndex(idMap);
+      let nextFallbackIndex = maxIndex;
+      const { sensitiveNodes, unscannableRegions: scannerUnscannable } = DomScanner.scanForPii(document, {
+        getAgentId: () => `agent-${++nextFallbackIndex}`,
+      });
+
+      const subframeData = IS_TOP_FRAME
+        ? await collectAndMergeSubframeReports()
+        : { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [], framesReported: 0, framesMerged: 0, droppedFrames: [], defensivelyRedactedIframeCount: 0 };
+
+      return {
+        // Subframe entries are ALREADY sanitized + offset-translated (top-
+        // frame CSS px) by collectAndMergeSubframeReports() -- same v1
+        // precedent as runAgentLoop()'s own `mergedDomSnapshot`/
+        // `allSensitiveNodes` concatenation. `idMap` stays TOP-FRAME-ONLY
+        // on purpose (a cross-frame element reference is not a thing);
+        // subframe agentIds (`agent-f<N>-<n>`) simply won't resolve via
+        // idMap.get() anywhere downstream, which every consumer already
+        // guards against (`if (!el) continue`/`if (el) ...`).
+        domSnapshot: domSnapshot.concat(subframeData.domSnapshot),
+        idMap,
+        sensitiveNodes: sensitiveNodes.concat(subframeData.sensitiveNodes),
+        unscannableRegions: [...actionableUnscannable, ...scannerUnscannable, ...subframeData.unscannableRegions],
+        framesReported: subframeData.framesReported,
+        framesMerged: subframeData.framesMerged,
+        framesDropped: (subframeData.droppedFrames || []).length,
+        defensivelyRedactedIframeCount: subframeData.defensivelyRedactedIframeCount || 0,
+      };
+    },
+
+    nerCall: async (texts) => {
+      const resp = await browser.runtime.sendMessage({ type: "NER_DETECT", texts });
+      if (!resp || resp.type !== "NER_DETECT_RESULT") {
+        throw new AgentLoopV2.NerUnavailableError((resp && resp.error) || "no response from background");
+      }
+      return resp.spans;
+    },
+
+    sendAnalyze: async (payload) => {
+      const resp = await browser.runtime.sendMessage({ type: "ANALYZE_V2", payload });
+      if (!resp) return { ok: false, status: 0, error: { message: "no response from background" } };
+      if (resp.type === "ANALYZE_V2_RESULT") return { ok: true, body: resp.action };
+      return { ok: false, status: resp.status, error: resp.error };
+    },
+
+    // V4b: routed through executeActionAcrossFrames() (defined earlier in
+    // this file, v1's own cross-frame action relay) instead of calling
+    // ActionExecutor.executeAction() directly -- a subframe-owned target
+    // (agentId shaped `agent-f<N>-<n>`, from collectAndMergeSubframeReports()
+    // above) throws TARGET_NOT_FOUND against the TOP frame's idMap by
+    // construction (idMap is top-frame-only, see scanDom()'s own comment);
+    // executeActionAcrossFrames() is what turns that into a relay to the
+    // frame that actually owns the element (EXECUTE_ACTION_IN_FRAME ->
+    // background.js -> that frame's own RUN_ACTION_IN_FRAME handler,
+    // ALREADY built by v1, reused verbatim -- see this file's own header
+    // comment on that mechanism). For a top-frame target this is a
+    // behaviorally transparent passthrough (the try succeeds on the first
+    // call, exactly as before this pass). Return shape: `{result,
+    // relayedToFrameId?}` -- unwrapped to just the inner result here, since
+    // agent-loop-v2.js's IO CONTRACT only names `io.executeAction(...) ->
+    // Promise<*>|*` and does not need to know a relay happened.
+    executeAction: async (action, idMap, opts) => {
+      const { result } = await executeActionAcrossFrames(action, idMap, { ...opts, classifyActionRisk: ActionRisk.classifyActionRisk });
+      return result;
+    },
+
+    // V4b: real consent UI (popup.js) needs the actual pending action +
+    // resolved element to build its plain-language description via
+    // action-describe.js's describePendingAction() -- forwarded through to
+    // background.js's CONSENT_REQUEST broadcast unmodified. `action.value`
+    // here is still TOKEN-valued (agent-loop-v2.js never rehydrates before
+    // calling requestConsent()) -- describePendingAction() is built to
+    // never print it raw regardless (see that function's own SAFETY note),
+    // so forwarding it through the background/popup relay carries no new
+    // egress risk: it is not a raw value in the first place.
+    requestConsent: async ({ code, reason, elementDescription, action, element }) => {
+      const resp = await browser.runtime.sendMessage({ type: "REQUEST_CONSENT", request: { code, reason, elementDescription, action, element } });
+      return !!(resp && resp.approved === true);
+    },
+
+    // C5/C2 amendment (2026-09-26): the RAW ask-band span text is passed
+    // to background.js -> popup.js's own consent-style panel and NOWHERE
+    // else -- never onward to nerCall/sendAnalyze. Default/timeout is
+    // KEEP PRIVATE (`true`) -- the opposite default from requestConsent()
+    // above, which is why this is its own message pair
+    // (REQUEST_GOAL_PRIVACY_REVIEW/RESPOND_GOAL_PRIVACY_REVIEW) rather
+    // than reusing CONSENT_REQUEST's.
+    reviewGoalPrivacySpan: async ({ text, label, score }) => {
+      const resp = await browser.runtime.sendMessage({ type: "REQUEST_GOAL_PRIVACY_REVIEW", request: { text, label, score } });
+      return !(resp && resp.keepPrivate === false);
+    },
+
+    // Only ever called for a need_visual escalation. v2's vision model is
+    // UltraFace ONLY (V0b decision, ARCHITECTURE.md -- yolos-tiny is
+    // unloaded), so unlike v1's COCO-80 filter, every box detect() returns
+    // IS already privacy-relevant ("face") -- no class filter needed here.
+    redact: (screenshotBase64, visionBoxes, domNodes, opts) => Redaction.redact(screenshotBase64, visionBoxes, domNodes, opts),
+
+    // v1-style defense-in-depth: the CURRENT live raw value for every
+    // sensitive node this step's scan found (mirrors v1's assertNoRawPii
+    // in spirit -- see that function's own comment).
+    getLiveSensitiveRawValues: (sensitiveNodes, idMap) => {
+      const out = [];
+      for (const node of sensitiveNodes) {
+        const el = idMap.get(node.agentId);
+        if (!el) continue;
+        const rawValue = (typeof el.value === "string" && el.value) || (el.textContent || "").trim();
+        if (rawValue) out.push({ agentId: node.agentId, rawValue });
+      }
+      return out;
+    },
+
+    // capture-hash.js RULING A' -- reused verbatim from v1's loop.
+    detectStaleCapture: ({ screenshotWidthPx, screenshotHeightPx, screenshotHash, expectedWidthPx, expectedHeightPx, seenHashScrollY }) => {
+      const scrollY = window.scrollY;
+      const dimensionMismatch = CaptureHash.detectDimensionMismatch({
+        expectedWidth: expectedWidthPx,
+        expectedHeight: expectedHeightPx,
+        actualWidth: screenshotWidthPx,
+        actualHeight: screenshotHeightPx,
+      });
+      const hashRecurrence = CaptureHash.detectHashRecurrence(seenHashScrollY, { hash: screenshotHash, scrollY });
+      if (typeof screenshotHash === "string" && screenshotHash.length > 0 && !seenHashScrollY.has(screenshotHash)) {
+        seenHashScrollY.set(screenshotHash, scrollY);
+      }
+      return { dimensionMismatch, hashRecurrence };
+    },
+
+    detectStall: (actionHistory) => StallDetector.detectStall(actionHistory),
+  };
+}
+
+/**
+ * V4a: the v2 counterpart of runAgentLoop() -- sets up the real io adapter,
+ * delegates every actual decision to the PURE runAgentLoopV2() (lib/
+ * agent-loop-v2.js), and reports progress/summary the same way v1 does so
+ * the existing popup polling (GET_RUN_STATE) keeps working unmodified for
+ * either pipeline version.
+ */
+async function runAgentLoopV2Adapter() {
+  await loadLibModulesV2();
+
+  const runAbort = new AbortController();
+  currentRunAbortController = runAbort;
+
+  const getProfileValue = await buildProfileValueGetter();
+  const io = buildContentScriptIoV2({ runAbort, getProfileValue });
+
+  const taskGoal = await io.getTaskGoal();
+  reportProgress({
+    active: true,
+    taskGoal,
+    maxSteps: AgentLoopV2.MAX_STEPS_V2,
+    step: 0,
+    stage: "starting",
+    outcome: null,
+    lastAction: null,
+    lastBlock: null,
+    lastError: null,
+    pipelineVersion: "v2",
+  });
+
+  try {
+    const result = await AgentLoopV2.runAgentLoopV2(io);
+    console.log("[agent-loop-v2] RUN SUMMARY:", JSON.stringify({ outcome: result.outcome, steps: result.steps, staleCaptureCount: result.staleCaptureCount }, null, 2));
+    reportProgress({ active: false, outcome: result.outcome, step: result.steps });
+    return { type: "RUN_AGENT_LOOP_RESULT", outcome: result.outcome, steps: result.steps, stepResults: result.stepResults, staleCaptureCount: result.staleCaptureCount };
+  } catch (err) {
+    // C6 (EgressAssertionError) and any other unexpected throw both land
+    // here -- fail closed, never send, report loudly. err.message is
+    // always a static description (EgressAssertionError never includes a
+    // raw value -- see agent-loop-v2.js's own class comment).
+    console.error("[agent-loop-v2] run threw:", err);
+    reportProgress({ active: false, outcome: "error", lastError: { summary: err && err.message } });
+    return { type: "RUN_AGENT_LOOP_RESULT", outcome: "error", error: err && err.message };
+  } finally {
+    if (currentRunAbortController === runAbort) currentRunAbortController = null;
+  }
+}
+
+// ---------------------------------------------------------------------
 // PROFILE-VAULT FEATURE: builds the SYNCHRONOUS `getProfileValue` closure
 // action-executor.js's dispatchFillProfile() requires (see that file's
 // "HOW TO CONSUME" block on profile-vault.js for why it must be
@@ -825,7 +1133,18 @@ function mergeAndDefensivelyRedactUnmergedIframes([sensitiveNodes, domSnapshot, 
 // only the already-resolved label STRING. This allowlist matches against
 // that resolved string, case-insensitively.
 // ---------------------------------------------------------------------
-const PRIVACY_RELEVANT_LABELS = new Set(["person", "book"]);
+// V2 addition (2026-09-24, vision-v2): "face" is UltraFace RFB-320's only
+// output label (see offscreen.entry.js's VISION_MODEL="ultraface" path
+// and extension/lib/face-detect.js -- FACE_DETECT_CONSTANTS.FACE_LABEL).
+// It is exactly the real-photographed-subject category the "person"/"book"
+// reasoning above already argues for keeping -- a face detection IS the
+// PII-relevant signal this allowlist exists to let through, not a new
+// exception to it. yolos's "person"/"book" labels are kept here too even
+// though yolos is no longer loaded by default (VISION_MODEL switch,
+// offscreen.entry.js) -- harmless if yolos is ever re-enabled, and this
+// allowlist is deliberately model-agnostic (it matches on the resolved
+// label string, whichever detector produced it).
+const PRIVACY_RELEVANT_LABELS = new Set(["person", "book", "face"]);
 
 function filterPrivacyRelevantBoxes(boxes) {
   if (!Array.isArray(boxes)) return [];
@@ -2869,14 +3188,20 @@ browser.runtime.onMessage.addListener((message) => {
         error: "RUN_AGENT_LOOP received in a non-top frame -- refusing to run a second agent loop instance",
       });
     }
-    return runAgentLoop().catch((err) => ({
-      type: "RUN_AGENT_LOOP_ERROR",
-      // err.message here is always a static description string produced
-      // by code in this file (ActionExecutionError messages, this file's
-      // own thrown errors, etc.) -- never a stringified payload. Kept as
-      // a deliberate invariant, not an accident: see assertNoRawPii.
-      error: (err && err.message) || String(err),
-    }));
+    // V4a: PIPELINE_VERSION switch, read from the ONE place it lives
+    // (lib/pipeline-version.js). Defaults to "v2"; "v1" keeps running the
+    // original, unmodified runAgentLoop() below byte-for-byte -- neither
+    // path is touched by the other's selection.
+    return resolvePipelineVersion()
+      .then((version) => (version === "v1" ? runAgentLoop() : runAgentLoopV2Adapter()))
+      .catch((err) => ({
+        type: "RUN_AGENT_LOOP_ERROR",
+        // err.message here is always a static description string produced
+        // by code in this file (ActionExecutionError messages, this file's
+        // own thrown errors, etc.) -- never a stringified payload. Kept as
+        // a deliberate invariant, not an accident: see assertNoRawPii.
+        error: (err && err.message) || String(err),
+      }));
   }
 
   // TASK 1 (Stop). background.js relays this from the popup, targeting

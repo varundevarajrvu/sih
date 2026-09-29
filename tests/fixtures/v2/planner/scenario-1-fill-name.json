@@ -1,0 +1,79 @@
+{
+  "_fixture_notes": "RETRY 2 (CLAUDE.md §7, 2026-09-25): taskGoal REBUILT via the real C5 pipeline -- findRegexSpans (extension/lib/pii-regex.js) found nothing (a bare first name has no regex signature); the NER service (urchade/gliner_multi_pii-v1, ner/app.py on 127.0.0.1:8757) found 'Simon' as a person-name span at strip-band confidence; mergeSpans + tokenize (extension/lib/pii-tokenizer.js) produced the taskGoal below. This SUPERSEDES the earlier hand-tokenization judgment call ('kept literal, per V0a's borderline-confidence note') -- that reasoning predicted low NER confidence for a bare imperative name and was wrong; the real model scored it well above the strip threshold on this exact string. rawGoal is preserved below for the retry-2-mandated raw-goal comparison run (scored alongside the tokenized version, same fixture, see benchmarks/results/v3-planner-retry2.json). Mirrors demo/test-page.html with no query string (DEMO-SCRIPT.md scenario 1). agentId numbering follows action-executor's documented order.",
+  "schema": "dhristi-scene-v2",
+  "mode": "semantic",
+  "revision": "planner-fixture-s1-rev1",
+  "rawGoal": "fill the name as Simon",
+  "taskGoal": "fill the name as PERSONNAME#1",
+  "tokenLabels": ["PERSONNAME#1"],
+  "viewport": { "w": 1280, "h": 720 },
+  "elements": [
+    {
+      "agentId": "agent-1",
+      "tag": "input",
+      "role": "textbox",
+      "type": "password",
+      "label": null,
+      "bbox": { "x": 24, "y": 118, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "input",
+      "role": "textbox",
+      "type": "email",
+      "label": null,
+      "bbox": { "x": 24, "y": 178, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-3",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": null,
+      "bbox": { "x": 24, "y": 238, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-4",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": "Enter your full name",
+      "bbox": { "x": 24, "y": 498, "w": 300, "h": 32 },
+      "sensitive": false,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-5",
+      "tag": "button",
+      "role": "button",
+      "type": null,
+      "label": "Continue",
+      "bbox": { "x": 24, "y": 540, "w": 90, "h": 32 },
+      "sensitive": false,
+      "tier": "navigational"
+    }
+  ],
+  "regions": [
+    { "kind": "password", "bbox": { "x": 24, "y": 118, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "field", "bbox": { "x": 24, "y": 178, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "field", "bbox": { "x": 24, "y": 238, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "text-pii", "bbox": { "x": 110, "y": 400, "w": 140, "h": 16 }, "source": "dom" },
+    { "kind": "face", "bbox": { "x": 24, "y": 320, "w": 96, "h": 96 }, "source": "vision" }
+  ],
+  "history": [],
+  "expected": {
+    "notes": "Tokenized run: step 1 must type the PERSONNAME#1 token VERBATIM (C2 -- never invent/decode a token) into the safe, non-sensitive fullName field (agent-4). Raw-goal comparison run (rawGoal as taskGoal, C5-noncompliant, kept only for the retry-2-mandated side-by-side): accepts the literal 'Simon' at the same target instead -- see benchmarks/bench_v3_planner.py's goal_mode handling. fill_profile is not offered to the model at all as of retry 1 (removed from the prompt/schema).",
+    "accept": [
+      { "action": "type", "targetId": "agent-4", "valueContains": "PERSONNAME#1" }
+    ],
+    "acceptRawGoal": [
+      { "action": "type", "targetId": "agent-4", "valueContains": "Simon" }
+    ]
+  }
+}

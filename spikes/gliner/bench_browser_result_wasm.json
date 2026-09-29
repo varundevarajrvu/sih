@@ -1,0 +1,143 @@
+{
+  "path": "A_browser_onnxruntime_web",
+  "requestededExecutionProvider": "wasm",
+  "chromiumVersion": "153.0.8010.12",
+  "initResult": {
+    "ok": true,
+    "coldLoadMs": 16353.519999980927
+  },
+  "benchResult": {
+    "backendUsed": "wasm",
+    "coldLoadMs": 16353.519999980927,
+    "results": [
+      {
+        "id": "f01_imperative_name",
+        "text_len_chars": 26,
+        "warm_runs": 20,
+        "p50_ms": 153.01,
+        "p95_ms": 176.39,
+        "mean_ms": 155.13,
+        "min_ms": 135.69,
+        "max_ms": 195.33,
+        "spans": []
+      },
+      {
+        "id": "f02_declarative_name",
+        "text_len_chars": 51,
+        "warm_runs": 20,
+        "p50_ms": 222.75,
+        "p95_ms": 286.63,
+        "mean_ms": 221.38,
+        "min_ms": 172.7,
+        "max_ms": 339.14,
+        "spans": []
+      },
+      {
+        "id": "f03_address",
+        "text_len_chars": 63,
+        "warm_runs": 20,
+        "p50_ms": 191.73,
+        "p95_ms": 247.78,
+        "mean_ms": 207.99,
+        "min_ms": 184.17,
+        "max_ms": 260.55,
+        "spans": []
+      },
+      {
+        "id": "f04_dob",
+        "text_len_chars": 25,
+        "warm_runs": 20,
+        "p50_ms": 158.25,
+        "p95_ms": 248.63,
+        "mean_ms": 172.32,
+        "min_ms": 147.62,
+        "max_ms": 254.1,
+        "spans": []
+      },
+      {
+        "id": "f05_account_number",
+        "text_len_chars": 36,
+        "warm_runs": 20,
+        "p50_ms": 155,
+        "p95_ms": 188.27,
+        "mean_ms": 156.11,
+        "min_ms": 139.95,
+        "max_ms": 189.43,
+        "spans": [
+          {
+            "start": 15,
+            "end": 29,
+            "label": "account number",
+            "text": "00112233445566",
+            "score": 0.5676
+          }
+        ]
+      },
+      {
+        "id": "f06_multi_entity",
+        "text_len_chars": 61,
+        "warm_runs": 20,
+        "p50_ms": 208.8,
+        "p95_ms": 246.76,
+        "mean_ms": 211.44,
+        "min_ms": 185.11,
+        "max_ms": 252.08,
+        "spans": []
+      },
+      {
+        "id": "f07_control_no_pii_a",
+        "text_len_chars": 33,
+        "warm_runs": 20,
+        "p50_ms": 137.37,
+        "p95_ms": 169.89,
+        "mean_ms": 141.55,
+        "min_ms": 126.67,
+        "max_ms": 196.25,
+        "spans": []
+      },
+      {
+        "id": "f08_control_no_pii_b",
+        "text_len_chars": 38,
+        "warm_runs": 20,
+        "p50_ms": 145.17,
+        "p95_ms": 163.71,
+        "mean_ms": 145.65,
+        "min_ms": 133.23,
+        "max_ms": 164.78,
+        "spans": []
+      },
+      {
+        "id": "f09_password",
+        "text_len_chars": 26,
+        "warm_runs": 20,
+        "p50_ms": 175.54,
+        "p95_ms": 272.53,
+        "mean_ms": 178.16,
+        "min_ms": 142.02,
+        "max_ms": 281.83,
+        "spans": [
+          {
+            "start": 15,
+            "end": 26,
+            "label": "password",
+            "text": "Tr0ub4dor&3",
+            "score": 0.4787
+          }
+        ]
+      },
+      {
+        "id": "f10_checkout_blob",
+        "text_len_chars": 2011,
+        "warm_runs": 20,
+        "p50_ms": 4931.85,
+        "p95_ms": 5591.13,
+        "mean_ms": 5028.81,
+        "min_ms": 4456.39,
+        "max_ms": 6664.73,
+        "spans": []
+      }
+    ]
+  },
+  "benchError": null,
+  "consoleLines": []
+}
