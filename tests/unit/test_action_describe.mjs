@@ -9,7 +9,13 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
-import { describeAction, describeOutcome } from "../../extension/lib/action-describe.js";
+import {
+  describeAction,
+  describeOutcome,
+  describePendingAction,
+  describePolicyReason,
+  phraseForValueToken,
+} from "../../extension/lib/action-describe.js";
 
 describe("describeAction", () => {
   test("type action with a labeled node -> 'typed into <label>'", () => {
@@ -210,5 +216,109 @@ describe("describeOutcome", () => {
       assert.notEqual(blocked.label, describeOutcome("done").label);
       assert.notEqual(blocked.label, describeOutcome("stopped").label);
     });
+  });
+});
+
+// ===========================================================================
+// V4b (integration-v2, part B): consent-panel helpers.
+// ===========================================================================
+describe("phraseForValueToken", () => {
+  test("PROFILE-prefixed tokens -> 'your saved <category>'", () => {
+    assert.equal(phraseForValueToken("PROFILEEMAIL#1"), "your saved email");
+    assert.equal(phraseForValueToken("PROFILENAME#1"), "your saved name");
+    assert.equal(phraseForValueToken("PROFILEPHONE#2"), "your saved phone number");
+  });
+
+  test("ordinary regex/NER token prefixes -> a category phrase, never the token itself", () => {
+    assert.equal(phraseForValueToken("EMAIL#1"), "a previously-seen email address");
+    assert.equal(phraseForValueToken("PERSONNAME#3"), "a previously-seen name");
+    assert.equal(phraseForValueToken("AADHAAR#1"), "a previously-seen Aadhaar-shaped number");
+  });
+
+  test("an unrecognized-but-token-shaped prefix still degrades to a safe generic phrase", () => {
+    assert.equal(phraseForValueToken("SOMENEWLABEL#7"), "a previously-seen value");
+  });
+
+  test("non-token-shaped value -> null (caller must say nothing about it, never fall back to printing it)", () => {
+    assert.equal(phraseForValueToken("mock-input"), null);
+    assert.equal(phraseForValueToken("hunter2"), null);
+    assert.equal(phraseForValueToken(""), null);
+    assert.equal(phraseForValueToken(null), null);
+    assert.equal(phraseForValueToken(undefined), null);
+    assert.equal(phraseForValueToken(42), null);
+  });
+});
+
+describe("describePendingAction", () => {
+  test("type with a PROFILE token value into a labeled sensitive field -> 'type your saved email into <label>', never the value", () => {
+    const element = { agentId: "agent-2", tag: "input", type: "email", label: "Email" };
+    const result = describePendingAction({ action: "type", targetId: "agent-2", value: "PROFILEEMAIL#1" }, element);
+    assert.equal(result, "type your saved email into 'Email'");
+  });
+
+  test("type with an ordinary (non-token) value -> value is never printed, only the target", () => {
+    const element = { agentId: "agent-4", tag: "input", type: "text", label: "Full name" };
+    const result = describePendingAction({ action: "type", targetId: "agent-4", value: "some plain text" }, element);
+    assert.ok(!result.includes("some plain text"), "the raw value must never appear in a consent description");
+    assert.equal(result, "type into 'Full name'");
+  });
+
+  test("click with a labeled element -> 'click <label>'", () => {
+    const element = { agentId: "agent-6", tag: "button", label: "Place Order" };
+    assert.equal(describePendingAction({ action: "click", targetId: "agent-6" }, element), "click 'Place Order'");
+  });
+
+  test("page-level action (no element) degrades to a generic phrase, never throws", () => {
+    assert.equal(describePendingAction({ action: "click", targetId: "page" }, null), "click an element");
+    assert.equal(describePendingAction({ action: "scroll", targetId: "page" }, null), "scroll the page");
+    assert.equal(describePendingAction({ action: "done", targetId: "page" }, null), "mark the task as done");
+  });
+
+  test("press_key includes the (safe, closed-enum) key name but not the target's value", () => {
+    const element = { agentId: "agent-9", tag: "input", label: "Search" };
+    const result = describePendingAction({ action: "press_key", targetId: "agent-9", key: "Enter" }, element);
+    assert.equal(result, "press Enter on 'Search'");
+  });
+
+  test("fill_profile names the category, not the vault value, even if one is (incorrectly) present", () => {
+    const element = { agentId: "agent-2", tag: "input", label: "Email" };
+    const result = describePendingAction(
+      { action: "fill_profile", targetId: "agent-2", value: "vault-secret@example.com", profileField: "email" },
+      element
+    );
+    assert.ok(!result.includes("vault-secret@example.com"));
+    assert.equal(result, "fill 'Email' with your saved email");
+  });
+
+  test("malformed/missing action never throws", () => {
+    assert.equal(describePendingAction(null, null), "perform an action");
+    assert.equal(describePendingAction({}, null), "perform an action");
+  });
+});
+
+describe("describePolicyReason", () => {
+  test("SENSITIVE_TARGET -> plain-English sensitivity explanation", () => {
+    assert.match(describePolicyReason("SENSITIVE_TARGET"), /sensitive/i);
+  });
+
+  test("IRREVERSIBLE_ACTION -> plain-English 'hard to undo' explanation", () => {
+    assert.match(describePolicyReason("IRREVERSIBLE_ACTION"), /undo/i);
+  });
+
+  test("INTENT_MISMATCH and SERVER_TIGHTENED each render their own distinct sentence", () => {
+    const intentMismatch = describePolicyReason("INTENT_MISMATCH");
+    const serverTightened = describePolicyReason("SERVER_TIGHTENED");
+    assert.notEqual(intentMismatch, serverTightened);
+    assert.ok(intentMismatch.length > 0 && serverTightened.length > 0);
+  });
+
+  test("an unrecognized code still renders a safe, non-empty generic sentence rather than the raw code or nothing", () => {
+    const result = describePolicyReason("SOME_FUTURE_CODE");
+    assert.ok(result.length > 0);
+    assert.ok(!result.includes("SOME_FUTURE_CODE"));
+  });
+
+  test("null/undefined code degrades to the same generic sentence, never throws", () => {
+    assert.equal(describePolicyReason(null), describePolicyReason(undefined));
   });
 });

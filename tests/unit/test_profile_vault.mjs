@@ -20,8 +20,17 @@ import {
   getProfileFieldValue,
   getProfile,
   setProfile,
+  buildProfileVaultSensitiveNodes,
+  PROFILE_FIELD_TO_PII_TYPE,
 } from "../../extension/lib/profile-vault.js";
-import { sanitizeDomSnapshot } from "../../extension/lib/redaction.js";
+import { sanitizeDomSnapshot, redact } from "../../extension/lib/redaction.js";
+import { scanForPii } from "../../extension/lib/dom-scanner.js";
+import {
+  buildFixtureScreenshotBase64,
+  makeNodeCanvasAdapters,
+  decodePngForSampling,
+  SCALE_FACTOR,
+} from "../fixtures/redaction/fixture.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ACTION_EXECUTOR_PATH = path.resolve(__dirname, "..", "..", "extension", "lib", "action-executor.js");
@@ -295,5 +304,234 @@ describe("VAULT CONTAINMENT: a vault value written via fill_profile never reache
 
     const payloadBytes = JSON.stringify(outgoingPayload);
     assert.ok(!payloadBytes.includes(VAULT_EMAIL), "the vault value must never appear in the outgoing payload bytes -- the same class of assertion assertNoRawPii() makes for page-sourced PII");
+  });
+});
+
+// ===========================================================================
+// 🔴 PII-LEAK FIX REGRESSION -- the CONFIRMED leak (see CLAUDE.md): a
+// fill_profile "full_name" has NO regex/autocomplete signature, so the
+// REAL dom-scanner never flags it on its own, and the vault name survived
+// into the outgoing /analyze payload on the step after the fill.
+//
+// Unlike the "VAULT CONTAINMENT" suite above (which deliberately hardcodes
+// `sensitive: true` at its merge step to isolate sanitizeDomSnapshot()'s own
+// behavior -- a legitimate thing to test in isolation, but exactly the
+// hardcoding that let this bug through undetected: it never exercised the
+// REAL classifier's verdict on a name field), every test below runs the
+// REAL scanForPii() from dom-scanner.js and the REAL
+// buildProfileVaultSensitiveNodes() from profile-vault.js -- the actual
+// production code path, not a stand-in for it.
+// ===========================================================================
+describe("PII-LEAK FIX: a vault-filled full_name node is contained on the NEXT step, using the REAL dom-scanner classifier", () => {
+  const VAULT_NAME = "Varun Devaraj";
+  // Deliberately NOT type=password/email/tel and NOT a PII-relevant
+  // autocomplete token -- autocomplete="name" is one of dom-scanner.js's own
+  // documented, deliberate non-flags (CLAUDE.md: "Generic autocomplete
+  // tokens (name, street-address, postal-code) are NOT flagged"). This is
+  // precisely the shape of field the confirmed leak was found on.
+  const FIXTURE_HTML = `<!doctype html><html><body>
+    <input id="nameField" type="text" autocomplete="name" />
+  </body></html>`;
+
+  function freshDom() {
+    const virtualConsole = new VirtualConsole().sendTo(console, { omitJSDOMErrors: true });
+    const dom = new JSDOM(FIXTURE_HTML, { url: "https://fixture.example/", runScripts: "outside-only", virtualConsole });
+    dom.window.eval(ACTION_EXECUTOR_SRC);
+    return dom;
+  }
+
+  test("precondition/diagnosis: the REAL dom-scanner does not flag a bare full_name field on its own -- confirms why the leak was invisible to Phase 2a", () => {
+    const dom = freshDom();
+    const { document } = dom.window;
+    const AE = dom.window.ActionExecutor;
+    // Real call order per CLAUDE.md's binding ruling: action-executor FIRST
+    // (stamps data-agent-id), dom-scanner SECOND (reuses those ids).
+    const { idMap } = AE.buildDomSnapshot(document);
+    const { sensitiveNodes } = scanForPii(document);
+    const nameEl = document.getElementById("nameField");
+    const nameAgentId = nameEl.getAttribute(AE.AGENT_ID_ATTR);
+    assert.ok(nameAgentId, "precondition: action-executor actually stamped an id on the name field");
+    assert.equal(
+      sensitiveNodes.some((n) => n.agentId === nameAgentId),
+      false,
+      "the real scanner has no regex/autocomplete signature for a bare name -- this IS the diagnosis, not an assumption"
+    );
+  });
+
+  test("THE FIX: buildProfileVaultSensitiveNodes() + sanitizeDomSnapshot() strip the vault name from the outgoing DOM JSON on the step after the fill, even though the REAL scanner still doesn't flag it", async () => {
+    const dom = freshDom();
+    const { document } = dom.window;
+    const AE = dom.window.ActionExecutor;
+
+    const { idMap } = AE.buildDomSnapshot(document);
+    const nameEl = document.getElementById("nameField");
+    const nameAgentId = nameEl.getAttribute(AE.AGENT_ID_ATTR);
+
+    const storage = makeFakeStorage();
+    await setProfile(storage, { full_name: VAULT_NAME, email: "", phone: "" });
+    const profile = await getProfile(storage);
+    const getProfileValue = (field) => getProfileFieldValue(profile, field);
+
+    // Step N: fill_profile succeeds -- the feature working as designed.
+    const fillResult = AE.executeAction(
+      { action: "fill_profile", targetId: nameAgentId, value: null, profileField: "full_name" },
+      idMap,
+      { getProfileValue }
+    );
+    assert.equal(fillResult.ok, true);
+    assert.equal(nameEl.value, VAULT_NAME, "precondition: the vault value really is now in the live DOM");
+
+    // Step N+1 -- mirrors content.js's real per-step sequence: re-scan
+    // (action-executor FIRST, dom-scanner SECOND), both REAL modules.
+    const { domSnapshot: rawSnapshot, idMap: idMap2 } = AE.buildDomSnapshot(document);
+    const { sensitiveNodes } = scanForPii(document);
+
+    const rawNameNode = rawSnapshot.find((n) => n.agentId === nameAgentId);
+    assert.equal(
+      rawNameNode.text,
+      VAULT_NAME,
+      "precondition: the raw pre-sanitization snapshot carries the vault value via getAccessibleText()'s .value read -- THIS is the confirmed leak's mechanism"
+    );
+    assert.equal(
+      sensitiveNodes.some((n) => n.agentId === nameAgentId),
+      false,
+      "precondition: confirmed again on this later step -- the real scanner still does not flag it by itself"
+    );
+
+    // THE FIX: content.js's own filledProfileAgentIds Map (agentId ->
+    // profileField), as recorded by its "PII-LEAK FIX" block on the
+    // successful fill_profile act above.
+    const filledProfileAgentIds = new Map([[nameAgentId, "full_name"]]);
+    const alreadyFlaggedAgentIds = new Set(sensitiveNodes.map((n) => n.agentId));
+    // jsdom has no layout engine (real geometry is UNVERIFIED outside a
+    // browser, same caveat as every other module here) -- inject a fixed,
+    // real-shaped bbox exactly like dom-scanner.js's own tests do.
+    const vaultNodes = buildProfileVaultSensitiveNodes(filledProfileAgentIds, idMap2, alreadyFlaggedAgentIds, {
+      getBBox: () => ({ x: 1, y: 2, w: 3, h: 4 }),
+    });
+
+    assert.equal(vaultNodes.length, 1, "exactly one synthesized node for the one recorded fill_profile target");
+    assert.equal(vaultNodes[0].agentId, nameAgentId);
+    assert.equal(
+      vaultNodes[0].piiType,
+      PROFILE_FIELD_TO_PII_TYPE.full_name,
+      'full_name maps to PiiType\'s "other" escape hatch (orchestrator ruling #5) -- there is no dedicated enum member for a name'
+    );
+    assert.equal(vaultNodes[0].piiType, "other");
+    assert.deepEqual(vaultNodes[0].bbox, { x: 1, y: 2, w: 3, h: 4 }, "bbox must be the FRESH value from idMap2, not a cached one");
+
+    const allSensitiveNodes = sensitiveNodes.concat(vaultNodes);
+
+    // THE SAME merge content.js performs: sensitiveByAgentId -> mergedDomSnapshot.
+    const sensitiveByAgentId = new Map(allSensitiveNodes.map((n) => [n.agentId, n]));
+    const mergedSnapshot = rawSnapshot.map((n) => (sensitiveByAgentId.has(n.agentId) ? { ...n, sensitive: true } : n));
+
+    // THE SAME sanitizeDomSnapshot() call content.js makes right before
+    // building the outgoing /analyze payload -- real module, not a stand-in.
+    const sanitizedDomSnapshot = sanitizeDomSnapshot(mergedSnapshot);
+    const sanitizedNameNode = sanitizedDomSnapshot.find((n) => n.agentId === nameAgentId);
+    assert.equal(
+      sanitizedNameNode.text,
+      null,
+      "THE FIX: the vault-sourced full_name is now stripped, exactly like any other sensitive-flagged raw value"
+    );
+    assert.equal(sanitizedNameNode.sensitive, true);
+
+    // The exact payload shape content.js POSTs to /analyze.
+    const outgoingPayload = {
+      image: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      domSnapshot: sanitizedDomSnapshot,
+      redactedRegions: [],
+      taskGoal: "fill in my full name",
+    };
+    const payloadBytes = JSON.stringify(outgoingPayload);
+    assert.ok(
+      !payloadBytes.includes(VAULT_NAME),
+      "THE FIX: the vault full_name value must never appear in the outgoing payload bytes"
+    );
+  });
+
+  test("THE FIX, image half: the vault-filled node also produces a redactedRegion via the REAL redact(), not only a stripped text field", async () => {
+    const dom = freshDom();
+    const { document } = dom.window;
+    const AE = dom.window.ActionExecutor;
+
+    const { idMap } = AE.buildDomSnapshot(document);
+    const nameEl = document.getElementById("nameField");
+    const nameAgentId = nameEl.getAttribute(AE.AGENT_ID_ATTR);
+
+    const storage = makeFakeStorage();
+    await setProfile(storage, { full_name: VAULT_NAME, email: "", phone: "" });
+    const profile = await getProfile(storage);
+    const getProfileValue = (field) => getProfileFieldValue(profile, field);
+
+    AE.executeAction(
+      { action: "fill_profile", targetId: nameAgentId, value: null, profileField: "full_name" },
+      idMap,
+      { getProfileValue }
+    );
+    assert.equal(nameEl.value, VAULT_NAME, "precondition: the write actually happened");
+
+    const filledProfileAgentIds = new Map([[nameAgentId, "full_name"]]);
+    // A deliberate, real-shaped CSS-px bbox in an area of the fixture
+    // screenshot untouched by any of its own pre-painted regions (see
+    // tests/fixtures/redaction/fixture.mjs's own REGION_A_CORRECT/REGION_B/
+    // REGION_P/REGION_Q) -- at the fixture's own SCALE_FACTOR (2), this
+    // lands at exactly {x:150,y:100,w:40,h:20} in screenshot-pixel space,
+    // safely inside the 220x170 canvas.
+    const CSS_BBOX = { x: 75, y: 50, w: 20, h: 10 };
+    const EXPECTED_SCREENSHOT_REGION = { x: 150, y: 100, w: 40, h: 20 };
+    const vaultNodes = buildProfileVaultSensitiveNodes(filledProfileAgentIds, idMap, new Set(), {
+      getBBox: () => CSS_BBOX,
+    });
+    assert.equal(vaultNodes.length, 1);
+
+    const screenshotBase64 = await buildFixtureScreenshotBase64();
+    const { canvasFactory, imageLoader } = makeNodeCanvasAdapters();
+
+    const { redactedImage, redactedRegions } = await redact(screenshotBase64, [], vaultNodes, {
+      scaleFactor: SCALE_FACTOR,
+      canvasFactory,
+      imageLoader,
+    });
+
+    const vaultRegion = redactedRegions.find((r) => r.agentId === nameAgentId);
+    assert.ok(
+      vaultRegion,
+      "THE FIX: the vault-filled node produced its own redactedRegion -- the IMAGE half of the fix, not only the stripped DOM-JSON text field"
+    );
+    assert.equal(vaultRegion.type, "other");
+    assert.equal(vaultRegion.source, "dom");
+    assert.deepEqual(vaultRegion.bbox, EXPECTED_SCREENSHOT_REGION);
+
+    // Prove it's actually painted onto the image, not merely reported in
+    // metadata -- sample a pixel from inside the region.
+    const sample = await decodePngForSampling(redactedImage);
+    const [r, g, b] = sample.pixelAt(
+      EXPECTED_SCREENSHOT_REGION.x + EXPECTED_SCREENSHOT_REGION.w / 2,
+      EXPECTED_SCREENSHOT_REGION.y + EXPECTED_SCREENSHOT_REGION.h / 2
+    );
+    assert.ok(r < 10 && g < 10 && b < 10, `expected the vault region to be blacked out (fill #000000), got rgb(${r},${g},${b})`);
+  });
+
+  test("dedupe: an already-scanner-flagged agentId (e.g. autocomplete=\"email\") is never double-added by buildProfileVaultSensitiveNodes()", () => {
+    const idMap = new Map([["agent-1", {}]]);
+    const filledProfileAgentIds = new Map([["agent-1", "email"]]);
+    const alreadyFlaggedAgentIds = new Set(["agent-1"]);
+    const vaultNodes = buildProfileVaultSensitiveNodes(filledProfileAgentIds, idMap, alreadyFlaggedAgentIds, {
+      getBBox: () => ({ x: 0, y: 0, w: 0, h: 0 }),
+    });
+    assert.deepEqual(vaultNodes, [], "already-flagged agentIds must be skipped, never double-added as a second entry");
+  });
+
+  test("a recorded agentId whose element is no longer resolvable in idMap is skipped, not synthesized with a stale/fabricated bbox", () => {
+    const idMap = new Map(); // element removed/replaced since the fill -- agentId no longer resolvable
+    const filledProfileAgentIds = new Map([["agent-9", "phone"]]);
+    const vaultNodes = buildProfileVaultSensitiveNodes(filledProfileAgentIds, idMap, new Set());
+    assert.deepEqual(vaultNodes, []);
+  });
+
+  test("profileField -> piiType mapping matches CLAUDE.md's ruling #4 exactly: email->email, phone->tel, full_name->other", () => {
+    assert.deepEqual(PROFILE_FIELD_TO_PII_TYPE, { full_name: "other", email: "email", phone: "tel" });
   });
 });

@@ -1,0 +1,139 @@
+{
+  "target": "extension/popup.html",
+  "tool": "@axe-core/playwright (axe-core) v4.10, Playwright chromium, headless",
+  "harness": "benchmarks/a11y/run-audit.js",
+  "notes": [
+    "popup.html opened as a file:// page with window.chrome stubbed via page.addInitScript (extension/content.js and extension/background.js were not read or touched -- out of scope per the task brief).",
+    "axe was run against 4 states: default, #consentPanel visible, #goalPrivacyPanel visible, and all <details> disclosures open (this 4th state is extra -- native <details> hides its content from axe when closed, and the pipeline toggle / planner selector / server URL input only render once Settings is open, so it was added to actually exercise those controls; it was not part of the original 3-state ask)."
+  ],
+  "axe": {
+    "before": {
+      "default": {
+        "violationCount": 1,
+        "violations": [
+          { "id": "color-contrast", "impact": "serious", "nodeCount": 4,
+            "targets": [".brand-sub", "#prewarmStatus", "section[aria-label=\"Task\"] > .hint", ".hint-note"] }
+        ]
+      },
+      "consentPanel visible": {
+        "violationCount": 1,
+        "violations": [
+          { "id": "color-contrast", "impact": "serious", "nodeCount": 5,
+            "targets": ["#consentReasonDetail", ".brand-sub", "#prewarmStatus", "section[aria-label=\"Task\"] > .hint", ".hint-note"] }
+        ]
+      },
+      "goalPrivacyPanel visible": {
+        "violationCount": 1,
+        "violations": [
+          { "id": "color-contrast", "impact": "serious", "nodeCount": 4,
+            "targets": [".brand-sub", "#prewarmStatus", "section[aria-label=\"Task\"] > .hint", ".hint-note"] }
+        ]
+      },
+      "settings/profile/diagnostics disclosures open": {
+        "note": "not run before fixes -- added during remediation specifically to verify the missing-label fix on #serverUrlInput, which native <details> hides from axe while closed."
+      }
+    },
+    "after": {
+      "default": { "violationCount": 0, "violations": [] },
+      "consentPanel visible": { "violationCount": 0, "violations": [] },
+      "goalPrivacyPanel visible": { "violationCount": 0, "violations": [] },
+      "settings/profile/diagnostics disclosures open": { "violationCount": 0, "violations": [] }
+    }
+  },
+  "fixes_applied": [
+    {
+      "issue": "color-contrast (serious, axe rule 'color-contrast')",
+      "detail": "--faint: rgba(242,241,238,0.45) measured ~4.15:1 on the --dark (#0D0D0D) body background, below the 4.5:1 AA floor for the 10-12px text it's used on (.brand-sub, #prewarmStatus, .hint, .hint-note, #consentReasonDetail, status lines, placeholders).",
+      "fix": "Raised --faint to rgba(242,241,238,0.6) in :root (extension/popup.html). Recomputed: ~6.5:1 on --dark, ~6.2:1 on --surface (#141414) -- both comfortably above 4.5:1."
+    },
+    {
+      "issue": "missing form label (axe rule 'label', not triggered by the 3 required states because #serverUrlInput lives inside a closed <details> that axe correctly treats as not-rendered)",
+      "detail": "#serverUrlInput had no associated <label> -- only a preceding <p class=\"hint\"> description, which is not a valid accessible name source.",
+      "fix": "Added <label class=\"eyebrow\" for=\"serverUrlInput\">Server URL</label> immediately before the input."
+    },
+    {
+      "issue": "keyboard focus indicator removed (WCAG 2.4.7 Focus Visible -- found by the keyboard-only pass, not by axe's default ruleset, which has no automated check for this)",
+      "detail": "`textarea:focus, input[type=\"text\"]:focus { outline: none; ... }` and `select:focus { outline: none; ... }` are more specific than the page's generic `:focus-visible { outline: 2px solid ...}` rule, so every text field and <select> lost its focus ring entirely on Tab, leaving only a subtle border-color shift (--rule -> --rule-firm) as the sole cue.",
+      "fix": "Removed `outline: none` from the plain :focus rules (kept the border-color change) and added textarea:focus-visible / input[type=\"text\"]:focus-visible / select:focus-visible rules restoring the 2px solid outline for keyboard focus specifically."
+    },
+    {
+      "issue": "fixed popup width causes horizontal scroll at narrow viewports (360px / 200% zoom check)",
+      "detail": "body { width: 400px } with no max-width forces a horizontal scrollbar whenever the available viewport is narrower than 400 CSS px.",
+      "fix": "Added max-width: 100% and overflow-x: hidden on body, plus max-width: 100% on html. Verified 400px baseline is unchanged; 360px viewport and 360px + document.documentElement.style.zoom=2 both show zero horizontal scroll after."
+    },
+    {
+      "issue": "broken theme variables (CSS-only defect, not an axe violation because the affected elements are empty text at initial load)",
+      "detail": "popup.js sets inline style.color to var(--redact) and var(--text-muted) for status text (save/error states across server URL, full-page-capture, profile, pipeline, and planner selectors), but popup.html never defined either custom property. An undefined var() makes the whole `color` declaration compute as unset, which for the inherited `color` property falls back to the ancestor's color -- so the intended red/neutral state color silently never applied (not a contrast failure by luck, but the color-coding was inert).",
+      "fix": "Added --redact: var(--blocked) and --text-muted: var(--faint) aliases to :root so the existing inline styles resolve to the theme's real error/neutral colors, both already >=6.9:1 against --dark/--surface."
+    }
+  ],
+  "keyboard": {
+    "focusableControlCount": 15,
+    "tabOrderReachesAllControls": true,
+    "allTabStopsHaveVisibleOutline": {
+      "before_focus_css_fix": false,
+      "before_detail": "textarea, input[type=\"text\"], and <select> tab stops (taskGoal, serverUrlInput, pipelineVersionSelect, plannerBackendSelect, profileFullName, profileEmail, profilePhone) reported outline-style: none.",
+      "after_focus_css_fix": true
+    },
+    "consentPanel": { "escapeCloses": true, "enterCloses": true },
+    "goalPrivacyPanel": { "escapeCloses": true, "enterCloses": true },
+    "method": "Real CONSENT_REQUEST / GOAL_PRIVACY_REVIEW_REQUEST messages dispatched through a stubbed chrome.runtime.onMessage listener list (not direct DOM unhiding), so popup.js's actual activeConsentRequestId / activeGoalPrivacyRequestId gating runs for real."
+  },
+  "text_spacing_1_4_12": {
+    "override_applied": "line-height:1.5, letter-spacing:0.12em, word-spacing:0.16em (!important, all elements), margin-bottom:2em on p/li",
+    "viewport": "400x900 (popup's normal width)",
+    "documentHorizontalScroll": false,
+    "clippedElements": [],
+    "result": "pass -- no clipped or overlapping text found; .log-pre's overflow:auto is scrollable by design and was excluded from the clip check on that basis."
+  },
+  "zoom_360_check": {
+    "viewport": "360x640",
+    "at_100_percent": { "horizontalScroll": false },
+    "at_200_percent_zoom": { "horizontalScroll": false },
+    "result": "pass after the body max-width fix; would have failed before it (body was fixed at width:400px with no max-width)."
+  },
+  "not_checked": [
+    "Real screen-reader output (NVDA/VoiceOver/JAWS) -- axe and the keyboard pass check DOM/ARIA structure and focus mechanics, not what a screen reader actually announces.",
+    "The rest of popup.js (agent-loop run status rendering, error banners, detect-result diagnostics) beyond the 4 scoped UI areas -- not read, per the task's scope limit.",
+    "extension/content.js and extension/background.js -- explicitly out of scope for this task.",
+    "Real Chrome extension popup chrome (actual popup frame sizing/behavior) -- tested as a bare file:// page per the task's instructions, not as a loaded unpacked extension."
+  ],
+  "i18n": {
+    "added": "2026-09-27, English/Hindi popup localization pass",
+    "harness_change": "run-audit.js switched from opening popup.html as a file:// page to serving extension/ over a throwaway local HTTP server (127.0.0.1, random port). Reason: the language toggle loads a locale's messages.json via fetch(browser.runtime.getURL(...)), and Chromium hard-blocks fetch() from a file:// origin to another file:// URL ('Failed to fetch') -- confirmed empirically, including with a Playwright route() intercept in place, which never even saw a routable request. A local static server sidesteps the restriction and is the closer analogue to the real chrome-extension:// origin anyway. --lang en|hi selects which locale the run boots into by having the stubbed chrome.storage.local.get('uiLang') answer with that value, exactly the shape a real prior toggle click leaves behind.",
+    "sanity_probe": "each run reads document.documentElement.lang and the rendered .brand-sub text back out of the page BEFORE running axe, so a run that silently stayed in the wrong language (e.g. a fetch failure falling back to English) would be visible in this file rather than only in axe's language-agnostic pass/fail count.",
+    "en": {
+      "command": "node run-audit.js --lang en",
+      "htmlLangAttr": "en",
+      "renderedBrandSub": "Nothing leaves the client",
+      "axe": {
+        "default": { "violationCount": 0 },
+        "consentPanel visible": { "violationCount": 0 },
+        "goalPrivacyPanel visible": { "violationCount": 0 },
+        "settings/profile/diagnostics disclosures open": { "violationCount": 0 }
+      },
+      "keyboard": { "reachedAllFocusable": true, "allStopsHaveVisibleOutline": true },
+      "textSpacing": { "horizontalScrollAt400": false, "clippedElements": 0 },
+      "zoom": { "at360NoZoom": { "horizontalScroll": false }, "at360Zoom200": { "horizontalScroll": false } }
+    },
+    "hi": {
+      "command": "node run-audit.js --lang hi",
+      "htmlLangAttr": "hi",
+      "renderedBrandSub": "कुछ भी क्लाइंट से बाहर नहीं जाता",
+      "axe": {
+        "default": { "violationCount": 0 },
+        "consentPanel visible": { "violationCount": 0 },
+        "goalPrivacyPanel visible": { "violationCount": 0 },
+        "settings/profile/diagnostics disclosures open": { "violationCount": 0 }
+      },
+      "keyboard": { "reachedAllFocusable": true, "allStopsHaveVisibleOutline": true },
+      "textSpacing": { "horizontalScrollAt400": false, "clippedElements": 0 },
+      "zoom": { "at360NoZoom": { "horizontalScroll": false }, "at360Zoom200": { "horizontalScroll": false } }
+    },
+    "result": "0 axe violations across all 4 states, in both languages. Keyboard reachability/focus-visibility, WCAG 1.4.12 text-spacing, and the 360px/200% zoom check all pass identically in en and hi -- the Hindi (Devanagari) static text does not introduce any new clipping, overflow, or contrast failure. The consentPanel/goalPrivacyPanel axe states still use the pre-existing hardcoded-English test fixture text for those two dynamic panels (this harness sets it directly via page.evaluate to exercise axe against non-empty panels, independent of language) -- their structural accessibility (roles, focus, contrast) is language-agnostic and unaffected by which locale is active; the static, data-i18n-driven chrome around them (labels, buttons, hints, aria-labels) is what actually renders in Hindi and is what the sanity probe above confirms.",
+    "not_checked": [
+      "Real screen-reader pronunciation/announcement of Devanagari text -- out of scope for axe/keyboard-mechanics checks, same limitation noted above for English.",
+      "The consent/goal-privacy panels' OWN dynamic sentences (built by extension/lib/action-describe.js's describePendingAction()/describePolicyReason(), now translate-aware) rendered live in Hindi through a real CONSENT_REQUEST/GOAL_PRIVACY_REVIEW_REQUEST round trip -- this harness fixture sets that panel text directly instead (see 'result' above); their Hindi wording is covered by tests/unit/test_action_describe.mjs (English-default behavior, unchanged) and tests/unit/test_i18n.mjs (key/placeholder parity), not by this axe run."
+    ]
+  }
+}

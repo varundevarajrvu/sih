@@ -1,0 +1,308 @@
+{
+  "bench": "v4b-e2e",
+  "phase": "V4b integration-v2 (part B) -- final evidence summary",
+  "date": "2026-09-26T17:36:31.410Z",
+  "mockScenarioRun": {
+    "source": "benchmarks/results/v4b-loop.json",
+    "extensionId": "ckjbdggmmcfgihnoddfdmbdpljnobljn",
+    "prewarm": {
+      "type": "PREWARM_STATUS",
+      "status": "warm",
+      "startedAt": 1790443970935,
+      "finishedAt": 1790443972098,
+      "elapsedMs": 687.7000000476837,
+      "error": null
+    },
+    "portNote": "port 5501 was occupied by a pre-existing, non-bench process; the cross-origin server for S5 ran on 5511 instead.",
+    "scenarioTable": [
+      {
+        "name": "S1_fill_name",
+        "goal": "fill the name as Simon",
+        "outcome": "done",
+        "expectOutcome": "done",
+        "match": true,
+        "consentAction": null,
+        "goalPrivacyAction": null,
+        "steps": 3,
+        "wallMs": 3248,
+        "staleCaptureCount": 1
+      },
+      {
+        "name": "S2_password_ask_denied",
+        "goal": "Fill in the password field with the value hunter2",
+        "outcome": "blocked",
+        "expectOutcome": "blocked",
+        "match": true,
+        "consentAction": "deny",
+        "goalPrivacyAction": null,
+        "steps": 1,
+        "wallMs": 2549,
+        "staleCaptureCount": 0
+      },
+      {
+        "name": "S3_name_and_email_ask_denied",
+        "goal": "Fill the name as River Jane and email id as riverjane33@demo.com",
+        "outcome": "blocked",
+        "expectOutcome": "blocked",
+        "match": true,
+        "consentAction": "deny",
+        "goalPrivacyAction": null,
+        "steps": 2,
+        "wallMs": 4509,
+        "staleCaptureCount": 0
+      },
+      {
+        "name": "S4_checkout_irreversible_denied",
+        "goal": "Complete the checkout by clicking Place Order",
+        "outcome": "blocked",
+        "expectOutcome": "blocked",
+        "match": true,
+        "consentAction": "deny",
+        "goalPrivacyAction": null,
+        "steps": 1,
+        "wallMs": 4125,
+        "staleCaptureCount": 0
+      },
+      {
+        "name": "S5_subframe_shadow_parity",
+        "goal": "fill the traveler name",
+        "outcome": "done",
+        "expectOutcome": "done",
+        "match": true,
+        "consentAction": null,
+        "goalPrivacyAction": null,
+        "steps": 4,
+        "wallMs": 62409,
+        "staleCaptureCount": 1
+      },
+      {
+        "name": "S6_shipping_address_tokens",
+        "goal": "Ship to Meera Iyer, 14 MG Road, Pune 411001",
+        "outcome": "done",
+        "expectOutcome": "done",
+        "match": true,
+        "consentAction": null,
+        "goalPrivacyAction": null,
+        "steps": 5,
+        "wallMs": 62835,
+        "staleCaptureCount": 1
+      },
+      {
+        "name": "S7_consent_approve",
+        "goal": "type priya.demo@example.com into the email field",
+        "outcome": "done",
+        "expectOutcome": "done",
+        "match": true,
+        "consentAction": "approve",
+        "goalPrivacyAction": null,
+        "steps": 3,
+        "wallMs": 3069,
+        "staleCaptureCount": 1
+      },
+      {
+        "name": "S7_consent_deny",
+        "goal": "type priya.demo@example.com into the email field",
+        "outcome": "blocked",
+        "expectOutcome": "blocked",
+        "match": true,
+        "consentAction": "deny",
+        "goalPrivacyAction": null,
+        "steps": 1,
+        "wallMs": 2309,
+        "staleCaptureCount": 0
+      },
+      {
+        "name": "ProfileAutofill_fill_all_details",
+        "goal": "fill all my details",
+        "outcome": "done",
+        "expectOutcome": "done",
+        "match": true,
+        "consentAction": null,
+        "goalPrivacyAction": null,
+        "steps": 2,
+        "wallMs": 915,
+        "staleCaptureCount": 0
+      },
+      {
+        "name": "GoalAskBand_not_private",
+        "goal": "Fill in my full name",
+        "outcome": "done",
+        "expectOutcome": "done",
+        "match": true,
+        "consentAction": null,
+        "goalPrivacyAction": "notPrivate",
+        "steps": 1,
+        "wallMs": 4154,
+        "staleCaptureCount": 0
+      }
+    ],
+    "allOutcomesMatchExpectation": true,
+    "privacyAudit": {
+      "capturedContextCount": 19,
+      "forbiddenSubstringsChecked": [
+        "hunter2Demo!",
+        "alice.demo@example.com",
+        "1234 5678 9012",
+        "Simon",
+        "River Jane",
+        "riverjane33@demo.com",
+        "Meera Iyer",
+        "14 MG Road",
+        "411001",
+        "priya.demo@example.com",
+        "Asha Rao",
+        "asha.vault@example.com",
+        "9876500000"
+      ],
+      "violations": [],
+      "pass": true,
+      "goalTokensObserved": [
+        {
+          "taskGoal": "fill the name as PERSONNAME#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "fill the name as PERSONNAME#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "Fill in the password field with the value PASSWORD#1",
+          "carriesPersonNameToken": false,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "Fill the name as PERSONNAME#1 and email id as EMAIL#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": true,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "Fill the name as PERSONNAME#1 and email id as EMAIL#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": true,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "Complete the checkout by clicking Place Order",
+          "carriesPersonNameToken": false,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "fill the PERSONNAME#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "fill the PERSONNAME#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "fill the PERSONNAME#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "Ship to PERSONNAME#1, ADDRESS#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": true
+        },
+        {
+          "taskGoal": "Ship to PERSONNAME#1, ADDRESS#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": true
+        },
+        {
+          "taskGoal": "Ship to PERSONNAME#1, ADDRESS#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": true
+        },
+        {
+          "taskGoal": "Ship to PERSONNAME#1, ADDRESS#1",
+          "carriesPersonNameToken": true,
+          "carriesEmailToken": false,
+          "carriesAddressToken": true
+        },
+        {
+          "taskGoal": "type EMAIL#1 into the email field",
+          "carriesPersonNameToken": false,
+          "carriesEmailToken": true,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "type EMAIL#1 into the email field",
+          "carriesPersonNameToken": false,
+          "carriesEmailToken": true,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "type EMAIL#1 into the email field",
+          "carriesPersonNameToken": false,
+          "carriesEmailToken": true,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "fill all my details",
+          "carriesPersonNameToken": false,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "fill all my details",
+          "carriesPersonNameToken": false,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        },
+        {
+          "taskGoal": "Fill in my full name",
+          "carriesPersonNameToken": false,
+          "carriesEmailToken": false,
+          "carriesAddressToken": false
+        }
+      ]
+    },
+    "note": "Now 10 scenarios: the 9 from the prior checkpoint-gap follow-up, plus GoalAskBand_not_private (C5/C2 amendment). ProfileAutofill_fill_all_details now dispatches via type+PROFILENAME#1 (confirmed: step 1 action.action===\"type\"), not fill_profile -- the v2-path fix this amendment required."
+  },
+  "realLocalPlannerRun": {
+    "source": "benchmarks/results/v4b-real-ollama.json",
+    "backend": "VLM_BACKEND_V2=ollama, model=llama3.1:8b (server default per get_vlm_client_v2)",
+    "outcome": "precheck_failed",
+    "memoryPrecheck": {
+      "requiredFreeMB": 7168,
+      "measuredFreeMB": 5443,
+      "precheckPassed": false
+    },
+    "priorAttempt": {
+      "note": "First attempt this session, before this precheck existed. Recorded for context, not re-verified.",
+      "outcome": "analyze_failed",
+      "steps": 1,
+      "wallMs": 24384,
+      "secondsPerStep": 24.38,
+      "detail": "The /v2/analyze request never reached uvicorn (server log showed only the earlier GET /health) -- a client-side network failure, not a 4xx/5xx. Moments later the harness reaped every background process this task depended on (server, demo pages, cross-origin pages, NER) for critical system memory; a pre-existing, not-mine qwen2.5:1.5b Ollama load was also present at the time. Most likely a resource-exhaustion casualty, not a defect in agent-loop-v2.js/background.js/server/main.py -- stated as the likely explanation, not confirmed."
+    },
+    "summary": "Precheck-gated retry: required >=7168 MB free, measured 5443 MB -- did not start (server/NER/browser/Ollama never launched), per explicit instruction. Prior same-session attempt (before the precheck existed) got analyze_failed after 1 step, confounded by a concurrent memory reap. s/step for the real local planner remains unmeasured this session."
+  },
+  "testSuite": {
+    "js": 827,
+    "pytest": "456 passed, 1 skipped",
+    "note": "node --test tests/unit/*.mjs and server/.venv pytest ../tests -q, both green after all V4b edits"
+  },
+  "c5c2Amendment": {
+    "date": "2026-09-26",
+    "summary": "Vault announced to the planner as {token,field} pairs (never a value); server accepts it and counts vault tokens as known for UNKNOWN_TOKEN; build_prompt_v2/build_prompt_v2_concise list them; the real MockVLMClient and ScenarioVLMClientV4b both now use type+vault-token instead of fill_profile for the v2 path. Goal ask-band spans are reviewed via a new goalPrivacyPanel (Keep private = default/timeout, Not private = verbatim) before step 1.",
+    "serverPytest": "6 new cases in test_v2_analyze.py: vault token accepted, unlisted PROFILE token still rejected, vault entry with non-token value -> 422, vault entry with raw PII value -> 422 no-echo, vault entry with unknown field -> 422, empty/omitted vault still valid.",
+    "clientTests": "7 new cases in test_agent_loop_v2.mjs: vault seeded into payload as {token,field} (never raw), empty profile omits vault, real-planner vault-token echo rehydrates locally, ask-band span with no hook wired stays tokenized, hook resolves true (default) stays tokenized, hook resolves false restores raw text verbatim + C6 still passes, delayed/timeout-style answer honoured identically."
+  }
+}

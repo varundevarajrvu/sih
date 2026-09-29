@@ -1,0 +1,487 @@
+{
+  "spike": "v0b-ultraface",
+  "question": "should UltraFace RFB-320 (ONNX, onnxruntime-web) replace Xenova/yolos-tiny (COCO person class) for face redaction?",
+  "date": "2026-09-24T06:32:38.387Z",
+  "machine": {
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "cpuCount": 12,
+    "totalMemGB": 16.8
+  },
+  "gpuHardware": "Intel(R) UHD Graphics, driver 32.0.101.7085, 2147479552 bytes shared VRAM (Get-CimInstance Win32_VideoController)",
+  "chrome": {
+    "playwrightReportedVersion": "153.0.8010.12",
+    "chromeExeVersion": "\r\nHKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon\r\n    version    REG_SZ    153.0.8010.36\r\n\r\n",
+    "note": "Playwright-bundled Chromium (not the system Chrome install), headless. navigator.gpu.requestAdapter() resolved to no adapter in this session -- every number below is on the WASM floor, per this project's own 'WebGPU is a speed optimization, never a dependency' invariant."
+  },
+  "gpu": {
+    "webgpuAvailable": false,
+    "reason": "navigator.gpu absent (no adapter, or stubbed out for a WASM-floor run)"
+  },
+  "ultraface": {
+    "wasm": {
+      "backend": "wasm (matches Project B's shipped vision.mjs config exactly: executionProviders:['wasm'], single-thread, proxy:false)",
+      "coldLoadMs": 1064.3999999761581,
+      "demoFace": {
+        "detections": [
+          {
+            "kind": "face",
+            "x": 83.02061259746552,
+            "y": 0.4026832580566406,
+            "width": 283.2768112421036,
+            "height": 332.59731674194336,
+            "confidence": 0.9999998807907104
+          }
+        ],
+        "ms": 133.76499998569489,
+        "inferOnlyMs": 113.40499997138977,
+        "backend": "wasm",
+        "inputWidth": 500,
+        "inputHeight": 333
+      },
+      "scaleLadder": {
+        "40": {
+          "detections": [],
+          "ms": 53.19000005722046,
+          "inferOnlyMs": 46.72000002861023,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "60": {
+          "detections": [],
+          "ms": 50.50999999046326,
+          "inferOnlyMs": 45.575000047683716,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "80": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 599.1460418701172,
+              "y": 322.34294414520264,
+              "width": 70.86402893066406,
+              "height": 73.93914699554443,
+              "confidence": 0.9226194024085999
+            }
+          ],
+          "ms": 53.03999996185303,
+          "inferOnlyMs": 48.28999996185303,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "96": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 589.9576568603516,
+              "y": 310.3877377510071,
+              "width": 86.629638671875,
+              "height": 98.4139609336853,
+              "confidence": 0.985247015953064
+            }
+          ],
+          "ms": 65.29000008106232,
+          "inferOnlyMs": 48.99500000476837,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "120": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 579.9221420288086,
+              "y": 298.4987497329712,
+              "width": 99.93061065673828,
+              "height": 112.53634929656982,
+              "confidence": 0.9905836582183838
+            }
+          ],
+          "ms": 58.669999957084656,
+          "inferOnlyMs": 48.825000047683716,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "200": {
+          "detections": [
+            {
+              "kind": "face",
+              "x": 544.6379852294922,
+              "y": 270.21170139312744,
+              "width": 163.04946899414062,
+              "height": 190.3534984588623,
+              "confidence": 0.9992856383323669
+            }
+          ],
+          "ms": 61.420000076293945,
+          "inferOnlyMs": 55.860000014305115,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        }
+      },
+      "falsePositives": {
+        "no-face-testpage.png": {
+          "detections": [],
+          "ms": 58.644999980926514,
+          "inferOnlyMs": 53.359999895095825,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "no-face-wikipedia.png": {
+          "detections": [],
+          "ms": 53.96000003814697,
+          "inferOnlyMs": 49.31499993801117,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "no-face-loginform.png": {
+          "detections": [],
+          "ms": 48.14999997615814,
+          "inferOnlyMs": 43.6800000667572,
+          "backend": "wasm",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        }
+      },
+      "latency_20warmRuns_1280x720_includesResizeTo320x240": {
+        "samples": [
+          49.625,
+          46.4650000333786,
+          43.44500005245209,
+          49.955000042915344,
+          44.730000019073486,
+          49.549999952316284,
+          48.424999952316284,
+          51.625,
+          46.52999997138977,
+          53.68499994277954,
+          50.454999923706055,
+          50.33500003814697,
+          59.86500000953674,
+          60.6599999666214,
+          53.27499997615814,
+          55.40499997138977,
+          57.69000005722046,
+          61.00999999046326,
+          63.86500000953674,
+          54.110000014305115
+        ],
+        "p50": 50.454999923706055,
+        "p95": 61.00999999046326
+      }
+    },
+    "webgpuRequested": {
+      "note": "executionProviders:['webgpu','wasm'] requested; navigator.gpu absent in this session, so this almost certainly executed on the wasm EP internally after failed EP negotiation (session creation still succeeded, unlike transformers.js/yolos below). Slightly SLOWER than the explicit wasm session (higher cold load, higher p50/p95), consistent with wasted EP-negotiation overhead rather than real GPU execution. Reported for completeness; not used in the decision.",
+      "coldLoadMs": 1695.75,
+      "demoFace": {
+        "detections": [
+          {
+            "kind": "face",
+            "x": 83.02061259746552,
+            "y": 0.4026832580566406,
+            "width": 283.2768112421036,
+            "height": 332.59731674194336,
+            "confidence": 0.9999998807907104
+          }
+        ],
+        "ms": 185.69999992847443,
+        "inferOnlyMs": 179.86500000953674,
+        "backend": "webgpu",
+        "inputWidth": 500,
+        "inputHeight": 333
+      },
+      "falsePositives": {
+        "no-face-testpage.png": {
+          "detections": [],
+          "ms": 62.28500008583069,
+          "inferOnlyMs": 57.424999952316284,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "no-face-wikipedia.png": {
+          "detections": [],
+          "ms": 55.919999957084656,
+          "inferOnlyMs": 51.18499994277954,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        },
+        "no-face-loginform.png": {
+          "detections": [],
+          "ms": 64.05999994277954,
+          "inferOnlyMs": 58.2849999666214,
+          "backend": "webgpu",
+          "inputWidth": 1280,
+          "inputHeight": 720
+        }
+      },
+      "latency_20warmRuns": {
+        "samples": [
+          54.38499999046326,
+          52.99000000953674,
+          65.51500010490417,
+          58.139999985694885,
+          54.49000000953674,
+          52.61500000953674,
+          48.985000014305115,
+          47.59499990940094,
+          45.610000014305115,
+          48.924999952316284,
+          48.86500000953674,
+          47.09999990463257,
+          47.37000000476837,
+          50.19000005722046,
+          53.12999999523163,
+          50.91000008583069,
+          54.72000002861023,
+          56.09500002861023,
+          55.424999952316284,
+          56.69000005722046
+        ],
+        "p50": 52.61500000953674,
+        "p95": 58.139999985694885
+      }
+    }
+  },
+  "yolos": {
+    "browserLoadFailure": {
+      "finding": "Xenova/yolos-tiny via @huggingface/transformers ^3.0.0 pipeline() could NOT be loaded in this headless spike environment on EITHER device:'webgpu' OR device:'wasm' -- both fail with the same underlying error. Reproduced 3 times across 2 separate browser sessions (with and without a navigator.gpu stub).",
+      "errorWithRealNavigatorGpu": "no available backend found. ERR: [webgpu] Error: Failed to get GPU adapter. You may need to enable flag \"--enable-unsafe-webgpu\" if you are using Chrome.",
+      "errorWithNavigatorGpuStubbedToUndefined": "no available backend found. ERR: [webgpu] Error: WebGPU is not supported in current environment",
+      "rootCauseAssessment": "transformers.js ^3.0.0 bundles ONLY the jsep-enabled onnxruntime-web wasm build (dist/ort-wasm-simd-threaded.jsep.mjs/.wasm -- verified, no plain non-jsep alternative ships in that package). That single binary appears to perform WebGPU capability/adapter negotiation at pipeline-load time regardless of the requested `device` option, and hard-fails when no adapter exists at all -- even for an explicit device:'wasm' request. This is an environment limitation (this sandbox's headless Chromium has zero WebGPU adapter), not evidence against yolos-tiny's architecture: this repo's own CLAUDE.md documents yolos-tiny running successfully on webgpu in a real (non-headless) Chrome session. Contrast: raw onnxruntime-web (not wrapped by transformers.js) DID gracefully tolerate the missing adapter for UltraFace's session (see ultraface.webgpuRequested above) -- so this is specifically a transformers.js/jsep-bundle limitation, not a Chromium or ONNX Runtime one.",
+      "evidenceFile": "spikes/ultraface/run1-no-gpu-stub-yolos-hardfail.json"
+    },
+    "nodeCpuRecallFallback": {
+      "note": "onnxruntime-node CPU fp32 -- recall evidence ONLY, NOT a browser latency comparison Run via onnxruntime-node (@huggingface/transformers' Node backend), CPU, fp32, the same local yolos-tiny weights extension/models/Xenova/yolos-tiny ships, same threshold=0.5/percentage=false as extension/src/offscreen.entry.js. Detection correctness (recall) does not depend on which CPU/GPU backend executed the model, only latency does -- so these are valid recall numbers despite not being a browser measurement. The `ms` fields here are onnxruntime-node timings on 1280x720 inputs and are NOT comparable to any browser WASM/WebGPU number -- not used for the latency leg of the decision rule.",
+      "demoFace": {
+        "detections": [
+          {
+            "label": "person",
+            "score": 0.987930178642273,
+            "xmin": 0,
+            "ymin": 0,
+            "xmax": 499,
+            "ymax": 331
+          },
+          {
+            "label": "tie",
+            "score": 0.5472676753997803,
+            "xmin": 175,
+            "ymin": 310,
+            "xmax": 303,
+            "ymax": 332
+          },
+          {
+            "label": "tie",
+            "score": 0.5229414105415344,
+            "xmin": 175,
+            "ymin": 310,
+            "xmax": 230,
+            "ymax": 332
+          }
+        ],
+        "ms": 5903.206099999999
+      },
+      "scaleLadder": {
+        "40": {
+          "detections": [],
+          "ms": 4081.9302
+        },
+        "60": {
+          "detections": [],
+          "ms": 3808.070100000001
+        },
+        "80": {
+          "detections": [],
+          "ms": 4296.568799999999
+        },
+        "96": {
+          "detections": [
+            {
+              "label": "person",
+              "score": 0.6198461055755615,
+              "xmin": 569,
+              "ymin": 343,
+              "xmax": 712,
+              "ymax": 413
+            }
+          ],
+          "ms": 4130.252800000002
+        },
+        "120": {
+          "detections": [],
+          "ms": 3808.9075999999986
+        },
+        "200": {
+          "detections": [
+            {
+              "label": "person",
+              "score": 0.9180008769035339,
+              "xmin": 476,
+              "ymin": 267,
+              "xmax": 818,
+              "ymax": 467
+            }
+          ],
+          "ms": 3768.9956999999995
+        }
+      },
+      "falsePositives": {
+        "no-face-testpage.png": {
+          "detections": [],
+          "ms": 4080.3238999999994
+        },
+        "no-face-wikipedia.png": {
+          "detections": [],
+          "ms": 4307.4107
+        },
+        "no-face-loginform.png": {
+          "detections": [],
+          "ms": 4171.964500000002
+        }
+      }
+    },
+    "publishedProductionLatency": {
+      "source": "CLAUDE.md (this repo, v1) -- 'PHASE 0 CLOSED' and 'THE PUBLISHED LATENCY FIGURE DOES NOT REPRODUCE' entries",
+      "device": "webgpu",
+      "dtype": "fp32",
+      "warmMsBestCase_2026_09_11": [
+        784,
+        817,
+        860,
+        881
+      ],
+      "warmMsMostRecentlyReproduced_2026_09_20": [
+        2650,
+        2692,
+        2700
+      ],
+      "coldStartMs_afterServiceWorkerEviction": [
+        18430,
+        19407
+      ],
+      "note": "v1's own docs flag the 780-880ms figure as unresolved/does-not-reproduce as of 2026-09-20; the most recent independent samples cluster ~2650-2700ms warm. Both cited unmodified as the pre-registered ARCHITECTURE.md V0b baseline ('current published yolos warm: ~2,350-2,700 ms')."
+    }
+  },
+  "scaleLadderComparison": {
+    "40": {
+      "ultraface_wasm": {
+        "detected": false,
+        "confidence": null,
+        "ms": 53.19000005722046
+      },
+      "yolos_person_nodeCPU": {
+        "detected": false,
+        "score": null,
+        "ms_NOT_comparable_see_note": 4081.9302
+      }
+    },
+    "60": {
+      "ultraface_wasm": {
+        "detected": false,
+        "confidence": null,
+        "ms": 50.50999999046326
+      },
+      "yolos_person_nodeCPU": {
+        "detected": false,
+        "score": null,
+        "ms_NOT_comparable_see_note": 3808.070100000001
+      }
+    },
+    "80": {
+      "ultraface_wasm": {
+        "detected": true,
+        "confidence": 0.9226194024085999,
+        "ms": 53.03999996185303
+      },
+      "yolos_person_nodeCPU": {
+        "detected": false,
+        "score": null,
+        "ms_NOT_comparable_see_note": 4296.568799999999
+      }
+    },
+    "96": {
+      "ultraface_wasm": {
+        "detected": true,
+        "confidence": 0.985247015953064,
+        "ms": 65.29000008106232
+      },
+      "yolos_person_nodeCPU": {
+        "detected": true,
+        "score": 0.6198461055755615,
+        "ms_NOT_comparable_see_note": 4130.252800000002
+      }
+    },
+    "120": {
+      "ultraface_wasm": {
+        "detected": true,
+        "confidence": 0.9905836582183838,
+        "ms": 58.669999957084656
+      },
+      "yolos_person_nodeCPU": {
+        "detected": false,
+        "score": null,
+        "ms_NOT_comparable_see_note": 3808.9075999999986
+      }
+    },
+    "200": {
+      "ultraface_wasm": {
+        "detected": true,
+        "confidence": 0.9992856383323669,
+        "ms": 61.420000076293945
+      },
+      "yolos_person_nodeCPU": {
+        "detected": true,
+        "score": 0.9180008769035339,
+        "ms_NOT_comparable_see_note": 3768.9956999999995
+      }
+    }
+  },
+  "decision": {
+    "rule": "ARCHITECTURE.md Phase V0b, pre-registered: replace yolos-tiny iff UltraFace detects the demo face AND every >=80px face, AND its warm p95 is lower than yolos. Keep yolos available only if it catches something UltraFace cannot that is PII-relevant.",
+    "ultrafaceDetectsDemoFace": true,
+    "ultrafaceDetectsAll80pxAndAbove": true,
+    "ultrafaceWarmP95Ms": 61.00999999046326,
+    "yolosWarmReferenceMs": {
+      "bestCaseSamples": [
+        784,
+        817,
+        860,
+        881
+      ],
+      "mostRecentlyReproducedSamples": [
+        2650,
+        2692,
+        2700
+      ]
+    },
+    "ultrafaceP95LowerThanYolosBestCase": true,
+    "verdict": "REPLACE yolos-tiny with UltraFace RFB-320 for face redaction",
+    "yolosCatchesSomethingUltrafaceMisses": false,
+    "yolosCatchesSomethingUltrafaceMissesNote": "Not observed in this fixture set: every scale where yolos-person fired (96px, 200px), UltraFace also fired, and UltraFace additionally caught 80px and 120px where yolos missed. yolos was non-monotonic across scale (hit 96px, missed 120px) -- unreliable as a size signal. Design-level caveat, not measured here (all fixtures are forward-facing face crops): yolos's COCO 'person' class detects full-body/torso silhouettes and could in principle fire on a person whose face is occluded, turned away, or too small to resolve as a face, which a face-only detector like UltraFace structurally cannot. No fixture in this spike exercises that case."
+  },
+  "notes": [
+    "no-face fixture 1 (demo/test-page.html, natural scroll=0): id-card face img rect={\"top\":721,\"bottom\":819,\"scrollY\":0}, fully out of viewport=true",
+    "no-face fixture 2 (wikipedia/Bengaluru top): live fetch succeeded",
+    "no-face fixture 3 (hand-written login form): OK",
+    "navigator.gpu adapter in this headless session: {\"webgpuAvailable\":false,\"reason\":\"navigator.gpu absent (no adapter, or stubbed out for a WASM-floor run)\"}",
+    "yolos webgpu load failed (no available backend found. ERR: [webgpu] Error: WebGPU is not supported in current environment) -- falling back to wasm, matching offscreen.entry.js's own fallback behaviour",
+    "yolos wasm load ALSO failed (no available backend found. ERR: [webgpu] Error: WebGPU is not supported in current environment) -- yolos cannot be benchmarked"
+  ],
+  "consoleLog": [
+    "[log] [harness] ready",
+    "[error] \u001b[0;93m2026-09-24 12:02:49.911299 [W:onnxruntime:Default, cpuid_info.cc:91 LogEarlyWarning] Unknown CPU vendor. cpuinfo_vendor value: 0\u001b[m",
+    "[warning] removing requested execution provider \"webgpu\" from session options because it is not available: Error: WebGPU is not supported in current environment"
+  ],
+  "crashed": false
+}

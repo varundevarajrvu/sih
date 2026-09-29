@@ -1,0 +1,5 @@
+{
+  "description": "A fully-populated profile (shape per extension/lib/profile-vault.js sanitizeProfile()) and a partially-empty one (empty phone), used to test seedVault()'s token minting and its null-for-empty-field behaviour.",
+  "fullProfile": { "full_name": "Jordan A. Demo", "email": "jordan.demo@example.com", "phone": "9876543210" },
+  "partialProfile": { "full_name": "River Jane", "email": "riverjane33@demo.com", "phone": "" }
+}

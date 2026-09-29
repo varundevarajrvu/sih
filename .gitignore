@@ -34,8 +34,11 @@ Thumbs.db
 spike/chrome-harness/models/
 spike/chrome-harness/ort/
 spike/chrome-harness/offscreen.bundle.js
-extension/models/
-extension/ort/
+extension/models/*
+# v2: the UltraFace model is TRACKED -- it is a derived file (upstream Linzaer RFB-320 optimised by
+# sih-2026's scripts/optimize-vision-model.py), not downloadable byte-identically. ~1.2 MB, MIT.
+!extension/models/ultraface/
+extension/ort/*
 extension/offscreen.bundle.js
 spike-ui-detector/models/
 spike-ui-detector/chrome-harness/models/
@@ -52,3 +55,14 @@ spike-ui-detector/chrome-harness/offscreen.bundle.js
 # UNREDACTED PII -- see the safety note there. If you point
 # DEBUG_DUMP_DIR at a different name/location, .gitignore that path too.
 debug_dumps/
+
+# v2 spikes: model weights, HF caches, venvs and run logs are reproducible, never committed
+spikes/gliner/.hf/
+spikes/gliner/.venv/
+spikes/gliner/models/
+spikes/gliner/*.log
+spikes/ultraface/models/
+spikes/**/node_modules/
+benchmarks/**/node_modules/
+# start/stop-demo PID tracking (local runtime state)
+demo-pids.json

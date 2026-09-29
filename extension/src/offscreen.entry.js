@@ -27,10 +27,30 @@
 //   cd extension && npm run build
 
 import { pipeline, RawImage, env } from "@huggingface/transformers";
+import {
+  rgbaToNchw,
+  decodeFaceDetections,
+  offsetDetections,
+  computeTileGrid,
+  mergeTileResults,
+  FACE_DETECT_CONSTANTS,
+} from "../lib/face-detect.js";
 
 function log(...args) {
   console.log("[offscreen]", ...args);
 }
+
+// ---------------------------------------------------------------------
+// V2 Phase V2 (vision-v2) -- detector switch. CLAUDE.md/ARCHITECTURE.md
+// V0b decision (spikes/ultraface/RESULT.md, all 3 legs of the
+// pre-registered rule satisfied): UltraFace RFB-320 REPLACES
+// Xenova/yolos-tiny as the default face-redaction detector. Kept as ONE
+// named switch, in ONE place, rather than scattered feature flags --
+// "don't delete yolos weights yet (V4 decides); just stop loading them
+// by default" per the V2 brief. Changing this back to "yolos" restores
+// the exact pre-V2 code path below unmodified.
+// ---------------------------------------------------------------------
+const VISION_MODEL = "ultraface"; // "ultraface" | "yolos"
 
 // ---- Mandatory carry-overs #1 + #2 (CLAUDE.md "PHASE 0 CLOSED"):
 // bundle ORT + weights locally, zero network calls at runtime. Must be
@@ -172,7 +192,12 @@ class DetectionStageError extends Error {
 // array the contract originally specified -- additive, not a breaking
 // rename (`boxes` is still exactly the old array). No detection LOGIC
 // changed: same model, same device/dtype, same threshold.
-async function runDetection(imageDataBase64) {
+//
+// V2 NOTE: this is the "yolos" leg of VISION_MODEL. Kept byte-for-byte
+// (not loaded by default any more -- see runDetection() dispatcher below)
+// per the V2 brief: "don't delete yolos weights yet (V4 decides); just
+// stop loading them by default."
+async function runDetectionYolos(imageDataBase64) {
   // Captured BEFORE getDetector() runs: is there already a (settled or
   // in-flight) pipeline promise? If yes, this call will NOT pay a load
   // cost. If this offscreen document was just freshly created (or its
@@ -229,6 +254,237 @@ async function runDetection(imageDataBase64) {
   }
 }
 
+// =======================================================================
+// V2 Phase V2 (vision-v2) -- UltraFace RFB-320 path. DEFAULT as of the
+// V0b decision (ARCHITECTURE.md, spikes/ultraface/RESULT.md, all 3 legs
+// of the pre-registered rule satisfied: detects the demo face, detects
+// every >=80px face, and warm p95 (61.0ms) is decisively lower than
+// yolos's own best-published number). Produces boxes with label "face"
+// through the EXACT SAME DETECT_OBJECTS/DETECTION_RESULT contract as the
+// yolos path above -- content.js's PRIVACY_RELEVANT_LABELS filter is the
+// only downstream change this requires (adds "face" to the allowlist).
+//
+// Deliberately does NOT go through @huggingface/transformers' pipeline()
+// API (or its bundled jsep-only onnxruntime-web build) -- the V0b spike
+// found that build hard-fails to even LOAD with no WebGPU adapter present,
+// on EITHER device:"webgpu" or device:"wasm" (spikes/ultraface/RESULT.md,
+// "Environment finding: yolos-tiny could not be run in a browser here at
+// all"). Raw onnxruntime-web, imported directly and pointed at the PLAIN
+// (non-jsep) wasm runtime bundle, tolerated a missing GPU adapter
+// gracefully in that same spike. This file therefore bundles that plain
+// runtime separately (extension/ort/ort.wasm.min.mjs +
+// ort-wasm-simd-threaded.{mjs,wasm}, copied verbatim from
+// spikes/ultraface/models/ort/ -- same onnxruntime-web release,
+// 1.22.0-dev.20250409-89f8206ba4, as the jsep build the yolos path above
+// already ships, confirmed by comparing both packages' package.json
+// before copying, so mixing the two build variants in one ort/ directory
+// is not a version mismatch).
+//
+// WASM ONLY, unconditionally -- invariant 5 ("WebGPU is a speed
+// optimization, never a dependency... must never be required") is
+// trivially satisfied because this path never attempts WebGPU at all.
+// This is a deliberate scope cut, not an oversight: the V0b spike's own
+// numbers show requesting webgpu for this exact model was SLOWER to load
+// AND to run than plain wasm (RESULT.md section 4, "UltraFace's `webgpu`-
+// requested session was slower than its `wasm` session, not faster"),
+// and a real WebGPU attempt would need the OTHER (jsep) runtime bundle
+// with its own EP-negotiation risk for no measured benefit on this tiny
+// model -- not worth the added failure surface for this pass. Flagged in
+// the report back to the orchestrator, not silently decided.
+// =======================================================================
+
+const ULTRAFACE_MODEL_PATH = "models/ultraface/ultraface-rfb320.onnx";
+const ULTRAFACE_RUNTIME_ENTRY = "ort/ort.wasm.min.mjs";
+// Project B's validated default (spikes/ultraface/RESULT.md step 6: "this
+// spike also validated at the model's natural output, no threshold
+// override needed to hit the confidences above") -- NOT yolos's 0.5;
+// different model, different natural operating point, carried over
+// unmodified from the recipe that was actually measured working.
+const ULTRAFACE_THRESHOLD = 0.7;
+const { MODEL_INPUT_WIDTH: ULTRAFACE_INPUT_W, MODEL_INPUT_HEIGHT: ULTRAFACE_INPUT_H } = FACE_DETECT_CONSTANTS;
+
+// Pre-registered mitigation for small/far faces (V0b spike: 40/60px faces
+// missed, >=80px caught). Tiled second pass, 2x2, ONLY when the
+// single-pass first attempt finds zero faces -- see runDetectionUltraface()
+// below. Gate (pre-registered, not moved after seeing numbers): "adopt it
+// only if warm p95 for the whole detect call stays <=300ms; otherwise
+// leave it off and record the numbers."
+//
+// MEASURED (benchmarks/results/v2-vision.json, real unpacked-extension
+// Chromium run via Playwright, 2026-09-24, i5-1334U, WASM, 15 tiled-pass
+// samples across the 40px/60px face fixtures + 3 no-face fixtures x 3
+// repeats each): p50 159.2ms, p95 196.2ms -- UNDER the 300ms gate.
+// ADOPTED. Single-pass (no tile fallback) warm inference on the same
+// machine: demo face p50 32.9ms/p95 38.2ms; 80-200px faces 27-53ms.
+//
+// Recall, reported honestly rather than implied by "adopted": the tiled
+// pass did NOT rescue detection at 40px or 60px in this measurement (both
+// still 0 detections with the tile pass fired) -- it earns its place on
+// the pre-registered LATENCY gate alone, not because it closed the V0b
+// spike's small-face gap. Zero false positives introduced on the 3
+// no-face fixtures either way. See this module's own report for the full
+// numbers.
+//
+// ORCHESTRATOR RULING 2026-09-24: OFF. The V2 gate was mis-specified -- it
+// tested latency only, but the pass exists solely to recover small faces,
+// and it recovered none. On, it would add ~150 ms to every face-free page
+// (most pages) for zero recall. Re-enable only with evidence it finds a face
+// the single pass misses. Small faces (< 80 px) remain a documented gap.
+const TILED_SECOND_PASS_ENABLED = false;
+const TILE_GRID_COLS = 2;
+const TILE_GRID_ROWS = 2;
+
+let ultrafaceSessionPromise = null;
+let ultrafaceActiveDevice = null; // "wasm" only in this pass -- see the file-level note above
+let ultrafaceResizeCanvas = null;
+let ultrafaceResizeCtx = null;
+
+async function loadUltrafaceSession() {
+  const runtimeUrl = chrome.runtime.getURL(ULTRAFACE_RUNTIME_ENTRY);
+  log("ultraface: importing onnxruntime-web runtime from", runtimeUrl);
+  // Dynamic import of a chrome-extension:// URL, same pattern content.js
+  // already uses for lib/*.js under MV3's "script-src 'self'" CSP (see
+  // CLAUDE.md Phase 4 RESULT, integration mismatch #1) -- esbuild cannot
+  // statically resolve a runtime-computed specifier and leaves this as a
+  // real dynamic import, which is exactly what's needed here.
+  const ort = await import(/* @vite-ignore */ runtimeUrl);
+  // Recipe from spikes/ultraface/lib/vision.mjs::createVisionDetector,
+  // reused verbatim (this IS the verified-working configuration, not a
+  // reimplementation): runtime files resolved relative to the entry
+  // module's own URL, single-threaded (MV3 extension pages cannot
+  // guarantee the cross-origin-isolation headers threaded WASM needs),
+  // proxy disabled (no Worker indirection -- keeps this simple and matches
+  // what was actually measured).
+  ort.env.wasm.wasmPaths = new URL(".", runtimeUrl).href;
+  ort.env.wasm.numThreads = 1;
+  ort.env.wasm.proxy = false;
+  const modelUrl = chrome.runtime.getURL(ULTRAFACE_MODEL_PATH);
+  const t0 = performance.now();
+  const session = await ort.InferenceSession.create(modelUrl, {
+    executionProviders: ["wasm"],
+    graphOptimizationLevel: "all",
+  });
+  ultrafaceActiveDevice = "wasm";
+  log(`ultraface: session created on wasm in ${(performance.now() - t0).toFixed(1)}ms`);
+  return { ort, session };
+}
+
+function getUltrafaceSession() {
+  if (!ultrafaceSessionPromise) ultrafaceSessionPromise = loadUltrafaceSession();
+  return ultrafaceSessionPromise;
+}
+
+function getUltrafaceResizeCanvas() {
+  if (!ultrafaceResizeCanvas) {
+    ultrafaceResizeCanvas = new OffscreenCanvas(ULTRAFACE_INPUT_W, ULTRAFACE_INPUT_H);
+    ultrafaceResizeCtx = ultrafaceResizeCanvas.getContext("2d", { willReadFrequently: true });
+    if (!ultrafaceResizeCtx) throw new Error("ultraface: 2D canvas context unavailable in offscreen document");
+  }
+  return ultrafaceResizeCtx;
+}
+
+/**
+ * Run one UltraFace inference over a rectangular region of `bitmap`
+ * (region = the whole image for the single-pass path; a tile rect for the
+ * mitigation pass), resized to the model's fixed 320x240 input. Decode
+ * targets `regionWidth`/`regionHeight` directly -- see face-detect.js's
+ * file header for why that needs no separate DPR-scaling step.
+ */
+async function runUltrafaceOnRegion(ort, session, bitmap, regionX, regionY, regionWidth, regionHeight) {
+  const ctx = getUltrafaceResizeCanvas();
+  ctx.clearRect(0, 0, ULTRAFACE_INPUT_W, ULTRAFACE_INPUT_H);
+  ctx.drawImage(bitmap, regionX, regionY, regionWidth, regionHeight, 0, 0, ULTRAFACE_INPUT_W, ULTRAFACE_INPUT_H);
+  const imageData = ctx.getImageData(0, 0, ULTRAFACE_INPUT_W, ULTRAFACE_INPUT_H);
+  const nchw = rgbaToNchw(imageData.data, ULTRAFACE_INPUT_W, ULTRAFACE_INPUT_H);
+  const tensor = new ort.Tensor("float32", nchw, [1, 3, ULTRAFACE_INPUT_H, ULTRAFACE_INPUT_W]);
+  let output;
+  try {
+    output = await session.run({ [session.inputNames[0]]: tensor });
+  } finally {
+    tensor.dispose();
+  }
+  const outputs = Object.values(output);
+  try {
+    const scoresT = outputs.find((t) => t.dims.at(-1) === 2);
+    const boxesT = outputs.find((t) => t.dims.at(-1) === 4);
+    if (!scoresT || !boxesT) throw new Error("ultraface: unexpected model output tensor shapes");
+    return decodeFaceDetections(scoresT.data, boxesT.data, regionWidth, regionHeight, ULTRAFACE_THRESHOLD);
+  } finally {
+    for (const t of outputs) {
+      try {
+        t.dispose();
+      } catch {
+        // best-effort cleanup; a dispose failure here must not mask the
+        // real detection result/error already being propagated.
+      }
+    }
+  }
+}
+
+async function runDetectionUltraface(imageDataBase64) {
+  const wasAlreadyLoaded = ultrafaceSessionPromise !== null;
+  const tLoad0 = performance.now();
+  let ort, session;
+  try {
+    ({ ort, session } = await getUltrafaceSession());
+  } catch (err) {
+    throw new DetectionStageError("model_load", err);
+  }
+  const modelLoadMs = wasAlreadyLoaded ? 0 : performance.now() - tLoad0;
+
+  let bitmap;
+  try {
+    const base64 = stripDataUrlPrefix(imageDataBase64);
+    const blob = base64ToBlob(base64);
+    bitmap = await createImageBitmap(blob);
+  } catch (err) {
+    throw new DetectionStageError("image_decode", err);
+  }
+
+  const tInfer0 = performance.now();
+  let tiledPassUsed = false;
+  try {
+    const { width, height } = bitmap; // the screenshot's own real pixel dims -- see face-detect.js header on why this alone carries devicePixelRatio correctness through
+    let boxes = await runUltrafaceOnRegion(ort, session, bitmap, 0, 0, width, height);
+
+    if (boxes.length === 0 && TILED_SECOND_PASS_ENABLED) {
+      tiledPassUsed = true;
+      const tiles = computeTileGrid(width, height, TILE_GRID_COLS, TILE_GRID_ROWS);
+      const perTile = [];
+      for (const tile of tiles) {
+        const tileDetections = await runUltrafaceOnRegion(ort, session, bitmap, tile.x, tile.y, tile.width, tile.height);
+        perTile.push(offsetDetections(tileDetections, tile.x, tile.y));
+      }
+      boxes = mergeTileResults(perTile);
+    }
+
+    const inferenceMs = performance.now() - tInfer0;
+    return {
+      boxes,
+      modelLoadMs,
+      inferenceMs,
+      pipelineWasAlreadyLoaded: wasAlreadyLoaded,
+      device: ultrafaceActiveDevice,
+      tiledPassUsed,
+    };
+  } catch (err) {
+    if (err instanceof DetectionStageError) throw err;
+    throw new DetectionStageError("inference", err);
+  } finally {
+    try {
+      bitmap.close();
+    } catch {
+      // non-fatal cleanup
+    }
+  }
+}
+
+// ---- Detector switch dispatcher (CLAUDE.md/ARCHITECTURE.md V2 decision) ----
+async function runDetection(imageDataBase64) {
+  if (VISION_MODEL === "ultraface") return runDetectionUltraface(imageDataBase64);
+  return runDetectionYolos(imageDataBase64);
+}
+
 // ---- Message contract wiring ----
 chrome.runtime.onMessage.addListener((message) => {
   if (!message || message.type !== "DETECT_OBJECTS") return; // not for us -- ignore (e.g. SET_TASK_GOAL, RUN_TEST_DETECTION meant for background.js)
@@ -249,7 +505,8 @@ async function handleDetectObjects(requestId, imageData) {
     return;
   }
 
-  log(`DETECT_OBJECTS ${requestId} received (device so far: ${activeDevice ?? "not loaded yet"})`);
+  const deviceSoFar = VISION_MODEL === "ultraface" ? ultrafaceActiveDevice : activeDevice;
+  log(`DETECT_OBJECTS ${requestId} received (model=${VISION_MODEL}, device so far: ${deviceSoFar ?? "not loaded yet"})`);
   try {
     const t0 = performance.now();
     const result = await runDetection(imageData);
@@ -269,6 +526,11 @@ async function handleDetectObjects(requestId, imageData) {
       inferenceMs: result.inferenceMs,
       pipelineWasAlreadyLoaded: result.pipelineWasAlreadyLoaded,
       device: result.device,
+      // V2 addition -- undefined on the yolos leg (no tiled-pass concept
+      // there), present (true/false) on the ultraface leg. Additive, same
+      // shape as the other Phase 4 diagnostic fields above.
+      tiledPassUsed: result.tiledPassUsed,
+      visionModel: VISION_MODEL,
     }).catch(() => {
       // Background may have been torn down/restarted mid-flight (MV3 SWs
       // are killed on idle). Nothing more this side can do for this

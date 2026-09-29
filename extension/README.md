@@ -16,6 +16,72 @@ lines requested at the end.
 
 ---
 
+## 0. Fresh clone setup — fetching the gitignored ML binaries
+
+`extension/models/`, `extension/ort/`, and `extension/offscreen.bundle.js` are gitignored EXCEPT for two
+files under `extension/models/ultraface/` that `.gitignore` carves back out with a `!` negation (see the
+"Vendored ML binaries" comment near line 30 of the repo-root `.gitignore`) because one of them is a
+**derived** file with no upstream URL to re-fetch — see "Tracked vs fetched" below. Everything else is
+~64 MB of ONNX weights and ONNX Runtime Web binaries that get swapped as the detector changes, so keeping
+them out of history was a deliberate call. A fresh clone is missing the fetched files until you run:
+
+```bash
+cd extension
+npm install
+node scripts/fetch-assets.mjs
+```
+
+This fetches the 8 non-tracked files, verifies all 10 (8 fetched + 2 tracked-in-place) against
+`extension/scripts/assets.lock.json` (a sha256 manifest generated from the files already in this working
+copy via `--gen-lock` — see the header comment in `fetch-assets.mjs` for every flag), and on a clean verify
+runs `npm run build` for you. **With no flags, on a normal checkout, this reports 0 mismatches.** It is
+safe to re-run: a destination file that already exists on disk is never downloaded, overwritten, or
+deleted — only missing fetched files are fetched, and tracked files are only ever read. Pass `--dest <dir>`
+to fetch the non-tracked files into a scratch directory instead of `extension/{models,ort}` (useful for CI
+or for checking upstream without touching real assets — tracked files are still verified against the real
+`extension/` tree, since there's nothing to fetch for them), or `--verify-only` to just hash what's on disk
+with nothing fetched or built.
+
+### Fetched vs tracked
+
+| Files | Fetched from | Verified |
+|---|---|---|
+| `models/Xenova/yolos-tiny/{onnx/model.onnx,config.json,preprocessor_config.json}` | Hugging Face Hub, `Xenova/yolos-tiny` `resolve/main/...` — the same approach `spike/README.md` documents for the V1 detector | **byte-identical**, all 3 files |
+| `ort/ort-wasm-simd-threaded.jsep.{mjs,wasm}` | `onnxruntime-web@1.22.0-dev.20250409-89f8206ba4` (npm/jsdelivr) — the exact transitive dependency `@huggingface/transformers@3.8.1` pins in `package-lock.json`, and the only build that package ships (jsep-enabled; see `spikes/ultraface/RESULT.md` line 30) | **byte-identical**, both files, and identical to `node_modules/onnxruntime-web/dist/` at that pinned version |
+| `ort/ort-wasm-simd-threaded.wasm`, `ort/ort-wasm-simd-threaded.mjs`, `ort/ort.wasm.min.mjs` | `onnxruntime-web@1.23.2` (npm/jsdelivr) — the plain, non-jsep runtime added for the raw `onnxruntime-web` UltraFace path in `offscreen.entry.js` (`@huggingface/transformers` ships only the jsep build, so this trio came from `onnxruntime-web` directly) | **byte-identical**, all three files |
+
+| Files | Tracked in git because... | Upstream reference (for provenance only — never fetched) |
+|---|---|---|
+| `models/ultraface/ultraface-rfb320.onnx` | it's a **derived** file: `sih-2026`'s `scripts/optimize-vision-model.py` produced it from the upstream ONNX below, so it was never going to be byte-identical to any upstream URL, fetched or not | `Linzaer/Ultra-Light-Fast-Generic-Face-Detector-1MB`, `models/onnx/version-RFB-320.onnx`, commit `dffdddda9794a50607cba8f318507a28c1c27cab` — **1,270,727 bytes**, sha256 `34cd7e60aeff28744c657de7a3dc64e872d506741de66987f3426f2b79f88017`. The tracked, optimized copy is **1,257,907 bytes**, sha256 `22bd2fbe053a8e54d54b44b25901f0f6260059ac9ae7d3cc8720f5f7c0d936fa` |
+| `models/ultraface/ULTRAFACE-LICENSE.txt` | ships alongside the model above rather than being re-fetched separately | same repo/commit, `LICENSE` — text byte-identical |
+
+`fetch-assets.mjs` never downloads the two tracked files — it only sha256-verifies them in place against
+`assets.lock.json`, on every mode including `--dest`. A tracked file drifting from the lock (edited without
+regenerating it, or vice versa) is reported as a mismatch distinctly from an upstream-provenance gap; a
+tracked file missing from `extension/` entirely (e.g. a shallow/partial checkout) is reported as missing
+and pointed at `git checkout -- <path>`, never silently re-derived or downloaded. Both tracked files are
+covered by a `.gitattributes` entry (`extension/models/ultraface/* -text`) so git never normalizes their
+line endings on checkout — see the correction directly below for why that matters.
+
+### Correction, 2026-09-27 — the earlier "hand-applied patch" claim on the ORT glue files was wrong
+
+An earlier revision of this file (and of `fetch-assets.mjs`/`assets.lock.json`) reported
+`ort/ort-wasm-simd-threaded.mjs` and `ort/ort.wasm.min.mjs` as differing from `onnxruntime-web@1.23.2`'s
+published files by 68 and 7 bytes respectively, and — wrongly — attributed that to a small hand-applied
+patch, tracking both files in git as a result. **The real cause: both diffs were exactly the file's CR
+(`\r`, byte `0x0D`) count** — 68 CRs in the `.mjs`, 7 in `ort.wasm.min.mjs` — i.e. a Windows CRLF conversion
+of a plain copy, not a patch. Stripping every `\r` from the then-local files produced an exact byte match to
+the upstream (LF) originals. The same mechanism explained `ULTRAFACE-LICENSE.txt`'s 21-byte diff (21 CRs)
+from the start, correctly identified as benign at the time — the ORT glue files just weren't checked against
+the same explanation.
+
+**Fixed:** both glue files were replaced with the exact upstream (LF) bytes, the `.gitignore` exception for
+them was reverted (they fetch normally again, verified byte-identical), and `fetch-assets.mjs`/
+`assets.lock.json` no longer mark them `tracked`. Only the two files with a genuine, non-CRLF reason to be
+tracked — the derived UltraFace model and its license — remain in git.
+
+---
+
 ## 1. Load it — exact steps
 
 1. Open Chrome, go to `chrome://extensions`.

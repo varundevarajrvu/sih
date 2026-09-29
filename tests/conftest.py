@@ -33,3 +33,22 @@ def load_fixture() -> Callable[[str], dict]:
             return json.load(f)
 
     return _load
+
+
+@pytest.fixture(autouse=True)
+def _default_v2_backend_to_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """V3 (planner-local): vlm_client.get_vlm_client_v2()'s PRODUCTION
+    default is VLM_BACKEND_V2="ollama" (a real local model, real network
+    call to Ollama's HTTP API) -- correct for the running server, wrong
+    for a hermetic, fast pytest run. Force every test back to the mock
+    backend unless a test explicitly overrides VLM_BACKEND_V2 itself
+    (monkeypatch.setenv stacks fine) or uses FastAPI's
+    app.dependency_overrides[main.get_vlm_client_v2] (which bypasses this
+    env var entirely -- dependency_overrides always wins).
+
+    v1's get_vlm_client()/VLM_BACKEND is UNCHANGED and already defaults to
+    "mock" with nothing set -- this fixture only touches the new v2-only
+    env var, per the same "don't change v1 defaults" rule the production
+    code follows.
+    """
+    monkeypatch.setenv("VLM_BACKEND_V2", "mock")

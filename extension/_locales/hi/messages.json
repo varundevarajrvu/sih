@@ -1,0 +1,463 @@
+{
+  "appName": {
+    "message": "Dhristi - एक निजता-सुरक्षक ब्राउज़र टूल"
+  },
+  "appDescription": {
+    "message": "चरण 4: पूरी तरह ऑन-डिवाइस, निजता-सुरक्षक ब्राउज़र एजेंट लूप। यह दिखने वाले टैब को कैप्चर करता है, लोकल WebGPU ऑब्जेक्ट डिटेक्शन (Xenova/yolos-tiny) चलाता है, DOM में PII को स्कैन करता है, स्क्रीनशॉट और DOM स्नैपशॉट दोनों को क्लाइंट पर ही रिडैक्ट करता है, और उसके बाद ही अगली कार्रवाई के लिए रिडैक्टेड परिणाम को लोकल FastAPI सर्वर पर भेजता है -- कोई भी कच्चा PII कभी क्लाइंट से बाहर नहीं जाता।"
+  },
+  "brandSub": {
+    "message": "कुछ भी क्लाइंट से बाहर नहीं जाता"
+  },
+  "languageSwitcherLabel": {
+    "message": "Language / भाषा"
+  },
+  "langEnAriaLabel": {
+    "message": "English"
+  },
+  "langHiAriaLabel": {
+    "message": "हिन्दी"
+  },
+  "prewarmChecking": {
+    "message": "मॉडल वार्म-अप की स्थिति जाँची जा रही है…"
+  },
+  "prewarmUnknown": {
+    "message": "मॉडल वार्म-अप की स्थिति अज्ञात है (बैकग्राउंड से कोई प्रतिक्रिया नहीं)।"
+  },
+  "prewarmWarming": {
+    "message": "⏳ मॉडल वार्म हो रहा है (केवल पहली बार, ~20 सेकंड)—Run Agent Loop दबाने से पहले इसका इंतज़ार करें, अन्यथा पहला स्टेप यही ~20 सेकंड ख़ामोशी से ले लेगा।",
+    "description": "REVIEW: idiomatic English (\"will silently eat the same ~20s\") rendered functionally into Hindi -- a native speaker should confirm the tone lands naturally rather than sounding stiff."
+  },
+  "prewarmWarm": {
+    "message": "✓ मॉडल वार्म और तैयार है (वार्म-अप में $1 सेकंड लगे)। Run Agent Loop अब पूरी गति से चलेगा।"
+  },
+  "prewarmFailed": {
+    "message": "✗ वार्म-अप विफल: $1। बैकग्राउंड सर्विस वर्कर का कंसोल देखें।"
+  },
+  "prewarmStatusGeneric": {
+    "message": "मॉडल की स्थिति: $1"
+  },
+  "taskSectionAriaLabel": {
+    "message": "टास्क"
+  },
+  "taskGoalLabel": {
+    "message": "टास्क का लक्ष्य"
+  },
+  "taskGoalPlaceholder": {
+    "message": "उदाहरण: शिपिंग एड्रेस फ़ॉर्म भरें"
+  },
+  "saveGoalBtn": {
+    "message": "लक्ष्य सहेजें"
+  },
+  "runAgentLoopBtn": {
+    "message": "एजेंट लूप चलाएँ"
+  },
+  "stopBtn": {
+    "message": "रोकें"
+  },
+  "stopBtnStopping": {
+    "message": "रोका जा रहा है…"
+  },
+  "taskHint": {
+    "message": "यह मौजूदा टैब पर कैप्चर → डिटेक्ट → स्कैन → रिडैक्ट → भेजें → कार्रवाई करें को अधिकतम 25 स्टेप तक या एजेंट के 'done' बताने तक चलाता है। यह ऊपर <strong>सहेजे गए</strong> अंतिम लक्ष्य का उपयोग करता है, और इसके लिए Settings में दिया गया सर्वर उपलब्ध होना ज़रूरी है।"
+  },
+  "runStatusSectionAriaLabel": {
+    "message": "रन की स्थिति"
+  },
+  "runStatusHint": {
+    "message": "नीचे दिखने वाला <strong class=\"k-blocked\">BLOCKED</strong> बैनर इसका संकेत है कि गार्ड ने अपने आप एक असुरक्षित कार्रवाई को रोक दिया — यह सुरक्षा तंत्र के सही ढंग से काम करने का प्रमाण है, कोई गड़बड़ी नहीं।"
+  },
+  "runStateRunning": {
+    "message": "चल रहा है"
+  },
+  "runStateFinished": {
+    "message": "समाप्त"
+  },
+  "stepOfTotal": {
+    "message": "स्टेप $1 / $2"
+  },
+  "stepOnly": {
+    "message": "स्टेप $1"
+  },
+  "runStatusLine": {
+    "message": "चरण: $1"
+  },
+  "goalLabel": {
+    "message": "लक्ष्य: $1"
+  },
+  "lastActionLabel": {
+    "message": "पिछली कार्रवाई: $1"
+  },
+  "blockedBannerTitle": {
+    "message": "BLOCKED (स्टेप $1): $2"
+  },
+  "errorWithStep": {
+    "message": "त्रुटि (स्टेप $1):"
+  },
+  "errorNoStep": {
+    "message": "त्रुटि:"
+  },
+  "outcomeLabel": {
+    "message": "परिणाम: $1"
+  },
+  "savingEllipsis": {
+    "message": "सहेजा जा रहा है…"
+  },
+  "savedAt": {
+    "message": "$1 पर सहेजा गया।"
+  },
+  "clearedAt": {
+    "message": "$1 पर हटाया गया।"
+  },
+  "unexpectedResponse": {
+    "message": "बैकग्राउंड से अप्रत्याशित प्रतिक्रिया: $1"
+  },
+  "failedToSave": {
+    "message": "सहेजने में विफल: $1"
+  },
+  "failedToReachBackground": {
+    "message": "बैकग्राउंड सर्विस वर्कर तक पहुँचने में विफल: $1"
+  },
+  "errorPrefix": {
+    "message": "त्रुटि: $1"
+  },
+  "testDetectRunning": {
+    "message": "मौजूदा टैब को कैप्चर करके ऑन-डिवाइस डिटेक्शन चलाया जा रहा है...\n(पहली बार मॉडल लोड होता है -- Phase 0 में वार्म WebGPU इनफ़रेंस 8,432ms मापा गया था; कोल्ड लोड 14,097ms था। कृपया प्रतीक्षा करें।)"
+  },
+  "testDetectOk": {
+    "message": "$1ms में सफल -- $2 डिटेक्शन:"
+  },
+  "runAgentLoopRunning": {
+    "message": "मौजूदा टैब पर पूरा एजेंट लूप चल रहा है... (अधिकतम 25 स्टेप; यदि मॉडल अभी वार्म नहीं हुआ है तो पहला डिटेक्शन धीमा हो सकता है)। लाइव प्रगति ऊपर दिखाई गई है; पूरा इंस्ट्रूमेंटेशन पेज के अपने DevTools कंसोल में है।"
+  },
+  "runAgentLoopFinished": {
+    "message": "लूप समाप्त: परिणाम=$1, स्टेप=$2, कुल समय(ms)=$3.\nपूरा इंस्ट्रूमेंटेशन पेज के कंसोल में है (इस पॉपअप में नहीं) -- \"RUN SUMMARY\" ब्लॉक देखें।"
+  },
+  "stopRequestFailed": {
+    "message": "रोकने का अनुरोध विफल: $1"
+  },
+  "failedToSendStop": {
+    "message": "रोकने का अनुरोध भेजने में विफल: $1"
+  },
+  "settingsSummary": {
+    "message": "सेटिंग्स"
+  },
+  "serverUrlHint": {
+    "message": "FastAPI बैकएंड के लिए सर्वर URL (डिफ़ॉल्ट <code>http://localhost:8000</code>)। यह इस एक्सटेंशन के अनुमत होस्ट (<code>http://localhost/*</code>, <code>http://127.0.0.1/*</code>) के भीतर ही होना चाहिए &mdash; यहाँ कुछ भी और लिखने पर भी Chrome उसे नेटवर्क स्तर पर रोक देगा।"
+  },
+  "serverUrlLabel": {
+    "message": "सर्वर URL"
+  },
+  "serverUrlPlaceholder": {
+    "message": "http://localhost:8000"
+  },
+  "saveServerUrlBtn": {
+    "message": "सर्वर URL सहेजें"
+  },
+  "serverUrlSaved": {
+    "message": "सहेजा गया: $1 (background.js इसे तुरंत उपयोग करेगा, रीलोड की ज़रूरत नहीं)।"
+  },
+  "fullPageCaptureHint": {
+    "message": "फ़ुल-पेज कैप्चर: केवल दिखने वाले व्यूपोर्ट के बदले, पूरे पेज को चरणों में स्क्रोल करके कैप्चर जोड़कर एक इमेज बनाई जाती है, फिर डिटेक्शन चलता है। <strong>डिफ़ॉल्ट रूप से बंद</strong> (व्यूपोर्ट-ओनली ही भरोसेमंद विकल्प है)। यह प्रति स्टेप धीमा है और अधिक मेमोरी लेता है &mdash; किसी पेज पर असली आँकड़ों के लिए RUN SUMMARY के <code>fullPage</code> फ़ील्ड देखें।",
+    "description": "REVIEW: dense technical sentence (scroll-and-stitch capture mechanics) -- please confirm the Hindi reads naturally to a developer/operator audience, not just literally correct."
+  },
+  "fullPageCaptureToggleLabel": {
+    "message": "फ़ुल-पेज स्क्रोल-एंड-स्टिच कैप्चर सक्षम करें"
+  },
+  "fullPageCaptureOn": {
+    "message": "चालू -- अगला रन डिटेक्शन से पहले पूरे पेज को स्क्रोल करके जोड़ेगा।"
+  },
+  "fullPageCaptureOff": {
+    "message": "बंद -- अगला रन केवल मौजूदा व्यूपोर्ट को कैप्चर करेगा (डिफ़ॉल्ट, भरोसेमंद)।"
+  },
+  "pipelineVersionHint": {
+    "message": "पाइपलाइन: <strong>v2</strong> (टोकनाइज़्ड संरचना, सिमैंटिक-फ़र्स्ट ईग्रेस, लोकल NER, असली सहमति UI) या <strong>v1</strong> (मूल इमेज-फ़र्स्ट लूप, तुलना के लिए रखा गया)। यह अगली बार <em>Run agent loop</em> दबाने पर लागू होगा।",
+    "description": "REVIEW: internal pipeline jargon (\"tokenized structure\", \"semantic-first egress\") -- terms kept close to the English originals since no established Hindi equivalents exist; please confirm register with the team."
+  },
+  "pipelineVersionLabel": {
+    "message": "पाइपलाइन संस्करण"
+  },
+  "pipelineVersionV2Option": {
+    "message": "v2 (डिफ़ॉल्ट)"
+  },
+  "pipelineVersionV1Option": {
+    "message": "v1"
+  },
+  "pipelineSetTo": {
+    "message": "पाइपलाइन $1 पर सेट की गई। यह अगली बार Run agent loop दबाने पर लागू होगी।"
+  },
+  "plannerBackendHint": {
+    "message": "प्लानर बैकएंड (केवल v2)। <strong>लोकल ही डिफ़ॉल्ट है</strong> और इंटरनेट पर कुछ नहीं भेजता -- सर्वर इस मशीन पर Ollama से बात करता है। Claude/Gemini एक तेज़ लाइव डेमो के लिए स्पष्ट ऑप्ट-इन हैं; दोनों ही स्थिति में प्लानर को केवल टोकनाइज़्ड संरचना और ज्यामिति मिलती है, कभी कोई कच्चा (raw) मूल्य नहीं। असली सर्वर प्रोसेस <code>-Planner local|claude|gemini</code> के साथ शुरू होता है (देखें <code>start-demo.ps1</code>) -- यह चयन आपकी मंशा को स्थानीय रूप से दर्ज करता है, जिसे डेमो ऑपरेटर लॉन्च फ़्लैग से मिलाता है; पॉपअप कभी भी कोई API key न देखता है, न सहेजता है -- वह हमेशा सर्वर के अपने एनवायरनमेंट वेरिएबल में रहती है।",
+    "description": "REVIEW: long operator-facing instruction mixing CLI flags and Hindi prose -- please confirm the sentence boundaries read clearly rather than word-for-word from English."
+  },
+  "plannerBackendLabel": {
+    "message": "प्लानर बैकएंड"
+  },
+  "plannerLocalOption": {
+    "message": "लोकल (Ollama) -- डिफ़ॉल्ट"
+  },
+  "plannerClaudeOption": {
+    "message": "Claude (क्लाउड, ऑप्ट-इन)"
+  },
+  "plannerGeminiOption": {
+    "message": "Gemini (क्लाउड, ऑप्ट-इन)"
+  },
+  "plannerCloudNote": {
+    "message": "यह टोकनाइज़्ड सीन (एलिमेंट संरचना, ज्यामिति, और अपारदर्शी क्षेत्र प्रकार) को तेज़ प्लानिंग के लिए एक क्लाउड API पर भेजता है। इसमें कोई व्यक्तिगत मूल्य, कोई कच्चा PII नहीं होता, और कोई इमेज नहीं जाती जब तक प्लानर स्पष्ट रूप से <code>need_visual</code> पर अपग्रेड न करे (उस स्थिति में भेजी गई इमेज पहले से ही रिडैक्टेड होती है)। सहेजने से पहले पुष्टि करें कि आप यह समझते हैं।",
+    "description": "REVIEW: privacy opt-in disclosure -- accuracy here matters as much as the safety-critical consent strings; please have a native speaker double-check before shipping."
+  },
+  "plannerCloudConfirmLabel": {
+    "message": "मैं समझता/समझती हूँ -- इस क्लाउड प्लानर को केवल टोकनाइज़्ड संरचना भेजी जाएगी, कभी कच्चा मूल्य नहीं।"
+  },
+  "savePlannerBackendBtn": {
+    "message": "प्लानर चयन सहेजें"
+  },
+  "plannerConfirmRequired": {
+    "message": "क्लाउड प्लानर सहेजने से पहले ऊपर दिए गए बॉक्स को चेक करके ऑप्ट-इन की पुष्टि करें।"
+  },
+  "plannerSavedCloud": {
+    "message": "सहेजा गया: $1 (क्लाउड, ऑप्ट-इन की पुष्टि हुई)। मिलान के लिए सर्वर को -Planner $1 के साथ शुरू करें।"
+  },
+  "plannerSavedLocal": {
+    "message": "सहेजा गया: लोकल (डिफ़ॉल्ट)। इंटरनेट पर कुछ नहीं भेजा जाता -- सर्वर इस मशीन पर Ollama से बात करता है।"
+  },
+  "profileSummary": {
+    "message": "आपकी प्रोफ़ाइल (ऑटोफ़िल)"
+  },
+  "profileHint": {
+    "message": "यहाँ सहेजा गया डेटा <strong>इस डिवाइस पर ही रहता है</strong>, इस ब्राउज़र के लोकल एक्सटेंशन स्टोरेज में। मॉडल इसे कभी नहीं देखता और यह कभी सर्वर पर नहीं भेजा जाता &mdash; जब किसी पेज को इनमें से कोई फ़ील्ड चाहिए होती है, तो मॉडल केवल यह बताता है कि उसे <em>कौन-सी श्रेणी</em> चाहिए (जैसे &ldquo;email&rdquo;), और यह एक्सटेंशन वह मूल्य स्थानीय रूप से भर देता है। यही वह चीज़ है जो एजेंट को उस फ़ील्ड को भरने देती है जिसे वह अन्यथा भरने से मना कर देता।"
+  },
+  "profileFullNameLabel": {
+    "message": "पूरा नाम"
+  },
+  "profileFullNamePlaceholder": {
+    "message": "उदाहरण: प्रिया शर्मा"
+  },
+  "profileEmailLabel": {
+    "message": "ईमेल"
+  },
+  "profileEmailPlaceholder": {
+    "message": "उदाहरण: priya@example.com"
+  },
+  "profilePhoneLabel": {
+    "message": "फ़ोन"
+  },
+  "profilePhonePlaceholder": {
+    "message": "उदाहरण: +91 98765 43210"
+  },
+  "saveProfileBtn": {
+    "message": "प्रोफ़ाइल सहेजें"
+  },
+  "profileSaved": {
+    "message": "इस डिवाइस पर सहेजा गया। यह न सर्वर को, न मॉडल को भेजा जाता है।"
+  },
+  "diagnosticsSummary": {
+    "message": "एडवांस्ड डायग्नॉस्टिक्स"
+  },
+  "diagnosticsHint": {
+    "message": "यह मौजूदा टैब को कैप्चर करके background.js और ऑफ़स्क्रीन डॉक्यूमेंट के ज़रिए ऑन-डिवाइस ऑब्जेक्ट डिटेक्टर को पूरी तरह चलाता है &mdash; यह एक डेवलपर डायग्नॉस्टिक है, सामान्य उपयोग के लिए ज़रूरी नहीं। पहली बार चलाने पर मॉडल लोड होता है और यह बाद की बार से कहीं अधिक समय ले सकता है।"
+  },
+  "testDetectBtn": {
+    "message": "मौजूदा टैब पर टेस्ट डिटेक्शन चलाएँ"
+  },
+  "consentEyebrow": {
+    "message": "एजेंट आपकी मंज़ूरी माँग रहा है"
+  },
+  "consentApproveBtn": {
+    "message": "मंज़ूर करें"
+  },
+  "consentDenyBtn": {
+    "message": "मना करें"
+  },
+  "consentCountdownText": {
+    "message": "यदि आप जवाब नहीं देते हैं तो $1 सेकंड में डिफ़ॉल्ट रूप से मना कर दिया जाएगा।"
+  },
+  "policyDetailPrefix": {
+    "message": "पॉलिसी विवरण: $1"
+  },
+  "goalPrivacyEyebrow": {
+    "message": "भेजने से पहले जाँच लें"
+  },
+  "goalPrivacyKeepPrivateBtn": {
+    "message": "निजी रखें"
+  },
+  "goalPrivacyNotPrivateBtn": {
+    "message": "निजी नहीं है"
+  },
+  "goalPrivacyActionText": {
+    "message": "'$1' को निजी माना जाए?"
+  },
+  "goalPrivacyReasonText": {
+    "message": "स्वचालित पहचान ने आपके निर्देश के इस हिस्से को संभावित व्यक्तिगत जानकारी के रूप में चिह्नित किया है। “निजी रखें” चुनने पर इसकी जगह केवल एक टोकन भेजा जाता है; “निजी नहीं है” चुनने पर यह ठीक वैसे ही भेजा जाता है जैसे आपने लिखा था।"
+  },
+  "goalPrivacyCountdownText": {
+    "message": "यदि आप जवाब नहीं देते हैं तो $1 सेकंड में डिफ़ॉल्ट रूप से निजी रखा जाएगा।"
+  },
+  "outcome_done": {
+    "message": "पूर्ण"
+  },
+  "outcome_stopped": {
+    "message": "आपके द्वारा रोका गया"
+  },
+  "outcome_blocked": {
+    "message": "सुरक्षित रूप से रोका गया -- एक असुरक्षित कार्रवाई को मना किया"
+  },
+  "outcome_stalled": {
+    "message": "रोका गया: कोई प्रगति नहीं मिली"
+  },
+  "outcome_maxStepsReached": {
+    "message": "रोका गया: स्टेप सीमा पूरी हुई"
+  },
+  "outcome_captureFailed": {
+    "message": "विफल: पेज को कैप्चर/डिटेक्ट नहीं किया जा सका"
+  },
+  "outcome_analyzeFailed": {
+    "message": "विफल: सर्वर रिक्वेस्ट विफल हुई"
+  },
+  "outcome_actFailed": {
+    "message": "विफल: कार्रवाई पूरी नहीं हो सकी"
+  },
+  "outcome_section5Violation": {
+    "message": "रोका गया: आंतरिक सुरक्षा जाँच विफल हुई"
+  },
+  "outcome_failed": {
+    "message": "विफल: अप्रत्याशित त्रुटि"
+  },
+  "outcome_inProgress": {
+    "message": "जारी है"
+  },
+  "pending_performAction": {
+    "message": "एक कार्रवाई करें"
+  },
+  "pending_typeWithValue": {
+    "message": "'$2' में $1 टाइप करें"
+  },
+  "pending_typeValueOnly": {
+    "message": "$1 टाइप करें"
+  },
+  "pending_typeIntoLabel": {
+    "message": "'$1' में टाइप करें"
+  },
+  "pending_typeIntoField": {
+    "message": "किसी फ़ील्ड में टाइप करें"
+  },
+  "pending_fillProfileGeneric": {
+    "message": "'$1' में आपकी सहेजी गई प्रोफ़ाइल जानकारी भरें"
+  },
+  "pending_fillProfileCategory": {
+    "message": "'$1' में आपकी सहेजी गई जानकारी ($2) भरें"
+  },
+  "pending_fieldFallback": {
+    "message": "एक फ़ील्ड"
+  },
+  "pending_click": {
+    "message": "'$1' पर क्लिक करें"
+  },
+  "pending_clickElement": {
+    "message": "किसी एलिमेंट पर क्लिक करें"
+  },
+  "pending_pressKeyOn": {
+    "message": "'$2' पर $1 दबाएँ"
+  },
+  "pending_pressKey": {
+    "message": "$1 दबाएँ"
+  },
+  "pending_aKey": {
+    "message": "एक कुंजी"
+  },
+  "pending_scroll": {
+    "message": "पेज को स्क्रोल करें"
+  },
+  "pending_done": {
+    "message": "टास्क को पूर्ण के रूप में चिह्नित करें"
+  },
+  "pending_genericOn": {
+    "message": "'$2' पर $1"
+  },
+  "pending_genericAction": {
+    "message": "$1 करें"
+  },
+  "profileField_fullName": {
+    "message": "पूरा नाम"
+  },
+  "profileField_email": {
+    "message": "ईमेल"
+  },
+  "profileField_phone": {
+    "message": "फ़ोन"
+  },
+  "profileField_generic": {
+    "message": "एक फ़ील्ड"
+  },
+  "tokenPhrase_profileName": {
+    "message": "आपका सहेजा गया नाम"
+  },
+  "tokenPhrase_profileEmail": {
+    "message": "आपका सहेजा गया ईमेल"
+  },
+  "tokenPhrase_profilePhone": {
+    "message": "आपका सहेजा गया फ़ोन नंबर"
+  },
+  "tokenPhrase_email": {
+    "message": "पहले देखा गया एक ईमेल पता"
+  },
+  "tokenPhrase_phone": {
+    "message": "पहले देखा गया एक फ़ोन नंबर"
+  },
+  "tokenPhrase_aadhaar": {
+    "message": "पहले देखा गया आधार जैसा एक नंबर"
+  },
+  "tokenPhrase_pan": {
+    "message": "पहले देखी गई PAN जैसी एक आईडी"
+  },
+  "tokenPhrase_card": {
+    "message": "पहले देखा गया एक कार्ड नंबर"
+  },
+  "tokenPhrase_upi": {
+    "message": "पहले देखी गई एक UPI आईडी"
+  },
+  "tokenPhrase_ifsc": {
+    "message": "पहले देखा गया एक बैंक IFSC कोड"
+  },
+  "tokenPhrase_gstin": {
+    "message": "पहले देखा गया एक GSTIN नंबर"
+  },
+  "tokenPhrase_passport": {
+    "message": "पहले देखी गई पासपोर्ट जैसी एक आईडी"
+  },
+  "tokenPhrase_personName": {
+    "message": "पहले देखा गया एक नाम"
+  },
+  "tokenPhrase_address": {
+    "message": "पहले देखा गया एक पता"
+  },
+  "tokenPhrase_dob": {
+    "message": "पहले देखी गई एक जन्मतिथि"
+  },
+  "tokenPhrase_accountNumber": {
+    "message": "पहले देखा गया एक खाता नंबर"
+  },
+  "tokenPhrase_password": {
+    "message": "पहले देखा गया एक पासवर्ड"
+  },
+  "tokenPhrase_other": {
+    "message": "पहले देखा गया एक संवेदनशील मूल्य"
+  },
+  "tokenPhrase_genericFallback": {
+    "message": "पहले देखा गया एक मूल्य"
+  },
+  "policyReason_sensitiveTarget": {
+    "message": "यह फ़ील्ड संवेदनशील के रूप में चिह्नित है (उदाहरण के लिए पासवर्ड, आईडी नंबर, या संपर्क जानकारी)।"
+  },
+  "policyReason_irreversibleAction": {
+    "message": "यह कार्रवाई पूर्ववत करना कठिन हो सकता है (उदाहरण के लिए ख़रीदारी, डिलीट करना, या अकाउंट में बदलाव)।"
+  },
+  "policyReason_intentMismatch": {
+    "message": "यह कार्रवाई उससे स्पष्ट रूप से मेल नहीं खाती जो आपने एजेंट से करने को कहा था।"
+  },
+  "policyReason_serverTightened": {
+    "message": "सर्वर ने इस कार्रवाई को आपकी पुष्टि की ज़रूरत के रूप में चिह्नित किया है।"
+  },
+  "policyReason_generic": {
+    "message": "एजेंट की सुरक्षा नीति इस कार्रवाई से पहले आपकी पुष्टि चाहती है।"
+  }
+}

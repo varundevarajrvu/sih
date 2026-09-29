@@ -57,6 +57,30 @@ or resolves credentials by itself — that only happens on the first real
 `502` with `errorCode: "VLM_BACKEND_CALL_FAILED"`) only happens when a
 request actually arrives.
 
+## v2 VLM backend — `VLM_BACKEND_V2` (POST /v2/analyze only)
+
+`POST /v2/analyze` (docs/v2/ARCHITECTURE.md contract C5) is selected by a
+**separate** env var, `VLM_BACKEND_V2` — deliberately decoupled from
+`VLM_BACKEND` above so v1's `/analyze` default (`mock`) is never affected
+by v2 work. Same client classes, same values (`mock`, `observe`,
+`ollama`, `claude`, `gemini`), different default:
+
+| `VLM_BACKEND_V2` value | Default? | Notes |
+|---|---|---|
+| `ollama` | **Yes** | Local planner, pre-registered benchmark — see `server/PLANNER.md` and `benchmarks/results/v3-planner.json`. `OLLAMA_TEXT_MODEL` (semantic mode) / `OLLAMA_VL_MODEL` (image mode, default `qwen2.5vl:3b`). |
+| `mock` / `observe` / `claude` / `gemini` | No | Same semantics as `VLM_BACKEND` above. Claude/Gemini's `analyze_v2` is opt-in and reuses their v1 credential/error handling verbatim — no key configured still fails loudly (`VLM_BACKEND_CALL_FAILED`), never a silent fallback to another backend (invariant 4). |
+
+Every pytest run forces `VLM_BACKEND_V2=mock` via an autouse fixture in
+`tests/conftest.py` (`_default_v2_backend_to_mock`) so the test suite
+never makes a real Ollama call — this only affects the test process's
+environment, not the running server.
+
+Additional v2-only Ollama tuning env vars (`OllamaVLMClient.analyze_v2`):
+`OLLAMA_TEMPERATURE` (default `0`), `OLLAMA_KEEP_ALIVE` (default `10m`),
+`OLLAMA_METRICS_LOG_V2` (optional path — when set, appends one JSON line
+per call with Ollama's own `prompt_eval_count`/`eval_count`/durations;
+used by `benchmarks/bench_v3_planner.py`, a no-op otherwise).
+
 ## Claude backend — credentials and model
 
 **This backend sends the already-redacted screenshot and the sanitized

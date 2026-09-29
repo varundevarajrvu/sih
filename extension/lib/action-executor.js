@@ -112,7 +112,14 @@
     '[role="option"]',
     '[role="textbox"]',
     '[role="combobox"]',
+    // All three spellings, because real sites use all three: `contenteditable`
+    // bare is the commonest in hand-written markup, and `plaintext-only` is
+    // what several chat composers use. Matching only ="true" silently made
+    // those editors invisible to grounding — the agent could not target them
+    // at all, which reads as "the agent ignored the message box".
     '[contenteditable="true"]',
+    '[contenteditable=""]',
+    "[contenteditable]:not([contenteditable=false]):not([contenteditable='false'])",
     "[onclick]",
     "[tabindex]",
   ].join(",");
@@ -490,7 +497,7 @@
   // Action execution
   // -------------------------------------------------------------------
 
-  var VALID_ACTIONS = { click: true, type: true, scroll: true, done: true, fill_profile: true };
+  var VALID_ACTIONS = { click: true, type: true, scroll: true, done: true, fill_profile: true, press_key: true };
 
   function resolveElement(idMap, targetId) {
     var el = idMap.get(targetId);
@@ -750,8 +757,60 @@
     );
   }
 
-  function dispatchClick(el) {
+  /**
+   * CROSS-SITE: bring the target on screen before acting on it.
+   *
+   * A synthetic click on an off-screen element technically dispatches, but on
+   * real sites that is frequently not enough. Virtualised lists (feeds, long
+   * tables, most data grids) only mount rows near the viewport, and anything
+   * revealed by an IntersectionObserver -- lazy images, deferred widgets --
+   * has not initialised its handlers yet. Scrolling first is what a human
+   * does implicitly and what makes the click land on a live element rather
+   * than a placeholder.
+   *
+   * Best-effort and never fatal: an element that cannot be scrolled to is
+   * still worth clicking.
+   */
+  function ensureInView(el, options) {
+    var opts = options || {};
+    var fn = opts.scrollElementIntoView || defaultScrollElementIntoView;
+    try {
+      fn(el);
+    } catch (e) {
+      /* scrolling is preparation, not the action itself */
+    }
+  }
+
+  /**
+   * CROSS-SITE: report the resulting checked state.
+   *
+   * `click` on a checkbox/radio/switch TOGGLES; it does not set. A model told
+   * to "accept the terms" issues a click, and if the box was already ticked it
+   * has just un-ticked it -- while the result said ok:true and looked like
+   * success. Reporting the state afterwards is what lets the loop (and the
+   * run summary) see what actually happened, instead of assuming.
+   */
+  function readToggleState(el) {
+    var tag = el.tagName ? el.tagName.toLowerCase() : "";
+    var type = (el.getAttribute && el.getAttribute("type") || "").toLowerCase();
+    var role = (el.getAttribute && el.getAttribute("role") || "").toLowerCase();
+
+    if (tag === "input" && (type === "checkbox" || type === "radio")) {
+      return { isToggle: true, checked: !!el.checked };
+    }
+    if (role === "checkbox" || role === "radio" || role === "switch") {
+      var aria = el.getAttribute("aria-checked");
+      if (aria === "true" || aria === "false") return { isToggle: true, checked: aria === "true" };
+      return { isToggle: true, checked: null };
+    }
+    return { isToggle: false };
+  }
+
+  function dispatchClick(el, options) {
     var view = getView(el);
+
+    ensureInView(el, options);
+
     if (typeof el.focus === "function") {
       try {
         el.focus();
@@ -761,11 +820,86 @@
     }
     var evt = new view.MouseEvent("click", { bubbles: true, cancelable: true, composed: true, view: view });
     var notCancelled = el.dispatchEvent(evt);
-    return {
+
+    var result = {
       ok: true,
       action: "click",
       targetId: el.getAttribute(AGENT_ID_ATTR),
       defaultPrevented: !notCancelled,
+    };
+
+    var toggle = readToggleState(el);
+    if (toggle.isToggle) result.checked = toggle.checked;
+
+    return result;
+  }
+
+  /**
+   * CROSS-SITE: keyboard.
+   *
+   * A great deal of the real web is only reachable from the keyboard. Search
+   * boxes commit on Enter and have no submit button; modals, dropdowns and
+   * autocomplete popups close on Escape; comboboxes move their selection with
+   * the arrow keys. With click/type alone an agent gets stuck in front of all
+   * of them -- it can fill a search field and then has nothing to press.
+   *
+   * Keys are a closed set, mirroring server/schemas.py's PressKey enum. An
+   * arbitrary key string is refused rather than passed to the page: this
+   * dispatches trusted-looking synthetic events, and the set of things it can
+   * trigger should be enumerable by reading this file.
+   */
+  var PRESSABLE_KEYS = {
+    Enter:      { key: "Enter",      code: "Enter",      keyCode: 13 },
+    Escape:     { key: "Escape",     code: "Escape",     keyCode: 27 },
+    Tab:        { key: "Tab",        code: "Tab",        keyCode: 9 },
+    Backspace:  { key: "Backspace",  code: "Backspace",  keyCode: 8 },
+    ArrowUp:    { key: "ArrowUp",    code: "ArrowUp",    keyCode: 38 },
+    ArrowDown:  { key: "ArrowDown",  code: "ArrowDown",  keyCode: 40 },
+    ArrowLeft:  { key: "ArrowLeft",  code: "ArrowLeft",  keyCode: 37 },
+    ArrowRight: { key: "ArrowRight", code: "ArrowRight", keyCode: 39 },
+  };
+
+  function dispatchPressKey(el, keyName, options) {
+    var spec = PRESSABLE_KEYS[keyName];
+    if (!spec) {
+      throw new ActionExecutionError(
+        "INVALID_KEY",
+        "press_key requires one of " + Object.keys(PRESSABLE_KEYS).join(", ") + "; got " + JSON.stringify(keyName),
+        { targetId: el && el.getAttribute ? el.getAttribute(AGENT_ID_ATTR) : null, key: keyName }
+      );
+    }
+
+    var view = getView(el);
+    ensureInView(el, options);
+    if (typeof el.focus === "function") {
+      try { el.focus(); } catch (e) { /* not fatal */ }
+    }
+
+    // keydown -> keyup, both cancelable, matching what a real press produces.
+    // A framework that listens on either one sees the event it expects.
+    function fire(type) {
+      var ev = new view.KeyboardEvent(type, {
+        key: spec.key,
+        code: spec.code,
+        keyCode: spec.keyCode,
+        which: spec.keyCode,
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        view: view,
+      });
+      return el.dispatchEvent(ev);
+    }
+
+    var keydownAccepted = fire("keydown");
+    fire("keyup");
+
+    return {
+      ok: true,
+      action: "press_key",
+      targetId: el.getAttribute(AGENT_ID_ATTR),
+      key: spec.key,
+      defaultPrevented: !keydownAccepted,
     };
   }
 
@@ -801,9 +935,146 @@
     }
   }
 
-  function dispatchType(el, value) {
+  /**
+   * CROSS-SITE: rich-text editors.
+   *
+   * `el.textContent = text` is enough for a bare contenteditable div and
+   * wrong for every real editor on the web. Gmail, Slack, Notion, and
+   * anything built on ProseMirror/Quill/Draft.js keeps its own document
+   * model and reconciles the DOM from it -- write textContent underneath
+   * one and it either ignores the change or wipes it on the next render,
+   * having destroyed the nodes the model was pointing at.
+   *
+   * What those editors DO observe is `beforeinput`. The sequence here is
+   * the one a real keystroke produces:
+   *   1. select the existing contents, so this replaces rather than appends;
+   *   2. fire a cancelable `beforeinput` with inputType "insertText". If the
+   *      editor cancels it, the editor has taken responsibility for applying
+   *      the change to its own model -- writing the DOM ourselves at that
+   *      point would fight it, so we stop;
+   *   3. otherwise try execCommand("insertText"), which browsers route
+   *      through the same path native typing uses;
+   *   4. only if both are unavailable fall back to textContent.
+   *
+   * Returns whether anything was actually applied, so the caller can tell
+   * "the editor handled it" apart from "nothing happened".
+   */
+  /**
+   * `el.isContentEditable` alone is not a safe test. It is a live computed
+   * property that jsdom does not implement at all (so every editor test would
+   * silently take the <input> path), and in a browser it is also true for
+   * descendants that merely INHERIT editability. Check the property first --
+   * it is the authoritative answer where it exists, including for inherited
+   * cases -- then fall back to the attribute this element actually carries.
+   */
+  function isEditableHost(el) {
+    if (!el) return false;
+    if (el.isContentEditable === true) return true;
+    if (typeof el.getAttribute !== "function") return false;
+    var attr = el.getAttribute("contenteditable");
+    if (attr === null || attr === undefined) return false;
+    var v = String(attr).toLowerCase();
+    return v === "" || v === "true" || v === "plaintext-only";
+  }
+
+  function setContentEditableValue(el, text, view) {
+    var doc = el.ownerDocument;
+
+    // 1. Select existing contents so the insert replaces them.
+    try {
+      if (doc && typeof doc.createRange === "function" && view && typeof view.getSelection === "function") {
+        var sel = view.getSelection();
+        var range = doc.createRange();
+        range.selectNodeContents(el);
+        if (sel) {
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+    } catch (e) {
+      /* selection is an optimisation, not a requirement */
+    }
+
+    // 2. beforeinput -- the hook rich editors actually listen on.
+    var proceed = true;
+    try {
+      var InputEventCtor = view && view.InputEvent;
+      if (typeof InputEventCtor === "function") {
+        proceed = el.dispatchEvent(
+          new InputEventCtor("beforeinput", {
+            bubbles: true,
+            cancelable: true,
+            inputType: "insertText",
+            data: text,
+          })
+        );
+      }
+    } catch (e) {
+      /* no InputEvent in this realm -- fall through to the writes below */
+    }
+
+    if (!proceed) {
+      // The editor cancelled and is applying the change itself. Touching the
+      // DOM now would clobber its model.
+      return { applied: true, via: "beforeinput" };
+    }
+
+    // 3. execCommand -- routed through the browser's own editing pipeline.
+    try {
+      if (doc && typeof doc.execCommand === "function") {
+        if (doc.execCommand("insertText", false, text)) {
+          return { applied: true, via: "execCommand" };
+        }
+      }
+    } catch (e) {
+      /* unsupported or disabled -- fall through */
+    }
+
+    // 4. Last resort.
+    el.textContent = text;
+    return { applied: true, via: "textContent" };
+  }
+
+  /**
+   * CROSS-SITE: native <select>.
+   *
+   * A model asked to fill a dropdown names what a human would read -- the
+   * option's LABEL ("India"), not its value attribute ("IN"). Pushing that
+   * label through the value setter selects nothing and silently leaves the
+   * control on its default, which looks like success in the result object.
+   * So match on label first, then value, then a trimmed case-insensitive
+   * pass, and report a miss rather than pretending.
+   */
+  function setSelectValue(el, text) {
+    var options = el.options ? Array.prototype.slice.call(el.options) : [];
+    var wanted = String(text).trim().toLowerCase();
+
+    var match = null;
+    for (var i = 0; i < options.length; i++) {
+      var o = options[i];
+      var label = (o.label || o.textContent || "").trim();
+      if (label === text || o.value === text) { match = o; break; }
+    }
+    if (!match) {
+      for (var j = 0; j < options.length; j++) {
+        var o2 = options[j];
+        var label2 = (o2.label || o2.textContent || "").trim().toLowerCase();
+        if (label2 === wanted || String(o2.value).trim().toLowerCase() === wanted) { match = o2; break; }
+      }
+    }
+    if (!match) return { matched: false };
+
+    el.selectedIndex = match.index;
+    setNativeValue(el, match.value);
+    return { matched: true, value: match.value, label: (match.label || match.textContent || "").trim() };
+  }
+
+  function dispatchType(el, value, options) {
     var text = value === null || value === undefined ? "" : String(value);
     var view = getView(el);
+
+    ensureInView(el, options);
+
     if (typeof el.focus === "function") {
       try {
         el.focus();
@@ -811,19 +1082,40 @@
         /* not fatal */
       }
     }
-    if (el.isContentEditable) {
-      el.textContent = text;
+
+    var tag = el.tagName ? el.tagName.toLowerCase() : "";
+    var detail = null;
+
+    if (tag === "select") {
+      var picked = setSelectValue(el, text);
+      if (!picked.matched) {
+        throw new ActionExecutionError(
+          "SELECT_OPTION_NOT_FOUND",
+          "no <option> matches " + JSON.stringify(text) + " by label or value on this select",
+          { targetId: el.getAttribute(AGENT_ID_ATTR) }
+        );
+      }
+      detail = { selectedValue: picked.value, selectedLabel: picked.label };
+    } else if (isEditableHost(el)) {
+      var applied = setContentEditableValue(el, text, view);
+      detail = { richText: applied.via };
     } else {
       setNativeValue(el, text);
     }
+
     el.dispatchEvent(new view.Event("input", { bubbles: true, cancelable: true }));
     el.dispatchEvent(new view.Event("change", { bubbles: true, cancelable: true }));
-    return {
+
+    var result = {
       ok: true,
       action: "type",
       targetId: el.getAttribute(AGENT_ID_ATTR),
       value: text,
     };
+    if (detail) {
+      for (var k in detail) if (Object.prototype.hasOwnProperty.call(detail, k)) result[k] = detail[k];
+    }
+    return result;
   }
 
   // -------------------------------------------------------------------
@@ -972,6 +1264,75 @@
     }
   }
 
+  /**
+   * CROSS-SITE: pages where the window does not scroll.
+   *
+   * `window.scrollBy()` assumes the document is the scroller. On a large
+   * share of real applications it is not: Gmail, Twitter-style feeds, most
+   * dashboards and every modal put `overflow: auto` on an inner div and give
+   * the body a fixed height. Scrolling the window there does nothing at all,
+   * and the old code reported `ok: true` for it -- the agent would "scroll"
+   * forever, see an unchanged page, and burn its whole step budget.
+   *
+   * So: if the document itself is not scrollable, find the largest element
+   * that genuinely is and scroll that instead.
+   *
+   * Metrics come through an injectable hook because jsdom performs no layout
+   * -- scrollHeight/clientHeight are always 0 there, so the selection logic
+   * would be untestable if it read the DOM directly.
+   */
+  var SCROLLABLE_SLACK_PX = 40;
+
+  function isScrollableMetrics(m) {
+    if (!m) return false;
+    var oy = String(m.overflowY || "").toLowerCase();
+    if (oy !== "auto" && oy !== "scroll" && oy !== "overlay") return false;
+    return (Number(m.scrollHeight || 0) - Number(m.clientHeight || 0)) > SCROLLABLE_SLACK_PX;
+  }
+
+  function defaultScrollMetrics(el, view) {
+    var cs = view && typeof view.getComputedStyle === "function" ? view.getComputedStyle(el) : null;
+    return {
+      overflowY: cs ? cs.overflowY : "",
+      scrollHeight: el.scrollHeight || 0,
+      clientHeight: el.clientHeight || 0,
+      area: (el.clientWidth || 0) * (el.clientHeight || 0),
+    };
+  }
+
+  function findScrollContainer(win, options) {
+    var opts = options || {};
+    if (typeof opts.pickScrollContainer === "function") return opts.pickScrollContainer(win);
+
+    var doc = win && win.document;
+    if (!doc) return null;
+
+    var getMetrics = opts.getScrollMetrics || function (el) { return defaultScrollMetrics(el, win); };
+
+    // If the document scrolls, the window is the right target and always was.
+    var docEl = doc.documentElement;
+    if (docEl && (Number(docEl.scrollHeight || 0) - Number(docEl.clientHeight || 0)) > SCROLLABLE_SLACK_PX) {
+      return null;
+    }
+
+    // Largest by visible area, so a tall sidebar does not beat the main feed.
+    var best = null;
+    var bestArea = -1;
+    var all = doc.querySelectorAll("*");
+    for (var i = 0; i < all.length; i++) {
+      var m = getMetrics(all[i]);
+      if (!isScrollableMetrics(m)) continue;
+      var area = Number(m.area || 0);
+      if (area > bestArea) { bestArea = area; best = all[i]; }
+    }
+    return best;
+  }
+
+  function defaultScrollElementBy(el, amountPx) {
+    if (typeof el.scrollBy === "function") el.scrollBy(0, amountPx);
+    else el.scrollTop = (el.scrollTop || 0) + amountPx;
+  }
+
   function dispatchPageScroll(value, options) {
     var opts = options || {};
     var win = opts.window || (typeof window !== "undefined" ? window : undefined);
@@ -983,9 +1344,26 @@
       );
     }
     var amount = parseScrollAmount(value);
+
+    var container = findScrollContainer(win, opts);
+    if (container) {
+      var elScroll = opts.scrollElementBy || defaultScrollElementBy;
+      elScroll(container, amount);
+      return {
+        ok: true,
+        action: "scroll",
+        targetId: PAGE_TARGET_ID,
+        amountPx: amount,
+        // Reported so a run summary shows WHICH thing scrolled. "The page
+        // didn't move" and "an inner container moved" look identical
+        // otherwise, and that ambiguity is what made this bug invisible.
+        scrolledContainer: true,
+      };
+    }
+
     var scrollFn = opts.scrollWindowBy || defaultScrollWindowBy;
     scrollFn(win, amount);
-    return { ok: true, action: "scroll", targetId: PAGE_TARGET_ID, amountPx: amount };
+    return { ok: true, action: "scroll", targetId: PAGE_TARGET_ID, amountPx: amount, scrolledContainer: false };
   }
 
   function dispatchElementScroll(el, options) {
@@ -1080,7 +1458,7 @@
       );
     }
 
-    if (action === "click" || action === "type" || action === "fill_profile") {
+    if (action === "click" || action === "type" || action === "fill_profile" || action === "press_key") {
       if (targetId === PAGE_TARGET_ID) {
         throw new ActionExecutionError(
           "INVALID_TARGET_FOR_ACTION",
@@ -1111,8 +1489,9 @@
       // a behavior change to that module.
       guardSensitive(el, actionJson, options);
       guardIrreversible(el, actionJson, options);
-      if (action === "click") return dispatchClick(el);
-      if (action === "type") return dispatchType(el, value);
+      if (action === "click") return dispatchClick(el, options);
+      if (action === "type") return dispatchType(el, value, options);
+      if (action === "press_key") return dispatchPressKey(el, actionJson.key, options);
       return dispatchFillProfile(el, actionJson.profileField, options);
     }
 
@@ -1148,6 +1527,17 @@
     assignAgentIds: assignAgentIds,
     buildDomSnapshot: buildDomSnapshot,
     executeAction: executeAction,
+
+    // Cross-site helpers, exposed so they can be unit-tested directly:
+    // jsdom performs no layout, so scroll-container selection is only
+    // testable through injected metrics.
+    PRESSABLE_KEYS: PRESSABLE_KEYS,
+    readToggleState: readToggleState,
+    isEditableHost: isEditableHost,
+    isScrollableMetrics: isScrollableMetrics,
+    findScrollContainer: findScrollContainer,
+    setSelectValue: setSelectValue,
+    setContentEditableValue: setContentEditableValue,
 
     // Exposed for advanced callers / tests; not required for normal use.
     defaultGetBBox: defaultGetBBox,

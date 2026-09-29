@@ -1,0 +1,11 @@
+{
+  "description": "BUG (orchestrator's probe): 'call +91 98450 12345' tokenized to 'call +91 PHONE#1' -- the country-code prefix was left OUTSIDE the PHONE span, so rehydrate() would type only the digits back into a phone field, silently dropping the country code. One fixture per accepted prefix form, each on a different digit grouping so no grouping is left uncovered: +91 (5-5 grouped, the exact bug repro), 0091 (bare 10-digit), 91- (bare 10-digit), and a bare leading 0 domestic trunk prefix (bare 10-digit, no separator).",
+  "plusNinetyOneText": "call +91 98450 12345 now",
+  "plusNinetyOneValue": "+91 98450 12345",
+  "zeroZeroNinetyOneText": "call 0091 9845012345 now",
+  "zeroZeroNinetyOneValue": "0091 9845012345",
+  "ninetyOneHyphenText": "call 91-9845012345 now",
+  "ninetyOneHyphenValue": "91-9845012345",
+  "trunkZeroText": "call 09845012345 now",
+  "trunkZeroValue": "09845012345"
+}

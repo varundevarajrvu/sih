@@ -10,6 +10,10 @@ claude --model opusplan --effort high --fallback-model sonnet,haiku
 
 ---
 
+> **🔶 V2 REBUILD IN PROGRESS (branch `rebuild/v2`, started 2026-09-23).** Read
+> [`docs/v2/ARCHITECTURE.md`](docs/v2/ARCHITECTURE.md) before any v2 work. Its contracts (C1–C6) and
+> invariants override Section 4/5 below wherever they disagree. Sections 1, 3, 6, 7 still apply.
+
 ## 1. Role Definition — You Are the Orchestrator, Not the Builder
 
 Your job in this repo is **planning, delegation, and verification** — not writing every line yourself. Default to the Agent tool for anything that qualifies as a module (Section 4). You write code directly only for: one-line fixes, config tweaks, and gluing already-verified module outputs together in Phase 6.
@@ -320,6 +324,271 @@ Rationale: an agent typing into a password field is the exact failure this proje
 - `type` uses the prototype-walking native value setter plus `input`/`change` dispatch, so React-style controlled inputs actually observe the change.
 - ID stability: `data-agent-id` is read back from the DOM as the source of truth (not a side cache), and new elements get IDs above the current max, so re-scans never collide.
 Content-script side of the loop: assigns `data-agent-id` to actionable elements (Set-of-Mark grounding — the model refers to elements by stable ID, not fragile pixel coordinates), receives Phase 2c's action JSON, dispatches the real DOM event.
+
+### PROFILE AUTOFILL — `fill_profile` + the vault. Feature built 2026-09-14; **leak found and fixed 2026-09-17**. **663 tests green** (466 JS + 197 server). ✅ **BOTH HALVES BROWSER-VERIFIED.**
+
+*Recorded late: the feature shipped in commit `d73f53e` with no entry here, no README mention, and no demo scenario. It was found undocumented three days later while auditing project state — which is also how the leak below was found. A feature that isn't in the decision record doesn't get reviewed against the decision record.*
+
+**THE FEATURE.** "Fill all my details" previously could not work: the agent only knew what the task goal contained, and typing into an email field is exactly what `guardSensitive()` refuses — because the MODEL chose the value and the model is untrusted. The resolution is that the model never supplies the value. It names a CATEGORY; the extension fills from a local vault:
+```
+model:      { action: "fill_profile", targetId: "agent-7", profileField: "email", value: null }
+extension:  look up "email" in chrome.storage.local -> type it
+```
+Enforced structurally, not by convention, on both sides: server-side `ModelSuppliedProfileValue` takes ZERO constructor arguments so no caller can pass the offending value in even by accident; client-side `dispatchFillProfile()` has no `value` parameter at all, so it cannot use a model-supplied one because it never receives one. A `fill_profile` carrying a non-null value is rejected outright (misbehaving model, or a prompt-injected page smuggling data) with its own error code and no echo. `ProfileField` is a CLOSED enum with no escape hatch — deliberately unlike `PiiType`, which degrades-and-flags because false negatives there are dangerous; a profile category only names where to look, so an unrecognised one must hard-reject. `MockVLMClient` emits `fill_profile` for empty email/tel/name-shaped fields, so the whole path demos with no API key.
+
+**🔴 THE LEAK — confirmed in a browser, then fixed. The guard carve-out was sound; the NEXT step was not.**
+
+The carve-out exempts `fill_profile` from `guardSensitive()`, correctly: there is no model-chosen value to protect against. But the vault value is now *in the live DOM*. On the next loop iteration `getAccessibleText()` returns an input's `.value` (`action-executor.js:391`), so it came back as `DomNode.text`. dom-scanner's value regexes catch a vault EMAIL and a vault PHONE, so `sanitizeDomSnapshot()` stripped those. **A name has no regex signature, and Phase 2a deliberately does not flag name fields — so `full_name` alone survived into the outgoing payload.**
+
+Measured across all three categories against the real modules:
+```
+full_name  flagged=false  -> LEAKS
+email      flagged=true   -> contained
+phone      flagged=true   -> contained
+```
+Browser-confirmed before the fix, mock backend, real demo page. Step 2's payload **as received by the server**:
+```
+agent-4 | input text     | sensitive=False | text='<the vault name>'   <-- transmitted
+agent-1 | input password | sensitive=True  | text=None                 <-- correctly stripped
+```
+In that run the exposure lasted one step only because the mock happened to `type` into the same field next, which put it in `actedAgentIds`. **A backend that moves to a different field would leave the name in every remaining payload of the run.**
+
+**WHY TWO SAFEGUARDS MISSED IT INDEPENDENTLY — the reusable lesson.**
+1. `actedAgentIds` (`content.js:1985`) filters acted-on nodes out of the next snapshot and would have hidden it — but its recording gate (`content.js:2447`) is `action === "type" || action === "click"`. `fill_profile` was added later and never added to that gate. **Any new action type must be evaluated against every existing gate that enumerates action types.**
+2. The containment test (`test_profile_vault.mjs`) re-scanned after the write and asserted on payload bytes — genuinely careful — but its fixture was an `autocomplete="email"` field AND it **HARDCODED `sensitive: true`** at the merge step instead of running the real scanner. Everything it proved was downstream of a flag `full_name` never gets. **A test that hardcodes the classification it is supposed to be exercising proves only the plumbing below that point.** The suite covered the two categories an existing mechanism already protected and skipped the one that needed protecting.
+
+**🔴 THE FIX — ORCHESTRATOR RULING. A vault-filled node is exactly as sensitive as a page-sourced PII node, for the remainder of the run.**
+`buildProfileVaultSensitiveNodes()` (`profile-vault.js`, pure and independently testable per Section 5) synthesizes dom-scanner's own `{selector, bbox, piiType, agentId}` shape and is concatenated into `allSensitiveNodes` (`content.js:1995`). **One insertion point closes both halves**, because that single list already feeds `redactionInputNodes` → `redact()` (image blackout) *and* `sensitiveByAgentId` → `sanitizeDomSnapshot()` (text strip), with zero changes to either consumer. bbox is measured **fresh every step** — the page scrolls between steps, and a cached bbox would black out the wrong region, which is a leak that looks like success. Dedupes against agentIds the scanner already flagged; skips ids no longer resolvable in `idMap`.
+`profileField` → `piiType`: `email`→`email`, `phone`→`tel`, `full_name`→`other` (Phase 2c ruling 5's deliberate escape hatch; `PiiType` is closed and a new member would be a hard 422).
+
+> **Deliberately NOT folded into `actedAgentIds`, and do not "simplify" it later by doing so.** That would drop the node from the DOM JSON — closing the payload half — while leaving the vault value plainly readable in the SCREENSHOT on every subsequent step. Dropping a node from `domSnapshot` has no effect whatsoever on what gets drawn from `allSensitiveNodes`/`redactionInputNodes` into the image. It is half a fix that tests green.
+
+`assertNoRawPii()` now receives `allSensitiveNodes` rather than `sensitiveNodes` — a strict tightening (`content.js:1410`'s `if (!el) continue` means a superset can only catch more, never throw spuriously on unresolvable subframe nodes).
+
+**✅ BROWSER-VERIFIED AFTER THE FIX — both halves, same page, same backend.**
+- **Wire:** the sentinel vault value appears in **zero** payloads. `agent-4` goes `sensitive=True`, `text=None`, with region `('other','agent-4','dom')` appearing the moment it is filled.
+- **Image:** the field is a solid black bar in the transmitted PNG. **The image half of this feature's claim had never been tested before this run** — and it is the half a payload assertion structurally cannot see (the same blind spot that let the Tier 1 iframe bug ship).
+
+**SCOPE — stated rather than implied.** This covers *vault-sourced* names. **Page-sourced names remain unredacted** — the demo ID card's "Jordan A. Demo" is plainly readable in the verified screenshot. That is Phase 2a's existing deliberate ruling (flagging generic name tokens would redact most of a form and leave the agent unable to operate), unchanged here. The same property that makes names unflaggable is what caused this bug; the fix works because vault provenance is *known*, not because names became detectable.
+
+**KNOWN GAP, not fixed:** a `fill_profile` relayed into a **subframe** (agentId shaped `agent-fN-…`) never resolves through the top-frame `idMap`, so it would accumulate an unresolvable entry each step — harmlessly skipped by the existing `if (!el)` guard, matching the subframe-agentId pattern elsewhere in `content.js`, but untested. The confirmed leak was top-frame; scope was deliberately not expanded.
+
+### CROSS-SITE HARDENING + POPUP RE-THEME. Recorded 2026-09-19. **693 tests green** (486 JS + 207 server).
+
+**Popup now shares the site's visual system.** The glassmorphism pass (orbs, `backdrop-filter`, bronze accents) is gone; the popup is flat monochrome with sharp rectangles, thin rules, self-hosted Inter and the same glitching wordmark the hero carries. A popup that looks like a different product than the site is a product with two identities. Verified: every id `popup.js` reaches for still resolves, zero `backdrop-filter`, zero border-radius anywhere, and all 15 text roles pass AA against their real composited backgrounds.
+
+**Three real-site capability gaps closed.** Every browser verification in this project has run against `demo/test-page.html` — five actionable elements, a document that scrolls, no rich-text editor anywhere. These are the three places that gap actually bites:
+
+1. **🔴 Rich-text editors were being written to in a way real editors ignore.** `el.textContent = text` is fine for a bare contenteditable and wrong for Gmail, Slack, Notion, and anything on ProseMirror/Quill/Draft.js — those keep their own document model and reconcile the DOM from it, so a textContent write is either ignored or wiped on the next render, having destroyed the nodes the model pointed at. Now fires a cancelable `beforeinput` with `inputType: "insertText"` first; **if the editor cancels, we stop and write nothing**, because a cancel means the editor has taken responsibility. Otherwise `execCommand("insertText")`, then textContent as a last resort. The result reports which path applied.
+   Also: `el.isContentEditable` alone is not a safe test — jsdom does not implement it (so every editor test silently took the `<input>` path), and in a browser it is *also* true for elements that merely inherit editability. `isEditableHost()` checks the property first, then the element's own attribute. And `ACTIONABLE_SELECTOR` matched only `[contenteditable="true"]`, so bare `contenteditable` and `plaintext-only` composers were **invisible to grounding entirely** — the agent could not target them at all, which reads to a user as "it ignored the message box".
+
+2. **🔴 `<select>` silently selected nothing.** A model naming a dropdown names what a human reads — the label ("India"), not the value ("IN"). Pushing the label through the value setter matched nothing and left the control on its default **while reporting `ok: true`**. Now matches label, then value, then a trimmed case-insensitive pass, and throws `SELECT_OPTION_NOT_FOUND` on a miss rather than pretending.
+
+3. **🔴 `scroll` did nothing on any app that scrolls an inner container.** `window.scrollBy()` assumes the document is the scroller. Gmail, feed-style timelines, most dashboards and every modal put `overflow:auto` on an inner div and fix the body height — scrolling the window there is a no-op, and the old code returned `ok: true` for it, so the agent would "scroll" repeatedly, see an unchanged page, and burn its whole step budget. Now falls back to the largest genuinely-scrollable element, and reports `scrolledContainer` so a run summary distinguishes "an inner container moved" from "the page moved" — that ambiguity is precisely what made this invisible.
+   Scroll metrics are read through an **injectable hook** because jsdom performs no layout (`scrollHeight`/`clientHeight` are always 0), so the selection logic would otherwise be untestable.
+
+4. **SPA route changes stranded `actedAgentIds`.** A full page load tears down the content script and the run with it, so that case needs nothing. A `pushState` route change does not: the script survives, the loop continues, and every recorded agentId now refers to an element on a page that no longer exists — those stale ids keep filtering the **new** page's snapshot, so the agent cannot see elements it has never acted on. On a single-page app that is most of the site. `actedAgentIds` and `filledProfileAgentIds` now reset on a detected href change, and the step logs it.
+
+**Still true and unchanged: none of this has been run against a real website.** These are the fixes the demo fixture could never have surfaced, written against the failure modes real sites are known to have — but the observe-only backend exists precisely so that run can happen safely, and it still has not. Do not let this entry read as if it had.
+
+### ACTION SURFACE BROADENED — `press_key`, in-view targeting, toggle state. Recorded 2026-09-19. **717 tests green** (497 JS + 220 server).
+
+**🔴 NEW ACTION: `press_key`.** A large share of the real web is only reachable from the keyboard — search boxes that commit on Enter with no visible submit button, modals and autocomplete popups that close on Escape, comboboxes driven by arrow keys. With `click`/`type` alone the agent fills a search field and then has nothing to press.
+
+`PressKey` is a **closed enum** (`Enter, Escape, Tab, Backspace, Arrow{Up,Down,Left,Right}`) and deliberately contains **no printable characters** — entering text is `type`'s job and goes through the guards, so a pressable letter would be a way to type that skips them. The extension dispatches synthetic keyboard events into whatever page is loaded; what it can trigger should be enumerable by reading the enum, not "whatever string the model emitted".
+
+`key` is **required exactly when `action == "press_key"` and forbidden otherwise**, mirroring `profileField`'s shape for `fill_profile` — a misplaced `key` is an ordinary contract violation (plain `ValueError` → the existing generic 502), not a privacy event, since a keystroke name is not data. **`press_key` runs through `guardSensitive()`/`guardIrreversible()` exactly like click and type** — an action that could reach a password field while skipping the guards would have been a hole, not a feature.
+
+**Off-screen targets are now scrolled into view before click/type.** A synthetic click on an off-screen element dispatches, but on real sites that is often not enough: virtualised lists (feeds, long tables, data grids) only mount rows near the viewport, and IntersectionObserver-gated widgets have not initialised their handlers yet — the click lands on a placeholder. Best-effort and never fatal: an element that cannot be scrolled to is still worth clicking.
+
+**🔴 `click` on a toggle now reports the RESULTING state.** `click` toggles, it does not set. Told to "accept the terms" on an already-ticked box the agent un-ticks it — and the old result said `ok: true` either way, so neither the loop nor the run summary could tell. Now reports `checked` for `input[type=checkbox|radio]` and for `role=checkbox|radio|switch` via `aria-checked` (null when the page exposes no state, rather than guessing).
+
+**Drift guards fired and were updated, not loosened.** Three tests assert the response's exact key set and exact action enum; all three failed on this change, which is them doing their job. Each was updated to the new exact set — still an equality assertion, never a superset check — so the next contract change is equally impossible to land silently.
+
+**Live-verified against the running server**, not only in unit tests: `/analyze` now returns `key` on every response, `{press_key, key:"Enter"}` validates, and all three violations (missing key, `F12`, `key` on a `click`) are rejected.
+
+### ✅ THE PIPELINE HAS MET THE REAL WEB — 2026-09-21. Observe-only backend, two live sites. **The project's largest evidence gap is closed.**
+
+Every browser verification before this ran against `demo/test-page.html` — five actionable elements, no iframes, markup we wrote. `ObserveOnlyVLMClient` (`/analyze` always replies `done` on the page sentinel, naming no element, so the loop cannot act *by construction*) made this safe. Verified at the wire before the run, not just from the launcher banner: `POST /analyze → {"action":"done","targetId":"page"}`.
+
+**Both runs completed `outcome: "done"`, one step, zero exceptions, nothing clicked or typed.**
+
+| | `wikipedia.org` | `thehindu.com/news/cities/bangalore/` |
+|---|---|---|
+| actionableNodes | 401 | **455** |
+| rank selected / dropped | 40 / 361 | 40 / 415 |
+| sensitiveNodes | 0 | 1 |
+| framesReported / merged / dropped | 0 / 0 / 0 | **19 / 13 / 6** |
+| unscannableRegions | 0 | 4 |
+| redact regions | 0 | 5 |
+| detections (vision) | 1 → 0 after class filter | **0** |
+| scan | 23.9 ms | **346.4 ms** |
+| detect (warm) | 2,418.6 ms | 2,571.3 ms |
+| peak JS heap | 61.4 MB | **125.25 MB** |
+
+**🏆 THE CROSS-ORIGIN IFRAME HANDSHAKE SURVIVED REAL AD TECH.** The Hindu loaded **19 subframes** — pubmatic, doubleclick, rubicon, taboola, smartadserver, openx, indexww, onetag, reCAPTCHA. **13 merged successfully.** That mechanism had only ever faced two iframes on a fixture page; the `MessageEvent.source` ↔ `iframe.contentWindow` correlation and the retry-until-ACK handshake hold at ten times that scale, against frames written by nine different ad vendors.
+
+**🏆 AND THE DEFENSIVE REDACTION FIRED FOR REAL.** Six reports did not merge, so **four iframes were blacked out whole** (`unscannableRegions: 4`, contributing 4 of the 5 redaction regions). This is the TIER 1 ruling — *"when you cannot see inside, over-redact"* — executing in production conditions rather than in a test. The failure mode on a real page with nineteen ad frames was **over-redaction, never exposure**, exactly as designed. This is now the strongest available evidence that the fail-safe is real rather than aspirational.
+
+**🏆 `element-ranker` under genuine load.** It was built for "real pages have hundreds of actionable elements" and had never seen more than six. It handled 455 → 40 in 18.8 ms, and 401 → 40 in 8.4 ms, with sensitive nodes exempt from the budget by construction.
+
+**The distributed Section 5 guarantee is visible in the log:** each subframe ran its own sanitize-and-assert before its report left that frame's isolated world (many `no raw value for 0 flagged sensitive node(s)` lines), then the top frame asserted over the merged payload (`1 flagged sensitive node`). The guarantee is distributed rather than centralized — Tier 1 declared that, and this is it happening.
+
+#### 🔴 NEW — OPEN. `SCAN_THIS_FRAME` reaches frames with no handler for it.
+
+Logged **13 times** on The Hindu: `[content] received message (no handler for this type): SCAN_THIS_FRAME`. The content script is present in those frames (each logged its own load line) but does not handle the message it is being sent.
+
+**Not established, and deliberately not theorised here:** whether this is the *cause* of the 6 dropped reports, a harmless broadcast to frames that legitimately have no handler, or a registration-ordering problem. The count coincidence (13 merged, 13 unhandled) is suggestive and is **not** evidence. Nothing was changed — the code was frozen for submission. Whoever picks this up starts here, because it is the one anomaly this run produced that has no explanation.
+
+#### ⚠️ RESOURCE AND VISION FINDINGS — both matter for the rubric
+
+**Peak heap on a real news site is 125 MB** — roughly 2× the demo page's 33–63 MB, on a page with 19 ad frames and 455 actionable elements. **Every published heap figure is a demo-page figure.** A judge who runs this on a real site will see a number twice what the README says unless it is qualified. Scan time moves the same way (23.9 ms → 346.4 ms).
+
+**Vision contributed nothing on either real page.** The Hindu: `detections: 0`. Wikipedia: one detection, dropped by the privacy-class filter. This is **expected, not a defect** — `yolos-tiny` is COCO-80, trained on physical objects (person, laptop, tv), and a text-heavy news homepage contains none. It confirms the UI-DETECTOR SPIKE's conclusion from the other direction: vision earns its place on pages with *rendered human content* (faces, ID cards, photos), and contributes nothing on text. **Do not claim the vision path carries redaction on ordinary web pages — on these two it carried zero.**
+
+### ⚠️ STILL OPEN — capture can return a stale frame. **REPRODUCED 2026-09-20** and caught automatically by the detector; mechanism still NOT established (rate-limiting is now RULED OUT — see the reproduction entry below). Detected and fail-closed as of 2026-09-19.
+
+Two consecutive steps produced **byte-identical screenshots** while the page had scrolled 2,613 px between them (`agent-1` bbox y: `1161.0` → `-1452.0`). Step 2's redaction rectangles were therefore computed against the scrolled DOM and drawn on the *unscrolled* image, at negative y — off-image, redacting nothing.
+
+**No exposure in that run:** at scroll 0 the sensitive fields sat at y≥1161 in a 972 px-tall viewport, below the fold, so the stale image did not contain them. That is luck, not design.
+
+**Asymmetry worth noting:** ~~the loop's viewport-only capture (`background.js:788`, `handleCaptureAndDetect`) is a bare `captureVisibleTab` with **no proactive throttle and no rate-limit retry**. The full-page path — which ships OFF by default — has both (550 ms minimum spacing, 3× retry on `MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND`).~~ **CLOSED 2026-09-19** — both paths now share `captureVisibleTabWithRetry()` and `capture-plan.js`'s `computeThrottleDelay()`. The observation that prompted it stands: *the hardening went to the experimental path, not the one everything actually runs on.*
+
+**Did NOT reproduce** on a later run at 1920×970 (three distinct hashes); it was observed only at a 265 px-wide window, where the page reflowed to ~3,000 px tall. Nothing was changed, so this is *unobserved*, not fixed. The captures were 761 ms apart — inside what the full-page path's own 550 ms constant assumes is safe — so "Chrome rate-limited it" does not obviously fit. **Whoever picks this up: hash consecutive captures in every browser run; that is how it was caught.**
+
+### STALE CAPTURE — DETECTED AND FAIL-CLOSED. Recorded 2026-09-19. **732 tests green** (512 JS + 220 server). **The mechanism is still not established and this does not claim to fix it.**
+
+The bug above was found by hand-diffing dumped PNGs. That is now automatic. `lib/capture-hash.js` (pure, 15 tests, includes a fixture carrying the 2026-09-17 observation's exact numbers — scrollY 1161 → -1452, delta -2613).
+
+**🔴 RULING A — what counts as "stale". Get this wrong and it becomes a false-positive machine.**
+> **stale = consecutive captures byte-identical AND the page's scroll position changed between them.**
+
+Byte-identical consecutive captures are the **normal, correct** case on a static page that did not scroll — flagging that alone would make every quiet step on every static page a false alarm. Scroll movement alone says nothing about what was transmitted. Requiring both is the exact narrow signature the observation exhibited, and a static page produces zero false positives by construction.
+
+**🔴 RULING B — `background.js` hashes, `content.js` decides.** SHA-256 via `crypto.subtle` over the decoded bytes (exact; a cheap non-crypto hash is the wrong trade for the one check whose entire job is proving two images are or are not byte-identical). Background owns the bytes, so nothing crosses the message boundary twice; `content.js` is the only context that also knows `scrollY`. It returns `screenshotHash` on `CAPTURE_AND_DETECT_RESULT`.
+
+**🔴 RULING C — fail closed on the STEP, not the RUN.** A positive verdict means this step's image shows the wrong viewport for the redaction rectangles about to be computed against this step's scrolled DOM — transmitting it sends whatever was on screen at the old position, unredacted, dressed up as redacted. The step aborts **before redact** (stronger than before-send), mirroring `assertNoRawPii()`'s fail-closed idiom, with **`continue`, never `break`**.
+> Aborting the whole run would be a NEW failure mode built on a bug whose mechanism nobody has explained. One step out of `MAX_STEPS = 25` is cheap; an unredacted viewport is the entire thesis.
+
+**Reported unconditionally, including at zero** — `screenshotHash` and `throttleWaitMs` on every step's `capture` instrumentation, `staleCaptureCount`/`staleCaptures` in the RUN SUMMARY. Same posture `fullPage` and `rank` already set: a run with zero stale captures must *say* zero, not omit the field.
+
+**Why `throttleWaitMs` is reported and not just computed:** a stale-capture skip `continue`s immediately, so the next capture lands inside the new 550 ms floor. The throttle fires *precisely* in the scenario this change instruments, and an unreported wait would surface only as unattributable end-to-end latency. `tCapture0` is taken **after** the wait, so `captureMs` still measures only the capture — do not "simplify" that.
+
+**Scoped OUT: full-page capture mode.** It never populates a hash, and `detectStaleCapture()` treats a missing hash as "no verdict" — which scopes the check out without a separate branch. That mode restores scroll to its pre-capture position before the scan runs, so a single `scrollY` reading there would not mean what this check needs it to mean.
+
+**NOT verified without a browser** — *(written 2026-09-19; three of these four were closed by the reproduction recorded below the next day — left here as written rather than edited after the fact)*:
+- that `crypto.subtle`/`atob` behave identically inside the real MV3 service worker (only Node-verified; the `crypto.subtle` call site is new),
+- that `content.js`'s dynamic `import()` of `capture-hash.js` resolves under the real extension loader (jsdom cannot exercise `chrome.runtime.getURL` or `web_accessible_resources` at all),
+- that the detector ever fires against a **real** reproduction — only Ruling A's discriminator is proven, against fixtures,
+- **whether inserting an `await crypto.subtle.digest(...)` between capture and detect perturbs the timing of a race nobody has explained.** Stated because the mechanism is unknown: this change could in principle mask or unmask the original bug.
+
+#### ✅ REPRODUCED AND CAUGHT IN-BROWSER — 2026-09-20. The detector's first real outing.
+
+Mock backend, `demo/test-page.html` at a **~265 px-wide window**, goal `Fill the name as River Jane and email id as riverjane33@demo.com`. Run completed `outcome: "done"`, 4 steps, 11,635 ms.
+
+```
+step 1 :: capture        screenshotHash 832450c5…296eb0   throttleWaitMs 0
+step 1 :: act            fill_profile agent-4  → page scrolls 0 → 573.6 px
+step 2 :: capture        screenshotHash 832450c5…296eb0   ← BYTE-IDENTICAL
+step 2 :: stale-capture  stale: true, scrollDelta 573.6px → SEND REFUSED
+step 3, 4                distinct hashes, sent normally, run completed
+staleCaptureCount: 1
+```
+
+**Everything Rulings A/B/C specified behaved as designed in a real browser:** it fired exactly once, on the real thing; it did not fire on the three steps that were genuinely fine; the step refused to send *before redact*; and the run continued to a clean `done` rather than aborting.
+
+**🔴 RATE-LIMITING IS RULED OUT.** `throttleWaitMs: 0` and the two captures were **~2.9 s apart** — far outside Chrome's ~2/sec limit, and far outside the full-page path's own 550 ms constant. The 2026-09-17 note that *"Chrome rate-limited it does not obviously fit"* is now confirmed: it doesn't fit at all. The throttle/retry parity was still correct to close, but it is **not** the cause and must not be recorded as the fix.
+
+**🔴 THE TRIGGER IS `scrollIntoView` FROM THE ACTION SURFACE.** Step 1's `fill_profile` scrolled the page 573.6 px to reach an off-screen field — the "off-screen targets are now scrolled into view before click/type" behaviour added 2026-09-19. That change did not *create* this bug; it made it **reachable on a page that previously never scrolled mid-run**, which is why every earlier multi-step run on this same page missed it.
+
+**MECHANISM — HYPOTHESIS ONLY, NOT ESTABLISHED. Do not record this as a cause.** ⚠️ **AND IT DID NOT SURVIVE THE SAME DAY — see "RULING A WAS TOO NARROW" directly below.** Left here as written rather than deleted, because the reasoning that produced it is the reasoning that got corrected.
+2.9 s is far too long for an ordinary in-flight-repaint race. The remaining explanation consistent with the data is that the tab **was not compositing at all** — a narrow, partially-occluded window with devtools focused — so `captureVisibleTab` returned the last frame actually painted. This would also explain the shape of the original observation: reproduced at 265 px, never at 1920×970. **Unverified.** Whoever takes this further: vary occlusion/focus/window state deliberately and watch `staleCaptureCount`, which now makes that a cheap experiment instead of a PNG-diffing exercise.
+
+**Verified in-browser by this run, closing three of the four "not verified without a browser" items above:** `crypto.subtle` works in the real MV3 service worker (real SHA-256 digests returned); `content.js`'s dynamic `import()` of `capture-hash.js` resolves under the real extension loader; and the unconditional reporting renders as designed. Only "does an extra `await` between capture and detect perturb the race" remains open — and the bug reproduced *with* that await in place, so it plainly does not mask it.
+
+**Side confirmations from the same run:** `sensitiveNodes` went 4 → 5 after the `fill_profile`, i.e. `buildProfileVaultSensitiveNodes()` working in a browser. And `framesReported: 0` on this iframe-free page — the `framesReported: 1, framesMerged: 0, framesDropped: 1` seen in an immediately prior run was a **stale `tabId→frameId` registry entry surviving from the previous session**, cleared by the extension reload. It failed safe (defensive whole-iframe redaction fired), but it is the phantom-frame shape the 2026-09-14 fix was supposed to have closed — **watch for it; it is not confirmed gone.**
+
+**⚠️ UNEXPLAINED — inference ran 2,650 ms / 2,692 ms against the recorded 780–880 ms baseline**, warm (`pipelineWasAlreadyLoaded: true`, `device: webgpu`), two consistent samples. An immediately prior run measured 4,570 ms, so there is a warm-up component, but it settles ~3× above baseline, not at it. Both runs were at the 265 px window, so image shape is the obvious suspect and the baseline was a normal viewport — **suspected, not established.** Re-measure at a normal window before quoting either number.
+
+#### 🔴 RULING A WAS TOO NARROW — a stale frame got through undetected. Found 2026-09-20, same sitting.
+
+A third run, **maximised window**, on the same page. Hashes across all three runs that day:
+```
+11:25  narrow window      step 1   832450c5…296eb0
+11:41  narrow window      step 1   832450c5…296eb0   ← correctly flagged stale at step 2
+12:38  MAXIMISED window   step 1   8f53565f…389593   ← fresh and correct
+12:38  MAXIMISED window   step 2   832450c5…296eb0   ← the NARROW-window frame, ~57 min old
+```
+A maximised viewport and a ~265 px viewport **cannot** produce byte-identical PNGs. `captureVisibleTab` served a cached frame from a previous window size, and the frame was transmitted.
+
+> ### 🔴 CORRECTION — 2026-09-20, later the same day. The sentence directly above is WRONG, and it was an ORCHESTRATOR error.
+>
+> **`832450c5…296eb0` is a 1920×970 frame.** Measured, once the dimension instrumentation existed: the 13:49 run recorded that exact hash with `screenshotWidthPx: 1920, screenshotHeightPx: 970`. Calling it "the narrow-window frame" was an **inference from an assumed window size that was never recorded** — the runs above predate the instrumentation that would have settled it. That is the same class of mistake as quoting a latency figure you cannot reproduce.
+>
+> **What survives unchanged:** the **11:41 catch is real.** Identical hash on consecutive captures while `scrollY` moved 573.6 px is stale by Ruling A's own discriminator regardless of what size the window was. The detector worked.
+>
+> **What does NOT survive:** the claim that the 12:38 step-2 frame came from a *different window size*. If that run was 1920×970 throughout — which the hash now suggests — then at step 2 **neither** of Ruling A′'s checks would have fired: dimensions would match, and `832450c5` had not been seen earlier *in that run* (step 1 was `8f53565f`). Step 2 still received a frame that did not reflect step 1's scroll-and-fill, so **a genuine staleness case exists that Ruling A′ does not demonstrably close.**
+>
+> **Consequence for the test suite:** the regression test added for "the real miss" encodes 265×3000 vs 1920×970 — a scenario constructed from the wrong inference. It is a valid test of cross-window-size staleness, which is a real failure mode the dimension check genuinely catches. It is **not** a reproduction of the observed 12:38 event, and must not be cited as one.
+>
+> **The actual lesson, and why the instrumentation now exists:** window dimensions were never recorded, so a question that one number would have answered instead got answered by inference — twice, wrongly. `expectedWidthPx`/`screenshotWidthPx`/`devicePixelRatio` are now on **every** step precisely so this cannot recur.
+
+**`staleCaptureCount: 0` on that run is a FALSE NEGATIVE.** Ruling A compares only against the *immediately previous* capture: `8f53565f != 832450c5`, so no verdict. The discriminator catches "the same frame twice in a row" and is blind to "an older frame resurfacing after a correct one."
+
+**This is an orchestrator error, not an implementation defect** — Ruling A was specified too narrowly and the module implements it exactly as written.
+
+**⚠️ THE COMPOSITOR HYPOTHESIS RECORDED ABOVE NO LONGER FITS.** "The tab was not compositing" does not explain step 1 receiving a correct fresh maximised frame and step 2 then receiving an hour-old one. The honest position: the mechanism is stranger than characterised and is **still not established.** It is deliberately NOT replaced with a new theory here.
+
+**RULING A′ — two independent checks.** ✅ **BUILT AND VERIFIED MECHANICALLY 2026-09-20 — 749 tests green (529 JS + 220 server). NOT yet browser-verified.** Includes a regression test for the real miss above: the hash rule passes it clean, the dimension rule catches it.
+1. **Dimension check, primary and definitive:** the captured PNG's pixel dimensions must match the current viewport × `devicePixelRatio`. A frame from any other window state fails outright, with no history needed. Dimensions are read from the PNG **IHDR header** (fixed byte offsets 16–23), not by decoding — pure, synchronous, no canvas. **A ±2 px tolerance is mandatory:** `devicePixelRatio` is commonly fractional on Windows (1.25/1.5/1.75 under display scaling), so exact equality would fire on every step on most machines.
+2. **Hash recurrence across the whole run, secondary:** extends the comparison from "the previous capture" to "any capture earlier in this run", keyed `hash → scrollY-when-first-seen`. A hash recurring at the *same* scrollY is still the normal static-page case and must not flag.
+
+Both are scoped OUT of full-page mode — the dimension check by an **explicit branch**, not by absent data, since a stitched image is document-sized by construction and would fail it every step. The RUN SUMMARY reports **which** check fired; a merged boolean would discard exactly the signal that made this blind spot visible.
+
+**🔴 THE ±2 px TOLERANCE HAS NEVER MET REAL HARDWARE, AND ITS FAILURE MODE IS TOTAL.** If it is wrong for the display scaling in use, `detectDimensionMismatch()` fires on every step, every step fails closed, and **the agent does nothing at all** while the run summary reports a list of skips. That is the correct direction to fail — loud, not silent — but it must be recognised on sight rather than read as a broken extension.
+> Which is why `expectedWidthPx`, `screenshotWidthPx` and `devicePixelRatio` are recorded on **every** step's `capture` entry, firing or not, from a **single hoisted computation the verdict itself reuses** (so the reported numbers cannot drift from the checked ones). A passing step must show its margin. This is the third time in this work that a value was computed and discarded unless it fired — see `throttleWaitMs` above. **Watch for that shape.**
+
+**The next browser run is this ruling's verification.** Re-run the same scenario (`demo/test-page.html`, the profile-autofill goal, mock backend). A `staleCaptureCount` of 0 is only meaningful now *because* the margin is visible on passing steps.
+
+#### ✅ RULING A′ BROWSER-VERIFIED — 2026-09-21. The tolerance risk is closed.
+
+Same scenario, maximised window, mock backend. `outcome: "done"`, 4 steps.
+
+```
+step 1  dimensionMismatch: null  hashRecurrence: null
+        expected 1920x970 | actual 1920x970 | devicePixelRatio 1.25
+step 2  STALE CAPTURE DETECTED (hash_recurrence)
+        hash 832450c5…296eb0 first seen this run at scrollY 0, now 573.6 (delta 573.6px)
+        -> send refused, run continued
+staleCaptureCount: 1   reasons: ["hash_recurrence"]
+```
+
+**🔴 THE ±2 px TOLERANCE IS FINE ON REAL HARDWARE — the "failure mode is total" risk recorded above did NOT materialise.** At `devicePixelRatio: 1.25`, expected and actual matched **exactly**, with zero tolerance consumed, on every passing step. The check produced no false positives across three sending steps.
+
+Worth being precise about what this does and does not prove: it proves the dimension check is **safe to ship** — it does not fire spuriously at fractional DPR. It does **not** prove the dimension check ever *catches* anything, because nothing in this run had mismatched dimensions. Its catching behaviour remains fixture-only.
+
+**The per-reason reporting earned itself immediately:** `reasons: ["hash_recurrence"]` names which check fired. A merged boolean would have left it ambiguous whether the dimension check or the hash check caught this, and they have very different implications.
+
+**The margin is now visible on passing steps**, which is what makes a `staleCaptureCount: 0` interpretable at all — the 2026-09-20 false negative looked identical to a clean run.
+
+*Process note, worth carrying forward: this run was preceded by a `Could not establish connection. Receiving end does not exist.` failure that cost real time and was not a code defect. Reloading an unpacked extension **orphans the content script in any already-open tab**, and clicking the toolbar icon while `chrome://extensions` is the active tab targets a page where no content script can run. **Reload the extension, then reload the page, then make the test page the focused tab.** Worth knowing before a live demo.*
+
+#### ⚠️ THE PUBLISHED LATENCY FIGURE DOES NOT REPRODUCE. Found 2026-09-20. **Not yet resolved.**
+
+**`~780–880 ms` warm object detection is published in `README.md` twice (including the rubric table) and in `site/index.html` twice.** Six warm samples taken across three runs on 2026-09-20 all landed near **2,700 ms** — roughly 3× the published figure:
+
+| Run | Window | Warm inference |
+|---|---|---|
+| 11:41 | ~265 px | 2,650 / 2,692 ms |
+| 12:38 | maximised | 2,700 ms (+ ~2.6 s on the following step) |
+
+**Window size is ruled out** — the first two runs were narrow, the third maximised, and all agree. The earlier 4,570 ms sample shows a warm-up component on top, but it settles at ~2,700 ms, not at ~800 ms.
+
+Not investigated, and all plausible: GPU/thermal state, laptop power mode, a Chrome update since 2026-09-11, or machine load. The 780–880 ms figure came from 4 samples on a single day.
+
+**Measured under uncontrolled conditions** (devtools open, other apps unknown) — so this does not yet *disprove* the published number, it means **the published number is currently unsupported by the most recent measurements.** Before any submission: re-measure warm inference under controlled conditions, then either correct both documents or qualify the claim with the conditions it holds under. Per this project's own standard on overstated documentation — *do not ship a figure a fifteen-minute test contradicts.*
+
+*(Step 1 of the 12:38 run measured 18,430 ms with `pipelineWasAlreadyLoaded: true` and `model-load: 0 ms` — that is the already-documented cold-start-after-SW-eviction cost, not part of this finding.)*
 
 ### FULL-PAGE SCROLL-AND-STITCH CAPTURE. Recorded 2026-09-13. **526 tests green** (378 JS + 148 server). **Ships OFF by default.**
 

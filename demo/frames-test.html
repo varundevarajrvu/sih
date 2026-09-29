@@ -559,6 +559,13 @@
     // =====================================================================
     var params = new URLSearchParams(location.search);
     if (params.get("xorigin") === "1") {
+      // V4b evidence-run accommodation: the cross-origin child server's port
+      // is overridable via ?xoriginPort=NNNN (defaults to 5501, byte-
+      // identical to every prior run of this page) -- added because an
+      // automated evidence run must never assume port 5501 is free/its own
+      // to use; see benchmarks/v4b-loop-bench.mjs's own header comment for
+      // why it ran on a different port for one specific bench session.
+      var xoriginPort = params.get("xoriginPort") || "5501";
       var mount = document.getElementById("crossOriginMount");
       mount.innerHTML =
         '<div class="card" id="crossOriginCard">' +
@@ -572,7 +579,7 @@
         "ever runs there, so it will NOT appear in <code>framesReported</code> " +
         "at all. That's a different, more basic failure than a frame that " +
         "loaded but got dropped -- see demo/README.md.</p>" +
-        '<iframe id="crossOriginFrame" src="http://localhost:5501/frames-iframe-xo.html" ' +
+        '<iframe id="crossOriginFrame" src="http://localhost:' + xoriginPort + '/frames-iframe-xo.html" ' +
         'style="width:100%;height:230px;border:3px solid #c23b5a;border-radius:6px;" title="cross-origin child frame"></iframe>' +
         "</div>";
       // Re-run the oracle now that the cross-origin frame element exists.

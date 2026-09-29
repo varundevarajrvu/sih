@@ -1,1442 +1,876 @@
 /* ==========================================================================
-   Dhristi — A Privacy-Preserving Browser Tool
-   SIH 26171 — On-Device Visual Perception for Lightweight Browser Agents
-   Showcase site — glassmorphism redesign per Chief's spec (repo-root brief).
-   No frameworks, no CDNs, no remote fonts. All PII/proof data is real;
-   only the visual language changed here.
-
-   TRACEABILITY: every major block below is commented with the spec section
-   it implements. The brief's original comment example cited photographic
-   references ("img1 destination cards + img2 glass panel") that don't apply
-   here — this project ships no reference photography, so citations instead
-   point at the numbered section of Chief's written spec (§1–§8).
+   Dhristi — showcase site
+   Monochrome / warm-neutral editorial system. Hierarchy comes from scale,
+   whitespace, typography and contrast — not from colour, shadow or decoration.
+   Flat surfaces, sharp rectangles, thin rules. No glass, no gradients.
    ========================================================================== */
 
-:root {
-  /* --- §1 Global Design Tokens — verbatim from spec ------------------- */
-  --bg-void:              #0B0B0C;
-  --bg-forest:            #16211A;
-  --glass-fill:           rgba(22, 24, 23, 0.50);
-  --glass-fill-strong:    rgba(14, 15, 15, 0.65);
-  --glass-border:         rgba(255, 255, 255, 0.14);
-  --glass-border-bright:  rgba(255, 255, 255, 0.28);
-  --text-primary:         #F6F4EF;
-  --text-secondary:       #C7C4BB;
-  --text-muted:           #8D897D;
-  --accent-bronze:        #AD8A5C;
-  --accent-terracotta:    #A94E3D;
-
-  /* --- ADAPTATION: two derived tokens, not in the spec's 11 -----------
-     The spec's palette has no way to distinguish "this passed" from "this
-     was blocked" in running text/badges — §1's tokens are structural
-     (fills, borders, two accents), not semantic status colors, and this
-     project's entire content is built on that pass/blocked distinction
-     (SENSITIVE_TARGET_BLOCKED, Section 5 check PASSED, etc). Rather than
-     invent an unrelated hue, both are *derived* from tokens already in the
-     spec:
-     — --accent-moss: a sage-green that shares --bg-forest's undertone,
-       used ONLY for pass/ok/safe semantics.
-     — --accent-terracotta-text: a lightened tint of the spec's own
-       --accent-terracotta, used ONLY where terracotta sits as small text
-       (raw --accent-terracotta measures ~3.6:1 on --bg-void — fine as a
-       border/fill per WCAG's 3:1 non-text minimum, but fails 4.5:1 for
-       text; this tint measures 8.6:1+ in every context it's used, see
-       README verification notes / delivery report).
-     ------------------------------------------------------------------- */
-  --accent-moss:              #8FBF8A;
-  --accent-terracotta-text:   #E39A85;
-
-  /* --- Typography -------------------------------------------------------
-     Display = Fraunces, italic, 400–500 (self-hosted, see §FONTS below).
-     Body/UI = Inter, 400/500/600 (self-hosted).
-     Eyebrow = Inter 500, 11px, uppercase, 0.08em, --text-muted.
-     Mono kept as a system stack — the spec's reference (a travel site) has
-     no code/terminal content to derive a mono choice from, and this page's
-     console replay + JSON payloads need one; a system stack costs nothing
-     to self-host and reads correctly cross-platform. ---------------------- */
-  --font-display: 'Fraunces', ui-serif, Georgia, 'Book Antiqua', serif;
-  --font-body:    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono:    ui-monospace, 'Cascadia Code', 'Segoe UI Mono', 'SFMono-Regular',
-                  Consolas, 'Liberation Mono', Menlo, monospace;
-
-  /* --- §1 Spacing scale — verbatim (8/16/24/32/48/64/96) --------------- */
-  --space-1: 8px;
-  --space-2: 16px;
-  --space-3: 24px;
-  --space-4: 32px;
-  --space-5: 48px;
-  --space-6: 64px;
-  --space-7: 96px;
-
-  --measure:      42rem;   /* reading column */
-  --measure-wide: 62rem;   /* full-bleed prose panels */
-  --container:    1240px;  /* page wrap — pairs with §7's 1200px breakpoint */
-
-  /* --- §1 Radius + blur — verbatim ------------------------------------- */
-  --radius-sm:   12px;
-  --radius-lg:   20px;
-  --radius-pill: 999px;
-  --glass-blur:  blur(18px);
-
-  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
-
-  /* --- Backward-compat aliases ------------------------------------------
-     index.html carries a handful of inline `style="color:var(--muted)"` /
-     `var(--sp-5)` attributes from the pre-redesign build, sitting directly
-     inside real, verbatim content paragraphs. Retyping those paragraphs to
-     swap token names would risk introducing a transcription error into
-     content this project is explicit about never altering — aliasing the
-     old token names to their new equivalents here is the zero-risk fix. */
-  --sp-3: var(--space-2);
-  --sp-4: var(--space-2);
-  --sp-5: var(--space-3);
-  --sp-6: var(--space-4);
-  --sp-7: var(--space-5);
-  --muted:     var(--text-muted);
-  --paper-dim: var(--text-secondary);
-  --pass:      var(--accent-moss);
-  --redact:    var(--accent-terracotta-text);
-}
-
-/* ==========================================================================
-   FONTS — self-hosted, latin-only. ADAPTATION #1 (overrides spec's <link>).
-   The spec calls for a Google Fonts <link>. This project's whole pitch is
-   that nothing leaves the client; a page that phones Google on every load
-   undercuts that. Both files below were fetched once from Google's own
-   CSS2 API (fonts.gstatic.com), restricted to the "latin" unicode-range
-   subset, and are now served from site/fonts/ with zero runtime requests
-   to any third party. Both are variable fonts (wght axis only — Google's
-   CSS2 API trims other axes, incl. Fraunces' opsz/SOFT axes, out of the
-   default delivery) under their original SIL Open Font License.
-   ========================================================================== */
-
+/* ---------------------------------- FONTS --------------------------------- */
+/* Self-hosted, latin subset. A page whose entire argument is "nothing leaves
+   the client" must not phone fonts.googleapis.com on every load. */
 @font-face {
-  font-family: 'Fraunces';
-  font-style: italic;
-  font-weight: 400 500;
-  font-display: swap;
-  src: url('fonts/fraunces-italic-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                 U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-                 U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'Inter';
+  font-family: "Inter";
+  src: url("fonts/inter-latin.woff2") format("woff2");
+  font-weight: 100 900;
   font-style: normal;
-  font-weight: 400 600;
   font-display: swap;
-  src: url('fonts/inter-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                 U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-                 U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* ==========================================================================
-   Reset
-   ========================================================================== */
+/* ---------------------------------- TOKENS -------------------------------- */
+:root {
+  --color-bg:        #E1E0DC;
+  --color-surface:   #F6F5F3;
+  --color-dark:      #0D0D0D;
+  --color-text:      #0D0D0D;
+  --color-secondary: #444441;
+  /* Spec palette puts muted at #777672; measured, that is 3.4:1 on --color-bg
+     at 10-13px, under the 4.5:1 AA floor. One step darker, same hue. */
+  --color-muted:     #5C5B58;
+  --color-border:    #C9C8C4;
+  --color-white:     #FFFFFF;
 
+  --on-dark:      #F2F1EE;
+  --on-dark-dim:  rgba(242, 241, 238, 0.72);
+  --on-dark-rule: rgba(242, 241, 238, 0.18);
+
+  /* Two signal colours only, and only inside code/badges where they carry
+     meaning. Everything else in the system is neutral. */
+  --pass:    #6FAE7E;
+  --blocked: #D98B7A;
+
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  40px;
+  --space-2xl: 72px;
+  --space-3xl: 112px;
+
+  --maxw: 1240px;
+  --pad:  5vw;
+
+  --font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --track-eyebrow: 0.3em;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur:  200ms;
+}
+
+/* ---------------------------------- RESET --------------------------------- */
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-html, body { margin: 0; padding: 0; }
-
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 body {
-  background: var(--bg-void);
-  color: var(--text-secondary);
-  font-family: var(--font-body);
-  font-size: 16px;
-  line-height: 1.55;
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  /* Decorative orbs (§3 Components) use small negative insets for a soft
-     bleed past their panel edge — this guarantees that never produces a
-     page-level horizontal scrollbar, verified at 390px (see delivery report). */
   overflow-x: hidden;
 }
-
-img { max-width: 100%; display: block; }
-svg { display: block; }
-
-h1, h2, h3, h4 { margin: 0; font-weight: 600; }
-p { margin: 0 0 1em; }
-p:last-child { margin-bottom: 0; }
-
-ul, ol { margin: 0; padding: 0; }
-
-a { color: var(--accent-bronze); }
-a:not([class]) { text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
-a:not([class]):hover { color: var(--text-primary); }
-
-button { font: inherit; color: inherit; }
-
-table { border-collapse: collapse; width: 100%; }
-
-/* Visible keyboard focus — bronze, consistent across the new palette.
-   Non-text contrast (focus ring vs both --bg-void and --bg-forest) verified
-   >=3:1 per WCAG 1.4.11 — see delivery report. */
-:focus-visible {
-  outline: 2px solid var(--accent-bronze);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
-/* Skip link */
-.skip-link {
-  position: absolute;
-  left: -999px;
-  top: 0;
-  background: var(--accent-bronze);
-  color: #16110A;
-  padding: 0.6em 1em;
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 0.85rem;
-  border-radius: 0 0 var(--radius-sm) 0;
-  z-index: 1000;
-}
-.skip-link:focus {
-  left: var(--space-2);
-  top: var(--space-2);
-  border-radius: var(--radius-sm);
-}
-
-/* ==========================================================================
-   §6 Accessibility — reduced motion / reduced transparency
-   ========================================================================== */
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-  /* Scroll-reveal (§5 Animation, enhancement) never hides content when
-     motion is reduced — everything simply starts fully visible. */
-  .reveal { opacity: 1 !important; transform: none !important; }
-}
-
-/* ==========================================================================
-   Typography helpers
-   ========================================================================== */
-
-.eyebrow {
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.section-number {
-  color: var(--accent-bronze);
-  font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono);
-}
-
-.display {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 450;
-  letter-spacing: -0.01em;
-  line-height: 1.1;
-  color: var(--text-primary);
-}
-
-.lede {
-  font-size: clamp(1.05rem, 0.95rem + 0.4vw, 1.25rem);
-  color: var(--text-secondary);
-  max-width: var(--measure);
-}
-
-.mono { font-family: var(--font-mono); }
-
-.prose { max-width: var(--measure); }
-.prose p { color: var(--text-secondary); }
-.prose strong { color: var(--text-primary); }
-
-code, kbd {
-  font-family: var(--font-mono);
-  font-size: 0.88em;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--glass-border);
-  border-radius: 4px;
-  padding: 0.1em 0.4em;
-  color: var(--text-primary);
-}
-
-/* ==========================================================================
-   Redaction-bar motif — the recurring visual device. Kept intentionally
-   near-black regardless of theme: it represents a literally-blacked-out
-   value, not a decorative accent, so it does not follow the new palette.
-   ========================================================================== */
-
-.redaction-bar {
-  display: inline-block;
-  height: 0.85em;
-  background: repeating-linear-gradient(
-    115deg,
-    #050607, #050607 3px, #000 3px, #000 6px
-  );
-  border-radius: 1px;
-  vertical-align: middle;
-}
-
-hr.hairline {
-  border: none;
-  border-top: 1px solid var(--glass-border);
-  margin: var(--space-6) 0;
-}
-
-/* ==========================================================================
-   §3 Decorative orb — verbatim recipe, plus one documented color variant.
-   2–3 placed behind glass panels on every non-photo section, per §3/§4.
-   ========================================================================== */
-
-.orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.35;
-  background: radial-gradient(circle at 35% 35%, var(--accent-bronze), transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-/* ADAPTATION: a second orb colorway using the spec's other accent, so
-   sections don't all glow the same amber — same recipe, swapped hue. */
-.orb--terracotta {
-  background: radial-gradient(circle at 35% 35%, var(--accent-terracotta), transparent 70%);
-}
-
-.orb-host {
-  position: relative;
-  overflow: hidden;
-}
-
-/* ==========================================================================
-   §1 / §3 Glass core — the shared material for nav, hero shelf, terminal,
-   and every section's "shelf" surface. Applied ONCE per visual region
-   (see PERFORMANCE note below) — individual cards/rows inside a glass
-   shelf use a lighter, non-blurred tint so only one backdrop-filter pass
-   is paid per region.
-
-   PERFORMANCE (§5): backdrop-filter is GPU-heavy. Rather than give every
-   card in a 3- or 4-up grid its own blur (nav + 4 cards = 5 concurrent
-   blurred layers), each grid/table/list is wrapped in ONE .glass surface;
-   children painted on top of it inherit its frosted backdrop for free and
-   only add a solid/translucent tint of their own. Verified: at most 2
-   backdrop-filter regions are ever on-screen together (the nav + the
-   section currently in view) — see delivery report.
-   ========================================================================== */
-
-.glass {
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  border-top-color: var(--glass-border-bright);
-  border-radius: var(--radius-lg);
-}
-
-.glass-strong {
-  background: var(--glass-fill-strong);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  border-top-color: var(--glass-border-bright);
-}
-
-/* §6 Accessibility — old browsers AND "reduce transparency" OS settings.
-   Solid fallback at ~85% opacity, no blur, for every element using .glass
-   or .glass-strong (and the elements below that inline the same recipe:
-   nav, mobile drawer). */
-@supports not (backdrop-filter: blur(1px)) {
-  .glass, .glass-strong, .topbar.is-scrolled, .nav-drawer[open] > .topnav {
-    background: rgba(11, 11, 12, 0.85);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
-@media (prefers-reduced-transparency: reduce) {
-  .glass, .glass-strong, .topbar.is-scrolled, .nav-drawer[open] > .topnav {
-    background: rgba(11, 11, 12, 0.9);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-  }
-}
-
-/* ==========================================================================
-   Layout shells
-   ========================================================================== */
-
-.wrap {
-  max-width: var(--container);
-  margin-inline: auto;
-  padding-inline: var(--space-3);
-}
-
-section[id] { scroll-margin-top: 5rem; }
-
-.section-pad {
-  padding-block: var(--space-7);
-  position: relative;
-}
-
-.section-head {
-  max-width: var(--measure);
-  margin-bottom: var(--space-4);
-  position: relative;
-  z-index: 1;
-}
-.section-head h2 {
-  font-size: clamp(1.6rem, 1.35rem + 1.1vw, 2.4rem);
-  margin-top: var(--space-1);
-}
-
-/* Generic bordered surface used where a full glass shelf would be
-   redundant with an adjacent one (kept for parity with the old build). */
-.panel {
-  position: relative;
-  z-index: 1;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-}
-
-/* ==========================================================================
-   §2 Nav / top bar — transparent floating over hero; on scroll past hero,
-   transitions to --glass-fill-strong + blur.
-   ========================================================================== */
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: transparent;
-  border-bottom: 1px solid transparent;
-  transition: background 0.25s var(--ease), border-color 0.25s var(--ease);
-}
-.topbar.is-scrolled {
-  background: var(--glass-fill-strong);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border-bottom-color: var(--glass-border);
-}
-
-.topbar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding-block: var(--space-2);
-}
-
-.brand {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-size: 1.05rem;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--text-primary);
-  white-space: nowrap;
-  text-decoration: none;
-  flex-shrink: 0;
-}
-.brand span { color: var(--accent-bronze); }
-
-.topnav {
-  display: flex;
-  gap: var(--space-4);
-  list-style: none;
-  white-space: nowrap;
-}
-
-.topnav a {
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  padding-bottom: 2px;
-  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
-}
-.topnav a:hover, .topnav a:focus-visible { color: var(--text-primary); border-color: var(--accent-bronze); }
-
-/* --- Mobile glass drawer (§7 Responsive, <768px) ---------------------
-   Native <details>/<summary> — the "hamburger" IS the disclosure widget,
-   so navigation keeps working with JavaScript fully disabled; script.js
-   only adds an auto-close-on-link-click nicety on top. */
-.nav-drawer { position: relative; }
-.nav-drawer > summary {
-  list-style: none;
-  cursor: pointer;
-  width: 40px;
-  height: 40px;
-  display: none; /* shown <768px below */
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--glass-border);
-}
-.nav-drawer > summary::-webkit-details-marker { display: none; }
-.nav-drawer > summary::marker { content: ''; }
-
-.nav-toggle-bars,
-.nav-toggle-bars::before,
-.nav-toggle-bars::after {
-  display: block;
-  width: 18px;
-  height: 2px;
-  background: var(--text-primary);
-  border-radius: 2px;
-  transition: transform 0.2s var(--ease), opacity 0.2s var(--ease);
-}
-.nav-toggle-bars { position: relative; }
-.nav-toggle-bars::before, .nav-toggle-bars::after { content: ''; position: absolute; left: 0; }
-.nav-toggle-bars::before { top: -6px; }
-.nav-toggle-bars::after { top: 6px; }
-.nav-drawer[open] .nav-toggle-bars { background: transparent; }
-.nav-drawer[open] .nav-toggle-bars::before { transform: translateY(6px) rotate(45deg); }
-.nav-drawer[open] .nav-toggle-bars::after { transform: translateY(-6px) rotate(-45deg); }
-
-@media (max-width: 767px) {
-  .nav-drawer > summary { display: flex; }
-  .nav-drawer > .topnav {
-    position: absolute;
-    top: calc(100% + var(--space-2));
-    right: 0;
-    flex-direction: column;
-    gap: 0;
-    min-width: 13rem;
-    padding: var(--space-2);
-    border-radius: var(--radius-lg);
-    background: var(--glass-fill-strong);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--glass-border);
-    border-top-color: var(--glass-border-bright);
-    box-shadow: 0 16px 40px rgba(0,0,0,0.45);
-  }
-  .nav-drawer:not([open]) > .topnav { display: none; }
-  .nav-drawer > .topnav a {
-    display: block;
-    padding: var(--space-2);
-    border-bottom: none;
-  }
-  .nav-drawer > .topnav a:hover, .nav-drawer > .topnav a:focus-visible {
-    background: rgba(255,255,255,0.06);
-    border-radius: var(--radius-sm);
-  }
-}
-@media (min-width: 768px) {
-  /* Force the disclosure open regardless of the `open` attribute — at
-     tablet/desktop widths the hamburger never renders, so there is no
-     control left to toggle it closed with anyway. */
-  .nav-drawer > summary { display: none !important; }
-  .nav-drawer > .topnav {
-    display: flex !important;
-    position: static;
-    background: none;
-    border: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    padding: 0;
-    box-shadow: none;
-  }
-}
-@media (min-width: 768px) and (max-width: 1199px) {
-  /* §7: "secondary nav collapses" at tablet width — the full 8-item nav
-     stays reachable (deleting real section links would hurt wayfinding
-     more than it helps), but becomes horizontally scrollable instead of
-     wrapping/crowding the bar. */
-  .topbar-inner { flex-wrap: nowrap; }
-  .topnav { overflow-x: auto; scrollbar-width: thin; max-width: 60vw; }
-}
-
-/* ==========================================================================
-   §2/§4/§6 Hero — full-bleed image (our one real hero-grade asset: the
-   annotated detection screenshot), dark bottom-to-top gradient overlay to
-   ~70%+ black (MANDATORY for contrast, not decorative — see delivery
-   report for measured worst-case contrast at this overlay depth), serif
-   italic headline, sans subhead, pill CTA.
-   ========================================================================== */
-
-.hero {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  /* A real minimum of visible image above the text — measured and fixed
-     after an initial pass placed the headline too high, in the gradient's
-     near-transparent top zone (see delivery report for the failing/passing
-     numbers). Bottom-anchoring the text keeps it inside the darkest band
-     regardless of viewport height or how much copy wraps. */
-  min-height: min(84vh, 44rem);
-  padding-top: calc(var(--space-7) + var(--space-4));
-  overflow: hidden;
-  isolation: isolate;
-}
-
-.hero-media {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-}
-.hero-media-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center 15%;
-  filter: saturate(0.9);
-}
-.hero-media-overlay {
-  position: absolute;
-  inset: 0;
-  /* Bottom-to-top dark gradient, MANDATORY per §2/§6 (not decorative).
-     Concentrated darkness across the bottom ~65% — that's where the
-     bottom-anchored text block below actually lives — rather than a
-     smooth 0-to-100% ramp, which measured too light at the headline's
-     real position on first render. Verified after rendering, not assumed:
-     see delivery report for measured contrast at every text probe. */
-  background: linear-gradient(
-    to top,
-    rgba(5, 6, 6, 0.96) 0%,
-    rgba(5, 6, 6, 0.94) 30%,
-    rgba(6, 7, 7, 0.91) 55%,
-    rgba(6, 7, 7, 0.85) 78%,
-    rgba(7, 8, 8, 0.58) 92%,
-    rgba(7, 8, 8, 0.15) 100%
-  );
-}
-
-.hero-inner {
-  position: relative;
-  z-index: 1;
-  padding-bottom: var(--space-6);
-}
-
-/* Brighter than a standard eyebrow (which uses --text-muted/--text-secondary
-   elsewhere) — this one sits directly over photography, where the spec
-   treats contrast as mandatory, not decorative. Measured after rendering:
-   see delivery report. */
-.hero-eyebrow { margin-bottom: var(--space-3); color: var(--text-primary); }
-
-.hero h1 {
-  font-size: clamp(2.1rem, 1.5rem + 3vw, 3.6rem);
-  max-width: 22ch;
-}
-
-.hero .lede { margin-top: var(--space-3); color: var(--text-secondary); }
-
-.hero .pill-cta { margin-top: var(--space-5); }
-
-/* --- Hero stat shelf — glass "cards overlapping the hero's bottom edge
-   via negative margin-top" (§2 Layout). One shared .glass surface with
-   internal dividers rather than N separately-blurred cards (perf note
-   above); each stat's exact original bold-number + label text preserved
-   verbatim, just regrouped into a bar instead of loose pills. ---------- */
-.hero-shelf-wrap {
-  position: relative;
-  z-index: 2;
-  margin-top: calc(-1 * var(--space-6));
-}
-.hero-shelf {
-  display: flex;
-  flex-wrap: wrap;
-  padding: var(--space-2) 0;
-}
-.stat-card {
-  flex: 1 1 12rem;
-  padding: var(--space-3) var(--space-4);
-  border-left: 1px solid var(--glass-border);
-}
-.stat-card:first-child { border-left: none; }
-.stat-card-label {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-.stat-card-label b { color: var(--text-primary); font-weight: 600; }
-.stat-card-sub {
-  display: block;
-  margin-top: var(--space-1);
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-.stat-card-sub b { color: var(--text-secondary); font-weight: 600; }
-
-@media (max-width: 640px) {
-  .hero-shelf { flex-direction: column; }
-  .stat-card { border-left: none; border-top: 1px solid var(--glass-border); }
-  .stat-card:first-child { border-top: none; }
-}
-
-/* ==========================================================================
-   §3 Pill CTA
-   ========================================================================== */
-
-.pill-cta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 16px 32px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--glass-border-bright);
-  background: var(--glass-fill);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: 14px;
-  color: var(--text-primary);
-  text-decoration: none;
-  transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
-}
-.pill-cta:hover, .pill-cta:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--text-primary);
-}
-.pill-cta-arrow {
-  display: inline-block;
-  transition: transform 0.2s var(--ease);
-}
-.pill-cta:hover .pill-cta-arrow, .pill-cta:focus-visible .pill-cta-arrow {
-  transform: translateX(4px);
-}
-
-/* ==========================================================================
-   §3 Badge
-   ========================================================================== */
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  text-transform: uppercase;
-  background: var(--glass-fill-strong);
-}
-.badge.blocked { color: var(--accent-terracotta-text); border: 1px solid var(--accent-terracotta); }
-.badge.pass    { color: var(--accent-moss); border: 1px solid var(--accent-moss); }
-.badge.active  { color: var(--accent-bronze); border: 1px solid var(--accent-bronze); }
-
-/* ==========================================================================
-   §1 Evidence card — the signature element (real model mistake as proof)
-   ========================================================================== */
-
-.evidence {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0;
-  overflow: hidden;
-}
-
-@media (min-width: 860px) {
-  .evidence { grid-template-columns: 1fr 1fr; }
-}
-
-.evidence-goal {
-  padding: var(--space-4);
-  border-bottom: 1px solid var(--glass-border);
-  min-width: 0;
-}
-@media (min-width: 860px) {
-  .evidence-goal { border-bottom: none; border-right: 1px solid var(--glass-border); }
-}
-
-.evidence-visual {
-  padding: var(--space-4);
-  background: rgba(0, 0, 0, 0.15);
-  min-width: 0;
-}
-
-.mock-field-label {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  margin-bottom: var(--space-1);
-}
-
-.mock-input {
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.35);
-  padding: 0.65em 0.8em;
-  display: flex;
-  align-items: center;
-  min-height: 2.6em;
-}
-.mock-input .redaction-bar { width: 9.5em; }
-
-.goal-quote {
-  font-family: var(--font-mono);
-  font-size: 1.02rem;
-  color: var(--text-primary);
-  border-left: 2px solid var(--accent-bronze);
-  padding-left: var(--space-3);
-  margin: var(--space-3) 0 var(--space-4);
-}
-
-.json-block {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-3);
-  font-family: var(--font-mono);
-  font-size: 0.86rem;
-  overflow-x: auto;
-  max-width: 100%;
-  white-space: pre;
-  color: var(--text-secondary);
-}
-.json-block .k { color: var(--accent-bronze); }
-.json-block .s { color: var(--accent-moss); }
-
-.diff-line {
-  margin-top: var(--space-4);
-  display: grid;
-  gap: var(--space-1);
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-}
-.diff-row { display: flex; gap: var(--space-2); align-items: baseline; }
-.diff-tag { width: 5.5em; flex-shrink: 0; color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
-.diff-wrong { color: var(--accent-terracotta-text); }
-.diff-right { color: var(--accent-moss); }
-.diff-right .extra { background: rgba(143, 191, 138, 0.18); padding: 0 0.1em; border-radius: 2px; }
-
-.evidence-caption {
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--glass-border);
-  font-size: 0.95rem;
-  color: var(--text-secondary);
-  grid-column: 1 / -1;
-}
-.evidence-caption strong { color: var(--text-primary); }
-
-/* ==========================================================================
-   §2 Pipeline diagram — sequential (numbering here reflects a *real*
-   fixed execution order, so the flow arrows/order stay, per design intent
-   of only encoding real structure).
-   ========================================================================== */
-
-.pipeline-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  position: relative;
-  z-index: 1;
-}
-
-.ctrl-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--glass-border);
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: 0.8rem;
-  padding: 0.5em 0.9em;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: border-color 0.15s var(--ease), color 0.15s var(--ease), background 0.15s var(--ease);
-}
-.ctrl-btn:hover { border-color: var(--accent-bronze); color: var(--accent-bronze); }
-.ctrl-btn[aria-pressed="true"] { border-color: var(--accent-moss); color: var(--accent-moss); }
-.ctrl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.pipeline-readout {
-  font-family: var(--font-mono);
-  min-height: 1.4em;
-}
-
-.pipeline {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 0;
-  overflow: hidden;
-  position: relative;
-  z-index: 1;
-}
-
-@media (max-width: 900px) {
-  .pipeline { grid-template-columns: 1fr; }
-}
-
-.pipe-node {
-  padding: var(--space-3) var(--space-2);
-  border-right: 1px solid var(--glass-border);
-  border-bottom: 3px solid transparent;
-  position: relative;
-  transition: background 0.35s var(--ease), border-color 0.35s var(--ease);
-  min-height: 11.5rem;
-}
-.pipe-node:last-child { border-right: none; }
-@media (max-width: 900px) {
-  .pipe-node { border-right: none; border-bottom: 1px solid var(--glass-border); min-height: 0; padding: var(--space-3) var(--space-4); }
-  .pipe-node:last-child { border-bottom: none; }
-}
-
-.pipe-node[data-stage="send"] { border-left: 1px dashed rgba(255,255,255,0.25); }
-@media (max-width: 900px) {
-  .pipe-node[data-stage="send"] { border-left: none; border-top: 1px dashed rgba(255,255,255,0.25); }
-}
-
-.pipe-node.is-active { background: rgba(255, 255, 255, 0.05); border-bottom-color: var(--accent-bronze); }
-.pipe-node.is-gate.is-active { border-bottom-color: var(--accent-moss); }
-
-.pipe-stage {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--text-primary);
-  margin-bottom: var(--space-1);
-}
-.pipe-node.is-active .pipe-stage { color: var(--accent-bronze); }
-.pipe-node.is-gate.is-active .pipe-stage { color: var(--accent-moss); }
-
-.pipe-desc {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  margin-bottom: var(--space-2);
-}
-
-.pipe-metric {
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  color: var(--text-secondary);
-}
-.pipe-metric b { color: var(--accent-moss); font-weight: 700; display: block; font-size: 0.95rem; }
-
-@media (min-width: 901px) {
-  .pipe-node:not(:last-child)::after {
-    content: "\2192";
-    position: absolute;
-    right: -0.65em;
-    top: var(--space-2);
-    color: var(--text-muted);
-    font-size: 0.9rem;
-    z-index: 2;
-  }
-}
-
-/* ==========================================================================
-   §3 Terminal / console replay — the centerpiece, restyled in glass.
-   ========================================================================== */
-
-.terminal {
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
-}
-
-.terminal-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  background: rgba(0, 0, 0, 0.2);
-  border-bottom: 1px solid var(--glass-border);
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  color: var(--text-muted);
-}
-
-.terminal-dots { display: flex; gap: 6px; }
-.terminal-dots span { width: 9px; height: 9px; border-radius: 50%; background: var(--glass-border-bright); }
-
-.terminal-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.terminal-controls { display: flex; gap: var(--space-1); flex-shrink: 0; }
-.terminal-controls .ctrl-btn { padding: 0.35em 0.7em; font-size: 0.72rem; }
-
-.terminal-body {
-  padding: var(--space-4);
-  font-family: var(--font-mono);
-  font-size: 0.84rem;
-  line-height: 1.7;
-  overflow-x: auto;
-  max-height: 32rem;
-  overflow-y: auto;
-}
-
-.term-line { white-space: pre-wrap; word-break: break-word; color: var(--text-secondary); }
-.term-line.is-hidden { display: none; }
-.term-line.pass { color: var(--accent-moss); }
-.term-line.blocked { color: var(--accent-terracotta-text); }
-.term-line.ok { color: var(--text-primary); }
-.term-line.dim { color: var(--text-muted); }
-.term-line.divider { color: var(--text-muted); opacity: 0.5; margin: 0.6em 0; }
-.term-line .num { color: var(--accent-bronze); }
-
-.term-cursor {
-  display: inline-block;
-  width: 0.55em;
-  height: 1em;
-  background: var(--accent-moss);
-  vertical-align: text-bottom;
-  animation: blink 1s steps(1) infinite;
-}
-.term-cursor.is-hidden { display: none; }
-@keyframes blink { 50% { opacity: 0; } }
-
-/* ==========================================================================
-   §4 Three layers — natural 3-up glass shelf (spec's literal grid rule
-   fits this content exactly: three genuinely parallel, equal-weight items).
-   ========================================================================== */
-
-.layers {
-  display: grid;
-  gap: 0;
-  grid-template-columns: 1fr;
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
-}
-@media (min-width: 760px) {
-  .layers { grid-template-columns: repeat(3, 1fr); }
-}
-
-.layer-card {
-  padding: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  border-bottom: 1px solid var(--glass-border);
-  transition: transform 0.2s var(--ease), background 0.2s var(--ease);
-}
-@media (min-width: 760px) {
-  .layer-card { border-bottom: none; border-right: 1px solid var(--glass-border); }
-  .layer-card:last-child { border-right: none; }
-}
-.layer-card:hover { background: rgba(255, 255, 255, 0.04); }
-
-.layer-index {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  letter-spacing: 0.08em;
-}
-
-.layer-card h3 {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 450;
-  font-size: 1.3rem;
-  color: var(--text-primary);
-}
-
-.layer-card p { color: var(--text-secondary); }
-
-.layer-fail {
-  margin-top: auto;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--glass-border);
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--accent-moss);
-}
-.layer-fail b { color: var(--text-secondary); font-weight: 400; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.7rem; display: block; margin-bottom: 0.3em; }
-
-.independence-note {
-  position: relative;
-  z-index: 1;
-  margin-top: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-left: 2px solid var(--accent-moss);
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  font-size: 0.92rem;
-  color: var(--text-secondary);
-}
-.independence-note strong { color: var(--text-primary); }
-
-/* ==========================================================================
-   §5 Scenarios — kept as a fixed 2-up matrix rather than the generic 3-up
-   card grid. DEVIATION, documented: these four cards are a real 2x2
-   comparison (useful / safe / both-at-once / safe-beyond-PII) and read as
-   a matrix, not a shelf of interchangeable items — "structure is
-   information" (frontend-design guidance) argues for keeping the pairing
-   visible at every width down to tablet rather than forcing a 3+1 wrap.
-   ========================================================================== */
-
-.scenarios {
-  display: grid;
-  gap: 0;
-  grid-template-columns: 1fr;
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
-}
-@media (min-width: 700px) {
-  .scenarios { grid-template-columns: 1fr 1fr; }
-}
-
-.scenario-card {
-  padding: var(--space-4);
-  position: relative;
-  border-bottom: 1px solid var(--glass-border);
-  transition: transform 0.2s var(--ease), background 0.2s var(--ease);
-}
-@media (min-width: 700px) {
-  .scenario-card:nth-child(odd) { border-right: 1px solid var(--glass-border); }
-}
-.scenario-card:hover { background: rgba(255, 255, 255, 0.03); }
-.scenario-card.is-key { box-shadow: inset 0 0 0 1px var(--accent-moss); }
-
-.scenario-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.scenario-head h3 {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 450;
-  font-size: 1.15rem;
-  color: var(--text-primary);
-}
-
-.scenario-tag {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--accent-moss);
-  border: 1px solid var(--accent-moss);
-  border-radius: var(--radius-pill);
-  padding: 0.2em 0.6em;
-  white-space: nowrap;
-}
-
-.scenario-goal {
-  font-family: var(--font-mono);
-  font-size: 0.86rem;
-  color: var(--text-secondary);
-  margin-bottom: var(--space-2);
-}
-.scenario-goal .q { color: var(--text-muted); }
-
-.scenario-console {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-3);
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  line-height: 1.6;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text-secondary);
-}
-.scenario-console .blocked { color: var(--accent-terracotta-text); }
-.scenario-console .ok { color: var(--accent-moss); }
-
-.scenario-take { margin-top: var(--space-2); font-size: 0.88rem; color: var(--text-muted); }
-.scenario-take strong { color: var(--text-secondary); }
-
-/* ==========================================================================
-   §6 Results table
-   ========================================================================== */
-
-.results-table-wrap {
-  position: relative;
-  z-index: 1;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-.results-table-wrap .results-table { min-width: 30rem; }
-
-.results-table { font-family: var(--font-mono); font-size: 0.88rem; }
-.results-table th, .results-table td {
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--glass-border);
-}
-.results-table th {
-  color: var(--text-muted);
-  font-weight: 400;
-  text-transform: uppercase;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-}
-.results-table td { color: var(--text-secondary); }
-.results-table td.figure { color: var(--accent-moss); }
-.results-table tr:last-child td { border-bottom: none; }
-
-.results-foot {
-  margin-top: var(--space-3);
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  position: relative;
-  z-index: 1;
-}
-
-.stat-chip {
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-pill);
-  padding: 0.45em 0.9em;
-  background: rgba(255, 255, 255, 0.03);
-  max-width: 100%;
-  overflow-wrap: break-word;
-}
-.stat-chip b { color: var(--accent-moss); font-weight: 700; }
-
-/* ==========================================================================
-   §7 Architecture — prose, stack-list glass shelf, and the one repeated
-   "photo" figure (multiply-style gradient, per §4 Imagery treatment).
-   ========================================================================== */
-
-.arch-grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: 1fr;
-  position: relative;
-  z-index: 1;
-}
-@media (min-width: 860px) {
-  .arch-grid { grid-template-columns: 1.1fr 0.9fr; }
-}
-
-.stack-list {
-  list-style: none;
-  padding: var(--space-2);
-  overflow: hidden;
-}
-.stack-list li {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--glass-border);
-}
-.stack-list li:last-child { border-bottom: none; }
-.stack-list .name {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--text-primary);
-  display: block;
-}
-.stack-list .desc { font-size: 0.83rem; color: var(--text-muted); }
-
-.backend-row { display: flex; gap: var(--space-1); flex-wrap: wrap; margin-top: var(--space-3); }
-.backend-chip {
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-  padding: 0.35em 0.7em;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-}
-.backend-chip.default { border-color: var(--accent-moss); color: var(--accent-moss); }
-
-/* ==========================================================================
-   §8 Limitations
-   ========================================================================== */
-
-.limitations {
-  position: relative;
-  z-index: 1;
-  overflow: hidden;
-}
-.limitations-head {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--glass-border);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.limitations-head .redaction-bar { width: 6em; height: 0.9em; }
-.limitations-head span.eyebrow { color: var(--text-secondary); }
-
-.limitations-list { margin: 0; display: flex; flex-direction: column; }
-.limitations-list > div {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--glass-border);
-  display: grid;
-  grid-template-columns: 9rem 1fr;
-  gap: var(--space-3);
-}
-.limitations-list > div:last-child { border-bottom: none; }
-@media (max-width: 620px) {
-  .limitations-list > div { grid-template-columns: 1fr; gap: var(--space-1); }
-}
-.limitations-list dt {
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  color: var(--accent-terracotta-text);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.limitations-list dd { margin: 0; color: var(--text-secondary); font-size: 0.92rem; }
-
-/* ==========================================================================
-   §4 Photo figures — the two real images. `.figure-photo` gets the
-   spec's multiply-style dark gradient; the id-card reveal figure keeps
-   its own redaction-bar mechanic instead (adding a second decorative
-   gradient there would compete with a content-critical interaction).
-   ========================================================================== */
-
-.figure {
-  position: relative;
-  z-index: 1;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
-}
-.figure img { width: 100%; height: auto; }
-.figure figcaption {
-  padding: var(--space-2) var(--space-3);
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  border-top: 1px solid var(--glass-border);
-  background: var(--glass-fill-strong);
-}
-.figure figcaption strong { color: var(--text-secondary); }
-.figure figcaption code { font-size: 0.85em; }
-
-/* The one repeated "photo" treatment outside the hero — desaturated,
-   deep shadow, dark multiply-style gradient corner, per §4 Imagery. */
-.figure-photo { position: relative; }
-.figure-photo img { filter: saturate(0.85) contrast(1.03); }
-.figure-photo::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to top,
-    rgba(11, 15, 12, 0.55) 0%,
-    rgba(11, 15, 12, 0.12) 35%,
-    transparent 60%
-  );
-  pointer-events: none;
-}
-
-.reveal-demo {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  align-items: flex-start;
-}
-.reveal-frame {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--radius-sm);
-  line-height: 0;
-  display: block;
-  cursor: pointer;
-  width: 100%;
-}
-.reveal-frame img { filter: grayscale(0.1) saturate(0.95); width: 100%; height: auto; }
-.reveal-bar {
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(115deg, #050607, #050607 5px, #000 5px, #000 10px);
-  transition: opacity 0.5s var(--ease);
-}
-.reveal-checkbox:checked ~ .reveal-frame .reveal-bar,
-.reveal-demo:hover .reveal-bar,
-.reveal-demo:focus-within .reveal-bar { opacity: 0; }
-.reveal-checkbox:focus-visible ~ .reveal-frame {
-  outline: 2px solid var(--accent-bronze);
-  outline-offset: 2px;
-}
-.reveal-label-btn { display: inline-block; }
-
-/* ==========================================================================
-   Footer — minimal, --bg-void, link columns, no card treatment (§2 Layout).
-   ========================================================================== */
-
-.site-footer {
-  border-top: 1px solid var(--glass-border);
-  background: var(--bg-void);
-  padding-block: var(--space-6);
-}
-.footer-inner {
-  display: grid;
-  gap: var(--space-5);
-  grid-template-columns: 1fr;
-}
-@media (min-width: 700px) {
-  .footer-inner { grid-template-columns: 1.4fr 1fr 1fr; }
-}
-.footer-brand {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-size: 1.1rem;
-  color: var(--text-primary);
-  margin-bottom: var(--space-2);
-}
-.footer-col-title {
-  font-family: var(--font-body);
-  font-weight: 500;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: var(--space-2);
-}
-.footer-links { list-style: none; display: flex; flex-direction: column; gap: var(--space-1); }
-.footer-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.88rem; }
-.footer-links a:hover, .footer-links a:focus-visible { color: var(--text-primary); }
-.footer-note { font-size: 0.82rem; color: var(--text-muted); max-width: 34rem; }
-.footer-note code { font-size: 0.85em; }
-
-/* ==========================================================================
-   Misc utility
-   ========================================================================== */
+h1, h2, h3, p, ul, ol, li, figure, dl, dd, dt, table { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+img { display: block; max-width: 100%; height: auto; }
+a { color: inherit; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+code { font-family: var(--mono); font-size: 0.88em; }
+
+.ico {
+  width: 17px; height: 17px; fill: none; stroke: currentColor;
+  stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none;
+}
+:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 
 .visually-hidden {
-  position: absolute;
-  width: 1px; height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.skip-link {
+  position: absolute; left: -9999px;
+  background: var(--color-dark); color: var(--color-white);
+  padding: var(--space-sm) var(--space-md); z-index: 100;
+}
+.skip-link:focus { left: var(--space-md); top: var(--space-md); }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad); }
+
+/* ------------------------------ SHARED PIECES ------------------------------ */
+.eyebrow {
+  font-size: 10px; font-weight: 600; line-height: 1.6;
+  letter-spacing: var(--track-eyebrow); text-transform: uppercase;
+  color: var(--color-secondary);
+}
+.section-number { color: var(--color-muted); margin-right: var(--space-sm); }
+
+.rule { display: block; width: 46px; height: 1px; background: currentColor; margin-top: var(--space-md); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 38px; padding: 0 var(--space-lg);
+  background: var(--color-dark); color: var(--color-white);
+  border-radius: 0;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  text-decoration: none;
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+/* Motion spec: scale 1.05 on hover, 0.95 on press. Replaces the earlier
+   translateY(-1px) lift — the two would fight over `transform`. */
+.btn:hover { background: #2a2a28; transform: scale(1.05); }
+.btn:active { transform: scale(0.95); }
+
+/* The arrow slides independently of the button's own scale, on parent hover. */
+.btn-arrow {
+  display: inline-block;
+  margin-left: 8px;
+  transition: transform 300ms var(--ease);
+}
+.btn:hover .btn-arrow { transform: translateX(4px); }
+.btn-sm { height: 30px; padding: 0 var(--space-md); font-size: 9px; }
+.btn-ghost {
+  background: transparent; color: var(--color-dark);
+  border: 1px solid var(--color-dark);
+}
+.btn-ghost:hover { background: var(--color-dark); color: var(--color-white); }
+
+.link-underline {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase; text-decoration: none;
+  padding-bottom: 3px;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 100% 1px; background-position: 0 100%; background-repeat: no-repeat;
+  transition: background-size var(--dur) var(--ease);
+}
+.link-underline:hover { background-size: 100% 2px; }
+
+.lede {
+  margin-top: var(--space-md);
+  max-width: 58ch;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--color-secondary);
+}
+.note {
+  margin-top: var(--space-lg);
+  max-width: 76ch;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+.dim { color: var(--color-muted); }
+
+.pull-quote {
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--color-border);
+  max-width: 82ch;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--color-secondary);
+}
+.pull-quote strong { color: var(--color-text); }
+
+.prose p { margin-bottom: var(--space-md); color: var(--color-secondary); line-height: 1.75; }
+.prose p:last-child { margin-bottom: 0; }
+
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  border: 1px solid currentColor;
+}
+.badge.blocked { color: #8C4A38; }
+.badge.pass { color: var(--pass); }
+.badge-row { margin-top: var(--space-md); }
+
+.code-block {
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-dark);
+  color: var(--on-dark);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+.code-block .k { color: #9FC3E0; }
+.code-block .s { color: #E0C08A; }
+.code-block .ok { color: var(--pass); }
+.code-block .blocked { color: var(--blocked); }
+.code-block.pass-line { color: var(--pass); }
+
+/* ---------------------------- ANNOUNCEMENT BAR ----------------------------- */
+.announce { background: var(--color-dark); color: var(--color-white); }
+.announce-inner {
+  max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad);
+  min-height: 28px;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);
+}
+.announce-msg, .announce-links {
+  font-size: 9px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase;
+}
+.announce-links { display: flex; align-items: center; gap: var(--space-sm); }
+.announce-sep { opacity: 0.4; }
+
+/* --------------------------------- HEADER ---------------------------------- */
+.header {
+  position: sticky; top: 0; z-index: 40;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+}
+.header-inner {
+  max-width: var(--maxw); margin: 0 auto;
+  padding: var(--space-md) var(--pad);
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  align-items: center; gap: var(--space-md);
+}
+.header-left  { justify-self: start; }
+.header-right { justify-self: end; }
+
+.brand {
+  font-size: 28px; font-weight: 700; letter-spacing: 0.04em;
+  line-height: 1; text-transform: uppercase; text-decoration: none;
 }
 
-.grid-2 {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: 1fr;
+.nav-primary ul, .nav-utility ul { display: flex; align-items: center; gap: var(--space-lg); }
+.nav-primary a, .nav-utility a {
+  display: inline-block;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--color-secondary); text-decoration: none;
+  padding-bottom: 2px;
+  background-image: linear-gradient(var(--color-dark), var(--color-dark));
+  background-size: 0 1px; background-position: 0 100%; background-repeat: no-repeat;
+  /* 150ms on nav specifically — the spec pins nav to the faster default and
+     leaves the 200ms for everything else. */
+  transition: color 150ms var(--ease), background-size 150ms var(--ease);
+}
+.nav-primary a:hover, .nav-utility a:hover { color: var(--color-dark); background-size: 100% 1px; }
+
+.menu-btn { display: none; align-items: center; gap: var(--space-sm); }
+.menu-btn-text { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* ------------------------------- MOBILE NAV -------------------------------- */
+.mobile-nav {
+  position: fixed; inset: 0; z-index: 60;
+  background: var(--color-bg);
+  padding: var(--space-md) var(--pad) var(--space-2xl);
+  display: flex; flex-direction: column;
+  animation: navIn 260ms var(--ease);
+}
+.mobile-nav[hidden] { display: none; }
+/* Exit is a real animation, not an instant unmount — see setMenu() in
+   script.js for why this needed fixing rather than copying. */
+.mobile-nav.is-closing { animation: navOut 260ms var(--ease) forwards; }
+@keyframes navIn  { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes navOut { to   { opacity: 0; } }
+.mobile-nav-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: var(--space-xl); }
+.mobile-nav-list a {
+  display: block; padding: var(--space-md) 0;
+  font-size: 30px; font-weight: 700; letter-spacing: -0.03em;
+  text-transform: uppercase; line-height: 1.1; text-decoration: none;
+}
+.mobile-nav-sub {
+  margin-top: auto; padding-top: var(--space-xl);
+  border-top: 1px solid var(--color-border);
+  display: flex; flex-wrap: wrap; gap: var(--space-md) var(--space-lg);
+}
+.mobile-nav-sub a {
+  font-size: 10px; font-weight: 600; letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase; color: var(--color-secondary); text-decoration: none;
+}
+
+/* ---------------------------------- HERO ----------------------------------- */
+/* The hero goes dark for one reason: the ambient shader draws ADDITIVE light,
+   and additive light on a #E1E0DC ground is invisible. A lightning background
+   on a pale page is not a lightning background. The rest of the site keeps the
+   warm-neutral system unchanged — this is the one inverted panel, and it sits
+   alongside the three that were already dark (§2, §9, footer). */
+.hero {
   position: relative;
-  z-index: 1;
+  background: var(--color-dark);
+  color: var(--on-dark);
+  overflow: hidden;
 }
-@media (min-width: 860px) {
-  .grid-2 { grid-template-columns: 1fr 1fr; align-items: start; }
-}
-
-/* ==========================================================================
-   §5 Animation — scroll-reveal fade-up (enhancement, not required).
-   `.js` is only ever added by script.js, so with JavaScript disabled
-   `.reveal` elements simply render at their default, fully-visible state —
-   nothing on this page depends on JS to become visible.
-   ========================================================================== */
-
-.js .reveal {
+.hero-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  z-index: 0;
+  /* Background layer fades slower than everything else — 1s against the 0.5s
+     used by the entrance items. */
   opacity: 0;
-  transform: translateY(16px);
-  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+  animation: bgFade 1s var(--ease) forwards;
 }
-.js .reveal.is-visible {
+@keyframes bgFade { to { opacity: 1; } }
+
+/* MEASURED, not eyeballed. The bolt's core saturates to pure white wherever it
+   passes — the shader's 1.0/dist term blows up near the centre line, so no
+   uIntensity value removes it. Sampling the real drawing buffer under each
+   hero text element across 45 frames found 255,255,255 behind the h1, the
+   wordmark and the "read the limits" link: 1.13:1 against near-white text.
+   Unreadable at the worst instant, and invisible to any static contrast check
+   because the bolt moves.
+   Required scrim: near-white text (L≈0.877) needs the background under it at
+   L≤0.156 for 4.5:1, which is sRGB ≈110 — so a worst case of 255 has to come
+   down by at least 1 - 110/255 ≈ 0.57. 0.62 is that with margin.
+   The lightning still reads clearly; it just no longer reaches white. */
+.hero-scrim {
+  position: absolute; inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: rgba(13, 13, 13, 0.62);
+}
+
+/* Inverted hero text. */
+.hero .hero-eyebrow,
+.hero .eyebrow { color: var(--on-dark-dim); }
+.hero .rule { background: var(--on-dark-dim); }
+.hero-word { color: var(--on-dark) !important; }
+.hero-statement h1 { color: var(--on-dark); }
+.hero .link-underline { color: var(--on-dark); }
+.hero .btn { background: var(--on-dark); color: var(--color-dark); }
+.hero .btn:hover { background: var(--color-white); }
+.hero-inner {
+  position: relative;
+  max-width: var(--maxw); margin: 0 auto; padding: 0 var(--pad);
+  height: 648px;
+}
+.hero-inner { z-index: 1; }
+.hero-copy { position: absolute; top: 56px; left: var(--pad); z-index: 3; }
+.hero-eyebrow {
+  font-size: 11px; font-weight: 600; line-height: 1.7;
+  letter-spacing: var(--track-eyebrow); text-transform: uppercase;
+  color: var(--color-secondary);
+}
+
+/* The oversized wordmark, functioning as a graphic element. aria-hidden in the
+   markup — the real <h1> is the statement below, so this is decoration to a
+   screen reader and the heading order stays honest. */
+.hero-word {
+  /* TOP-anchored, not bottom-anchored. GAZU's hero carried no headline, so its
+     wordmark could sit low over the figure. This page has a real <h1> that must
+     stay readable, and a bottom-anchored wordmark of this size overlapped it
+     into illegibility. Anchoring from the top gives the statement its own band
+     underneath and keeps the overlap where it belongs — against the image. */
+  position: absolute; left: 50%; top: 178px; transform: translateX(-50%);
+  z-index: 1; width: 100%; text-align: center;
+  font-size: clamp(46px, 12.5vw, 164px);
+  font-weight: 800; line-height: 0.8; letter-spacing: -0.055em;
+  text-transform: uppercase; color: var(--color-dark);
+  white-space: nowrap; user-select: none;
+}
+
+/* ---- Wordmark glitch ----------------------------------------------------
+   Two tinted copies of the word, clipped to horizontal bands and displaced in
+   opposite directions, plus a flicker on the word itself. Same character as
+   the effect the portrait used to carry, now on the element that is actually
+   the hero's focus.
+   The base flicker animates OPACITY ONLY. .hero-word is centred with
+   translateX(-50%) on desktop and is static with no transform on mobile, so a
+   transform-animating base would have to compose differently per breakpoint
+   and would silently un-centre the word if either rule drifted — that exact
+   bug already happened once here with the entrance translate. All displacement
+   lives on the pseudo-elements, which carry no layout transform of their own.
+   Gated on .is-settled so it starts after the entrance transition rather than
+   overriding its opacity. */
+.hero-word::before,
+.hero-word::after {
+  content: attr(data-text);
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  text-align: inherit;
+  opacity: 0;
+  pointer-events: none;
+  /* Screened, so where a copy sits exactly over the near-white base it stays
+     white and invisible; only the displaced fringe reads as colour. */
+  mix-blend-mode: screen;
+}
+.hero-word::before { color: #00c8ff; }
+.hero-word::after  { color: #ff2d46; }
+
+.js .hero-word.is-settled            { animation: wordFlicker 4s steps(1, end) infinite; }
+.js .hero-word.is-settled::before    { animation: wordGlitchA 4s steps(1, end) infinite; }
+.js .hero-word.is-settled::after     { animation: wordGlitchB 4s steps(1, end) infinite; }
+
+/* Four bursts per 4s. Each is 2-3 frames of ~40ms, so it snaps rather than
+   fades — a wordmark that eases in and out is a fade, not a fault. */
+/* INTERLEAVED with the chroma bursts, not simultaneous with them. Pseudo-
+   elements inherit their parent's opacity, so dimming the word at the same
+   instant the copies fire drags the fringes down with it — the first version
+   did exactly that and the cyan/red came out muddy. Each burst now runs
+   fringe, fringe, BLINK: the copies fire while the word is at full opacity,
+   and the word only dips once they are gone. */
+@keyframes wordFlicker {
+  0%, 16.9%  { opacity: 1; }
+  17%        { opacity: 0.22; }   /* blink, after the fringes */
+  17.8%      { opacity: 1; }
+  42.9%      { opacity: 1; }
+  43%        { opacity: 0.15; }
+  43.8%      { opacity: 1; }
+  72.9%      { opacity: 1; }
+  73%        { opacity: 0.3; }
+  73.8%      { opacity: 1; }
+  88.9%      { opacity: 1; }
+  89%        { opacity: 0.25; }
+  89.8%      { opacity: 1; }
+  100%       { opacity: 1; }
+}
+@keyframes wordGlitchA {
+  0%, 14.9%  { opacity: 0; }
+  15%        { opacity: 1; clip-path: inset(12% 0 58% 0); transform: translateX(-16px); }
+  16%        { opacity: 1; clip-path: inset(46% 0 26% 0); transform: translateX(11px); }
+  17%        { opacity: 0; }
+  41.9%      { opacity: 0; }
+  42%        { opacity: 1; clip-path: inset(30% 0 44% 0); transform: translateX(19px); }
+  43%        { opacity: 0; }
+  70.9%      { opacity: 0; }
+  71%        { opacity: 1; clip-path: inset(58% 0 14% 0); transform: translateX(-21px); }
+  72%        { opacity: 1; clip-path: inset(6% 0 70% 0);  transform: translateX(9px); }
+  73%        { opacity: 0; }
+  87.9%      { opacity: 0; }
+  88%        { opacity: 1; clip-path: inset(24% 0 52% 0); transform: translateX(-12px); }
+  89%        { opacity: 0; }
+  100%       { opacity: 0; }
+}
+@keyframes wordGlitchB {
+  0%, 14.9%  { opacity: 0; }
+  15%        { opacity: 1; clip-path: inset(52% 0 20% 0); transform: translateX(14px); }
+  16%        { opacity: 1; clip-path: inset(8% 0 66% 0);  transform: translateX(-13px); }
+  17%        { opacity: 0; }
+  41.9%      { opacity: 0; }
+  42%        { opacity: 1; clip-path: inset(62% 0 12% 0); transform: translateX(-17px); }
+  43%        { opacity: 0; }
+  70.9%      { opacity: 0; }
+  71%        { opacity: 1; clip-path: inset(18% 0 56% 0); transform: translateX(18px); }
+  72%        { opacity: 1; clip-path: inset(70% 0 4% 0);  transform: translateX(-10px); }
+  73%        { opacity: 0; }
+  87.9%      { opacity: 0; }
+  88%        { opacity: 1; clip-path: inset(56% 0 22% 0); transform: translateX(13px); }
+  89%        { opacity: 0; }
+  100%       { opacity: 0; }
+}
+
+/* The redacted face, overlapping the typography — the site's own subject
+   matter used as its hero image. */
+
+
+.hero-statement { position: absolute; left: var(--pad); bottom: 56px; z-index: 3; max-width: 46ch; }
+.hero-statement h1 {
+  font-size: clamp(22px, 2.6vw, 34px);
+  font-weight: 700; line-height: 1.15; letter-spacing: -0.03em;
+}
+.hero-actions { margin-top: var(--space-lg); display: flex; align-items: center; gap: var(--space-lg); }
+
+.hero-meta { position: absolute; right: var(--pad); bottom: 56px; z-index: 3; text-align: right; }
+.hero-meta .rule { margin-left: auto; }
+
+/* -------------------------------- SECTIONS --------------------------------- */
+.section {
+  padding: var(--space-3xl) 0;
+  /* The header is sticky, so an anchor jump would otherwise land with the
+     section's own title hidden underneath it. */
+  scroll-margin-top: 64px;
+}
+.section--surface { background: var(--color-surface); }
+.section--dark { background: var(--color-dark); color: var(--on-dark); }
+.section--dark .eyebrow,
+.section--dark .lede { color: var(--on-dark-dim); }
+.section--dark .section-number { color: var(--on-dark-dim); }
+.section--dark .pull-quote { border-top-color: var(--on-dark-rule); color: var(--on-dark-dim); }
+.section--dark .pull-quote strong { color: var(--on-dark); }
+.note--dark { color: var(--on-dark-dim); }
+.note--dark strong { color: var(--on-dark); }
+
+.section-head { margin-bottom: var(--space-2xl); }
+.section-title {
+  margin-top: var(--space-md);
+  font-size: clamp(30px, 4.4vw, 58px);
+  font-weight: 800; line-height: 0.98; letter-spacing: -0.04em;
+}
+
+/* --------------------------------- §1 PROOF -------------------------------- */
+.evidence {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2xl);
+  padding: var(--space-xl) 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+.field-label {
+  margin-top: var(--space-lg);
+  font-size: 9px; font-weight: 600; letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase; color: var(--color-muted);
+}
+.field-label:first-child { margin-top: 0; }
+.goal-quote {
+  margin-top: var(--space-sm);
+  font-size: 19px; font-weight: 600; line-height: 1.4; letter-spacing: -0.02em;
+}
+
+.diff { margin-top: var(--space-lg); border-top: 1px solid var(--color-border); }
+.diff-row {
+  display: flex; align-items: baseline; gap: var(--space-md);
+  padding: var(--space-sm) 0; border-bottom: 1px solid var(--color-border);
+}
+.diff-tag {
+  flex: none; width: 88px;
+  font-size: 9px; font-weight: 600; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--color-muted);
+}
+.diff-wrong, .diff-right { font-family: var(--mono); font-size: 15px; }
+.diff-wrong { color: var(--color-muted); text-decoration: line-through; }
+.diff-right .extra { background: var(--color-dark); color: var(--color-white); padding: 0 3px; }
+
+.mock-input {
+  margin-top: var(--space-sm);
+  height: 46px; border: 1px solid var(--color-border); background: var(--color-white);
+  display: flex; align-items: center; padding: 0 var(--space-md);
+}
+.redaction-bar { display: block; width: 62%; height: 15px; background: var(--color-dark); }
+
+.split { display: grid; grid-template-columns: 1.15fr 1fr; gap: var(--space-2xl); margin-top: var(--space-2xl); align-items: start; }
+
+.figure { margin: 0; }
+.figure img { width: 100%; }
+.figure figcaption {
+  margin-top: var(--space-md);
+  font-size: 12px; line-height: 1.65; color: var(--color-muted);
+}
+.figure--wide { margin-top: var(--space-xl); }
+
+/* Hold-to-reveal: a CSS checkbox toggle, no JS — works with scripting off. */
+.reveal-frame { position: relative; display: block; cursor: pointer; }
+.reveal-frame img { filter: grayscale(100%); }
+.reveal-bar {
+  position: absolute; left: 0; right: 0; top: 30%; height: 22%;
+  background: var(--color-dark);
+  transition: opacity var(--dur) var(--ease);
+}
+.reveal-checkbox:checked ~ .reveal-frame .reveal-bar { opacity: 0; }
+.reveal-label-btn { margin-top: var(--space-md); }
+.reveal-checkbox:focus-visible ~ .reveal-frame { outline: 2px solid var(--color-dark); outline-offset: 3px; }
+
+/* ------------------------------- §2 PIPELINE ------------------------------- */
+.pipeline {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--on-dark-rule);
+  border-left: 1px solid var(--on-dark-rule);
+}
+.pipe {
+  padding: var(--space-lg);
+  border-right: 1px solid var(--on-dark-rule);
+  border-bottom: 1px solid var(--on-dark-rule);
+}
+.pipe-index {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em;
+  color: var(--on-dark-dim);
+}
+.pipe-stage {
+  margin-top: var(--space-sm);
+  font-size: 14px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.pipe-desc { margin-top: var(--space-sm); font-size: 12.5px; line-height: 1.6; color: var(--on-dark-dim); }
+.pipe-metric {
+  margin-top: var(--space-md);
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--on-dark-dim);
+}
+.pipe-metric b { display: block; font-size: 13px; letter-spacing: 0.02em; text-transform: none; color: var(--on-dark); }
+/* The gate is the one stage that is categorically different — marked with a
+   solid inverted block rather than an accent colour. */
+.pipe.is-gate { background: var(--on-dark); color: var(--color-dark); }
+.pipe.is-gate .pipe-index,
+.pipe.is-gate .pipe-desc,
+.pipe.is-gate .pipe-metric { color: var(--color-secondary); }
+.pipe.is-gate .pipe-metric b { color: var(--color-dark); }
+
+/* -------------------------------- §3 REPLAY -------------------------------- */
+.terminal { border: 1px solid var(--color-border); background: var(--color-dark); }
+.terminal-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid rgba(242, 241, 238, 0.12);
+}
+.terminal-title {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+  color: var(--on-dark-dim); text-transform: uppercase;
+}
+.terminal-controls { display: flex; gap: var(--space-sm); }
+.terminal-controls .btn { background: var(--on-dark); color: var(--color-dark); }
+.terminal-controls .btn:hover { background: var(--color-white); }
+.terminal-controls .btn-ghost { background: transparent; color: var(--on-dark); border-color: var(--on-dark-rule); }
+.terminal-controls .btn-ghost:hover { background: var(--on-dark); color: var(--color-dark); }
+
+.terminal-body {
+  padding: var(--space-lg) var(--space-md);
+  font-family: var(--mono); font-size: 12px; line-height: 1.9;
+  color: var(--on-dark);
+  max-height: 60vh; overflow-y: auto;
+}
+.term-line { white-space: pre-wrap; word-break: break-word; }
+.term-line.dim { color: var(--on-dark-dim); }
+.term-line.pass { color: var(--pass); }
+.term-line.ok { color: var(--pass); }
+.term-line.blocked { color: var(--blocked); }
+.term-line.divider { color: rgba(242, 241, 238, 0.22); }
+.term-line .num { color: #E0C08A; }
+.term-line.is-pending { display: none; }
+.term-cursor {
+  display: inline-block; width: 8px; height: 14px; background: var(--on-dark);
+  vertical-align: text-bottom; animation: blink 1s steps(2, start) infinite;
+}
+.term-cursor.is-hidden { display: none; }
+@keyframes blink { to { visibility: hidden; } }
+
+/* ------------------------------ §4 LIVE PROOF ------------------------------ */
+.live { border-top: 2px solid var(--color-dark); }
+.live-bar {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--space-md); flex-wrap: wrap;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.live-status {
+  display: flex; align-items: center; gap: var(--space-sm);
+  font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.live-hint { font-size: 11px; color: var(--color-muted); }
+
+/* State is carried by shape, not colour alone: offline is a hollow ring, live
+   is a filled dot that pulses, waiting is filled and still. Colour is a second
+   signal, never the only one. */
+.live-dot {
+  width: 9px; height: 9px; flex: none;
+  border: 1.5px solid currentColor; border-radius: 50%;
+  background: transparent;
+}
+.live.is-waiting .live-dot { background: currentColor; }
+.live.is-live .live-dot { background: currentColor; animation: livePulse 1.4s ease-in-out infinite; }
+.live.is-live .live-status { color: #2F6B3E; }
+.live.is-offline .live-status { color: var(--color-muted); }
+@keyframes livePulse { 50% { opacity: 0.25; } }
+
+.live-table { font-variant-numeric: tabular-nums; }
+.live-table td { font-size: 13px; }
+.live-table .live-empty td {
+  color: var(--color-muted); font-size: 13px; text-align: left;
+  padding-top: var(--space-lg); padding-bottom: var(--space-lg);
+}
+.live-seq { font-family: var(--mono); font-size: 12px; color: var(--color-muted); }
+.live-types { font-family: var(--mono); font-size: 11px; }
+/* Qualified with the table class on purpose: `.results-table td` is (0,1,1)
+   and a bare `.live-pass` is (0,1,0), so the unqualified rule lost and the
+   green silently never applied. Caught by measuring the rendered colour, not
+   by reading the stylesheet. */
+.live-table td.live-pass { color: #2F6B3E; font-weight: 600; }
+/* A row arriving should be noticeable without being a light show. */
+.live-row-new { animation: liveIn 500ms var(--ease); }
+@keyframes liveIn { from { opacity: 0; transform: translateY(-4px); } }
+
+/* -------------------------------- §5 LAYERS -------------------------------- */
+.layers { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-xl); }
+.layer { padding-top: var(--space-lg); border-top: 2px solid var(--color-dark); }
+.layer-index {
+  font-size: 9px; font-weight: 600; letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase; color: var(--color-muted);
+}
+.layer-title { margin-top: var(--space-sm); font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.layer p { margin-top: var(--space-md); font-size: 14px; line-height: 1.7; color: var(--color-secondary); }
+.layer-fail { font-size: 13px; color: var(--color-muted); }
+.layer-fail b {
+  display: block; font-size: 9px; letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase; color: var(--color-dark); margin-bottom: 2px;
+}
+
+/* ------------------------------ §5 SCENARIOS ------------------------------- */
+.scenarios { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-xl); }
+.scenario { padding-top: var(--space-lg); border-top: 1px solid var(--color-border); }
+.scenario.is-key { border-top: 2px solid var(--color-dark); }
+.scenario-title {
+  font-size: 17px; font-weight: 700; letter-spacing: -0.01em;
+  display: flex; align-items: baseline; gap: var(--space-sm); flex-wrap: wrap;
+}
+.scenario-tag {
+  font-size: 9px; font-weight: 600; letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase; color: var(--color-white);
+  background: var(--color-dark); padding: 2px 7px;
+}
+.scenario-goal { margin-top: var(--space-sm); font-size: 14px; color: var(--color-secondary); }
+.scenario-goal .q {
+  font-size: 9px; font-weight: 600; letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase; color: var(--color-muted); margin-right: 6px;
+}
+.scenario-take { margin-top: var(--space-md); font-size: 13.5px; line-height: 1.7; color: var(--color-secondary); }
+
+/* ------------------------------- §6 RESULTS -------------------------------- */
+.table-wrap { overflow-x: auto; border-top: 2px solid var(--color-dark); }
+.results-table { width: 100%; border-collapse: collapse; }
+.results-table th {
+  text-align: left; padding: var(--space-md) var(--space-md) var(--space-md) 0;
+  font-size: 9px; font-weight: 600; letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase; color: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+.results-table td {
+  padding: var(--space-md) var(--space-md) var(--space-md) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px; color: var(--color-secondary); vertical-align: top;
+}
+.results-table .figure { font-family: var(--mono); font-size: 13px; color: var(--color-text); white-space: nowrap; }
+
+.chips { margin-top: var(--space-xl); display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.chip {
+  padding: 7px 12px; border: 1px solid var(--color-border);
+  font-size: 11px; color: var(--color-secondary);
+}
+.chip b { color: var(--color-text); font-weight: 700; }
+.chip--solid { background: var(--color-dark); color: var(--on-dark); border-color: var(--color-dark); }
+
+/* ----------------------------- §7 ARCHITECTURE ----------------------------- */
+.stack-list { border-top: 2px solid var(--color-dark); }
+.stack-list li { padding: var(--space-md) 0; border-bottom: 1px solid var(--color-border); }
+.stack-list .name { display: block; font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+.stack-list .desc { display: block; margin-top: 4px; font-size: 12.5px; line-height: 1.6; color: var(--color-muted); }
+
+/* ------------------------------ §8 LIMITATIONS ----------------------------- */
+.limits {
+  display: grid; grid-template-columns: repeat(2, 1fr);
+  gap: 0 var(--space-2xl);
+  border-top: 1px solid var(--on-dark-rule);
+}
+.limit { padding: var(--space-lg) 0; border-bottom: 1px solid var(--on-dark-rule); }
+.limit dt { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.limit dd { margin-top: var(--space-sm); font-size: 13px; line-height: 1.7; color: var(--on-dark-dim); }
+
+/* --------------------------------- FOOTER ---------------------------------- */
+.site-footer { background: var(--color-dark); color: var(--on-dark); padding: var(--space-2xl) 0; }
+.footer-inner { display: grid; grid-template-columns: auto 1fr; gap: var(--space-2xl); align-items: start; }
+.footer-brand { font-size: 24px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.footer-brand span { color: var(--on-dark-dim); }
+.footer-note { font-size: 12px; line-height: 1.7; color: var(--on-dark-dim); max-width: 72ch; }
+
+/* --------------------- ENTRANCE + SCROLL REVEAL ---------------------------
+   Timing values carried over 1:1 from the motion spec: items travel y 20 → 0
+   with opacity 0 → 1 over 0.5s ease-out; groups stagger their children by
+   0.3s after a 0.2s lead-in. The hero uses a mount-triggered version (.enter,
+   orchestrated in script.js); everything below the fold uses the scroll-
+   triggered equivalent (.reveal + IntersectionObserver), which is what
+   `whileInView` maps onto without a framework. */
+.js .reveal,
+.js .enter {
+  opacity: 0;
+  transform: translateY(20px);
+  /* Only on elements that actually animate, and dropped once they land —
+     a permanent will-change on dozens of nodes is its own performance bug. */
+  will-change: transform, opacity;
+}
+.js .reveal.is-in,
+.js .enter.is-in {
   opacity: 1;
   transform: none;
+  transition: opacity 500ms cubic-bezier(0, 0, 0.58, 1),
+              transform 500ms cubic-bezier(0, 0, 0.58, 1);
+}
+.js .reveal.is-settled,
+.js .enter.is-settled { will-change: auto; }
+
+/* `transform` is a single property, so the entrance translate CLOBBERS any
+   transform already doing layout work. The wordmark and the portrait are both
+   centred with translateX(-50%); without composing the two explicitly the
+   entrance silently un-centres them and the wordmark runs off the viewport.
+   Composed here rather than reaching for a wrapper element. */
+.js .hero-word.enter { transform: translateX(-50%) translateY(20px); }
+.js .hero-word.enter.is-in { transform: translateX(-50%); }
+
+/* The nav is the one element that does not stagger: a single slide-down from
+   y -20, same 0.5s. */
+.js .header { opacity: 0; transform: translateY(-20px); will-change: transform, opacity; }
+.js .header.is-in {
+  opacity: 1; transform: none;
+  transition: opacity 500ms cubic-bezier(0, 0, 0.58, 1),
+              transform 500ms cubic-bezier(0, 0, 0.58, 1);
+}
+.js .header.is-settled { will-change: auto; }
+
+/* ================================ TABLET ================================== */
+@media (max-width: 1199px) {
+  :root { --pad: 36px; --space-3xl: 88px; }
+  .hero-inner { height: 580px; }
+  .hero-word { font-size: clamp(56px, 13vw, 132px); bottom: 150px; }
+  .nav-primary ul, .nav-utility ul { gap: var(--space-md); }
+  .pipeline { grid-template-columns: repeat(2, 1fr); }
+  .layers { grid-template-columns: 1fr; gap: var(--space-lg); }
+  .split { grid-template-columns: 1fr; gap: var(--space-xl); }
+  .evidence { gap: var(--space-xl); }
+}
+
+/* ================================ MOBILE ================================== */
+@media (max-width: 767px) {
+  :root { --pad: 20px; --space-3xl: 64px; --space-2xl: 48px; }
+  body { font-size: 14px; }
+
+  .announce-links { display: none; }
+  .menu-btn { display: inline-flex; }
+  .nav-primary, .nav-utility { display: none; }
+  .brand { font-size: 22px; }
+
+  /* Hero recomposed, not scaled. */
+  .hero-inner {
+    height: auto; min-height: 0;
+    padding: var(--space-xl) var(--pad) var(--space-2xl);
+    display: flex; flex-direction: column; align-items: flex-start;
+  }
+  .hero-copy, .hero-word, .hero-statement, .hero-meta {
+    position: static; transform: none;
+  }
+  /* No centring transform to preserve down here — these are static, so the
+     entrance translate stands alone again. */
+  .js .hero-word.enter { transform: translateY(20px); }
+  .js .hero-word.enter.is-in { transform: none; }
+  .hero-word {
+    /* The glitch copies are position:absolute; without this they would anchor
+       to .hero-inner once .hero-word stops being positioned. */
+    position: relative;
+    width: auto; text-align: left;
+    margin: var(--space-xl) 0 var(--space-lg);
+    font-size: clamp(40px, 15vw, 72px);
+  }
+  .hero-statement { max-width: none; margin-bottom: var(--space-xl); }
+  .hero-actions { flex-wrap: wrap; gap: var(--space-md); }
+  .hero-meta { text-align: left; }
+  .hero-meta .rule { margin-left: 0; }
+
+  .evidence { grid-template-columns: 1fr; gap: var(--space-xl); }
+  .pipeline { grid-template-columns: 1fr; }
+  .scenarios { grid-template-columns: 1fr; gap: var(--space-lg); }
+  .limits { grid-template-columns: 1fr; gap: 0; }
+  .footer-inner { grid-template-columns: 1fr; gap: var(--space-lg); }
+  .results-table .figure { white-space: normal; }
+  .terminal-body { font-size: 11px; }
+}
+
+/* --------------------------- REDUCED MOTION -------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .js .reveal, .js .enter { opacity: 1; transform: none; will-change: auto; }
+  .js .hero-word.is-settled { animation: none; opacity: 1; }
+  .js .hero-word.is-settled::before,
+  .js .hero-word.is-settled::after { animation: none; opacity: 0; }
+  .js .header { opacity: 1; transform: none; will-change: auto; }
+  .term-cursor { animation: none; }
+  /* The shader stops outright rather than slowing down — see lightning.js,
+     which renders exactly one frame and never schedules another. The canvas
+     itself must still be visible, so only the fade is neutralised. */
+  .hero-canvas { animation: none; opacity: 1; }
+  .btn:hover, .btn:active { transform: none; }
+  .btn:hover .btn-arrow { transform: none; }
 }

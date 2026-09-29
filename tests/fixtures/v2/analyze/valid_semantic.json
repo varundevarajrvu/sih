@@ -1,0 +1,47 @@
+{
+  "schema": "dhristi-scene-v2",
+  "mode": "semantic",
+  "revision": "rev-0001",
+  "taskGoal": "Fill the email field with the user's own email, referenced as EMAIL#1",
+  "viewport": { "w": 1280, "h": 720 },
+  "elements": [
+    {
+      "agentId": "agent-1",
+      "tag": "input",
+      "role": "textbox",
+      "type": "email",
+      "label": "Email address",
+      "bbox": { "x": 10, "y": 60, "w": 200, "h": 30 },
+      "sensitive": false,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "input",
+      "role": "textbox",
+      "type": "password",
+      "label": null,
+      "bbox": { "x": 10, "y": 100, "w": 200, "h": 30 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-3",
+      "tag": "button",
+      "role": "button",
+      "type": "submit",
+      "label": "Submit",
+      "bbox": { "x": 10, "y": 140, "w": 80, "h": 30 },
+      "sensitive": false,
+      "tier": "navigational"
+    }
+  ],
+  "regions": [
+    {
+      "kind": "password",
+      "bbox": { "x": 10, "y": 100, "w": 200, "h": 30 },
+      "source": "dom"
+    }
+  ],
+  "history": []
+}

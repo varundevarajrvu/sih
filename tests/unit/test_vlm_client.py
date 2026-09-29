@@ -14,10 +14,12 @@ from vlm_client import (
     ClaudeVLMClient,
     GeminiVLMClient,
     MockVLMClient,
+    ObserveOnlyVLMClient,
     OllamaVLMClient,
     VLMRequestContext,
     build_prompt,
     get_vlm_client,
+    get_vlm_client_v2,
 )
 
 
@@ -270,7 +272,119 @@ def test_factory_selects_gemini_without_calling_it(monkeypatch):
     assert client.model == DEFAULT_GEMINI_MODEL
 
 
+def test_factory_selects_observe(monkeypatch):
+    monkeypatch.setenv("VLM_BACKEND", "observe")
+    assert isinstance(get_vlm_client(), ObserveOnlyVLMClient)
+
+
+def test_observe_only_always_returns_done_and_never_names_an_element():
+    """The safety property this backend exists for, asserted rather than
+    assumed: whatever the page contains, the reply is `done` on the
+    PAGE_TARGET_ID sentinel. `done` is ungated by the action guards
+    precisely because it targets no element, so a run against a REAL
+    website cannot click, type, or otherwise mutate anything.
+
+    Exercised against a DOM snapshot deliberately full of the things that
+    would tempt every other backend into acting: an empty profile-shaped
+    field (MockVLMClient fills these), a plain text input (MockVLMClient
+    types into these), and a purchase button (the case action-risk.js
+    exists to block).
+    """
+    tempting_dom = [
+        DomNode(agentId="agent-1", tag="input", type="email", text=""),
+        DomNode(agentId="agent-2", tag="input", type="text", text=""),
+        DomNode(agentId="agent-3", tag="button", type="submit", text="Place Order"),
+    ]
+    client = ObserveOnlyVLMClient()
+    result = client.analyze(_context(tempting_dom, task_goal="buy everything on this page"))
+
+    assert result["action"] == "done"
+    assert result["targetId"] == PAGE_TARGET_ID
+    assert result["value"] is None
+    # No element id may appear anywhere in the response — naming one is
+    # what would make acting possible at all.
+    serialized = str(result)
+    assert not any(node.agentId in serialized for node in tempting_dom)
+
+
+def test_observe_only_makes_no_network_call(monkeypatch):
+    """Constructing AND calling this backend must never touch the network.
+    Any outbound HTTP would mean a real page's screenshot left the machine
+    during what is documented as a local, observe-only run."""
+    def _explode(*args, **kwargs):  # pragma: no cover - must never run
+        raise AssertionError("ObserveOnlyVLMClient attempted a network call")
+
+    monkeypatch.setattr("httpx.Client.request", _explode, raising=False)
+    monkeypatch.setattr("httpx.Client.send", _explode, raising=False)
+
+    result = ObserveOnlyVLMClient().analyze(_context([]))
+    assert result["action"] == "done"
+
+
 def test_factory_rejects_unknown_backend(monkeypatch):
     monkeypatch.setenv("VLM_BACKEND", "not-a-real-backend")
     with pytest.raises(ValueError):
         get_vlm_client()
+
+
+# ---------------------------------------------------------------------------
+# V3 (planner-local): get_vlm_client_v2() / VLM_BACKEND_V2 -- a SEPARATE
+# factory + env var from get_vlm_client()/VLM_BACKEND above, so v1's
+# "mock" default is untouched (V3 brief item 6). See
+# vlm_client.get_vlm_client_v2's docstring. conftest.py's
+# _default_v2_backend_to_mock autouse fixture already sets
+# VLM_BACKEND_V2=mock for every test in this suite -- these tests
+# deliberately override/delete it to exercise the factory's own logic.
+# ---------------------------------------------------------------------------
+
+
+def test_v2_factory_defaults_to_ollama(monkeypatch):
+    """Unlike get_vlm_client() (defaults to mock), get_vlm_client_v2()
+    defaults to "ollama" once VLM_BACKEND_V2 is unset -- the pre-
+    registered-benchmark local planner is the real v2 default now (see
+    server/PLANNER.md)."""
+    monkeypatch.delenv("VLM_BACKEND_V2", raising=False)
+    client = get_vlm_client_v2()
+    assert isinstance(client, OllamaVLMClient)
+
+
+def test_v2_factory_selects_mock_explicitly(monkeypatch):
+    monkeypatch.setenv("VLM_BACKEND_V2", "mock")
+    assert isinstance(get_vlm_client_v2(), MockVLMClient)
+
+
+def test_v2_factory_selects_observe(monkeypatch):
+    monkeypatch.setenv("VLM_BACKEND_V2", "observe")
+    assert isinstance(get_vlm_client_v2(), ObserveOnlyVLMClient)
+
+
+def test_v2_factory_selects_claude_without_calling_it(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("VLM_BACKEND_V2", "claude")
+    client = get_vlm_client_v2()
+    assert isinstance(client, ClaudeVLMClient)
+
+
+def test_v2_factory_selects_gemini_without_calling_it(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("VLM_BACKEND_V2", "gemini")
+    client = get_vlm_client_v2()
+    assert isinstance(client, GeminiVLMClient)
+
+
+def test_v2_factory_rejects_unknown_backend(monkeypatch):
+    monkeypatch.setenv("VLM_BACKEND_V2", "not-a-real-backend")
+    with pytest.raises(ValueError):
+        get_vlm_client_v2()
+
+
+def test_v2_factory_is_independent_of_v1_backend_env_var(monkeypatch):
+    """Setting VLM_BACKEND (v1) must never influence get_vlm_client_v2(),
+    and vice versa -- V3 brief item 6's 'do not change v1 defaults'
+    requires the two selections to be genuinely decoupled, not just
+    defaulted differently."""
+    monkeypatch.setenv("VLM_BACKEND", "claude")
+    monkeypatch.setenv("VLM_BACKEND_V2", "mock")
+    assert isinstance(get_vlm_client(), ClaudeVLMClient)
+    assert isinstance(get_vlm_client_v2(), MockVLMClient)

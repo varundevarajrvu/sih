@@ -1,0 +1,18 @@
+{
+  "name": "ultraface-spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "V0b spike: does UltraFace RFB-320 (onnxruntime-web) beat Xenova/yolos-tiny (COCO person class) for face redaction? Answers a question, ships no product code. See docs/v2/ARCHITECTURE.md Phase V0b.",
+  "scripts": {
+    "build": "esbuild harness.src.js --bundle --format=esm --platform=browser --outfile=public/harness.bundle.js",
+    "fixtures": "node make-fixtures.mjs",
+    "bench": "node run-bench.mjs"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.48.0",
+    "sharp": "^0.33.5"
+  }
+}

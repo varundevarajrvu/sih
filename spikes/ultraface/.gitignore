@@ -1,0 +1,3 @@
+node_modules/
+public/harness.bundle.js
+server.log

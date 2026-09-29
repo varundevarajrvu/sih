@@ -1,0 +1,4 @@
+# Tracked ML/vendor assets that must never be line-ending-converted by git
+# (checkout-time CRLF conversion previously corrupted these -- see
+# extension/README.md "Fresh clone setup" for the CRLF-vs-upstream story).
+extension/models/ultraface/* -text

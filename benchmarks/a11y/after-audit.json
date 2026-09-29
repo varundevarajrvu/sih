@@ -1,0 +1,157 @@
+{
+  "poppedUrl": "file://C:/Users/varun/brain/raw/sih/extension/popup.html",
+  "states": [
+    {
+      "state": "default",
+      "violations": []
+    },
+    {
+      "state": "consentPanel visible",
+      "violations": []
+    },
+    {
+      "state": "goalPrivacyPanel visible",
+      "violations": []
+    },
+    {
+      "state": "settings/profile/diagnostics disclosures open",
+      "violations": []
+    }
+  ],
+  "keyboard": {
+    "focusableCount": 15,
+    "focusableIds": [
+      "taskGoal",
+      "saveGoal",
+      "runAgentLoop",
+      "serverUrlInput",
+      "saveServerUrl",
+      "fullPageCaptureToggle",
+      "pipelineVersionSelect",
+      "plannerBackendSelect",
+      "plannerCloudConfirm",
+      "savePlannerBackend",
+      "profileFullName",
+      "profileEmail",
+      "profilePhone",
+      "saveProfile",
+      "testDetect"
+    ],
+    "tabStops": [
+      {
+        "id": "taskGoal",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "saveGoal",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "runAgentLoop",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "summary",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "serverUrlInput",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "saveServerUrl",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "fullPageCaptureToggle",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "pipelineVersionSelect",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "plannerBackendSelect",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "plannerCloudConfirm",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "savePlannerBackend",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "summary",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "profileFullName",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "profileEmail",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "profilePhone",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "saveProfile",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "summary",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      },
+      {
+        "id": "testDetect",
+        "outlineWidth": "2px",
+        "outlineStyle": "solid"
+      }
+    ],
+    "reachedAllFocusable": true,
+    "allStopsHaveVisibleOutline": true,
+    "consentPanelEscapeCloses": true,
+    "consentPanelEnterCloses": true,
+    "goalPrivacyEscapeCloses": true,
+    "goalPrivacyEnterCloses": true
+  },
+  "textSpacing": {
+    "documentScrollWidth": 400,
+    "documentClientWidth": 400,
+    "horizontalScrollAt400": false,
+    "clippedElements": []
+  },
+  "zoom": {
+    "at360NoZoom": {
+      "scrollWidth": 360,
+      "clientWidth": 360,
+      "horizontalScroll": false
+    },
+    "at360Zoom200": {
+      "scrollWidth": 360,
+      "clientWidth": 360,
+      "horizontalScroll": false
+    }
+  }
+}

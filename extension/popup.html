@@ -1,692 +1,684 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" id="htmlRoot">
 <head>
-<meta charset="utf-8" />
-<meta name="color-scheme" content="dark" />
+<meta charset="utf-8">
 <title>Dhristi</title>
 <style>
-  /* ==========================================================================
-     SIH 26171 -- extension popup, glassmorphism pass.
-     Same token system as site/styles.css (Chief's spec, verbatim values) so
-     the popup and the showcase site read as one product, not two skins.
-     Inline <style> rather than a separate popup.css: this file is small,
-     self-contained, and an inline block was already proven to work under
-     this manifest's extension_pages CSP -- no new web_accessible_resources
-     entry needed for one more file.
+/* ==========================================================================
+   Dhristi — extension popup.
+   Same system as the showcase site: monochrome, flat, sharp rectangles, thin
+   rules, oversized type, zero border radius. The previous glassmorphism pass
+   (orbs, backdrop-filter, bronze accents) is gone — a popup that looks like a
+   different product than the site is a product with two identities.
+   Colour appears in exactly two places, both load-bearing: PASS green and
+   BLOCKED terracotta. Nothing else is tinted.
+   ========================================================================== */
 
-     GLASS WITHOUT A PHOTO: a popup has nothing behind it for
-     backdrop-filter to refract, so flat translucency alone reads as dead
-     grey. Fix per spec: --bg-void base + two fixed, blurred accent orbs
-     (bronze + terracotta, same recipe as the site's .orb) sitting behind a
-     SINGLE glass panel -- the blur now has real gradient to sample.
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/inter-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
 
-     PERFORMANCE BUDGET: a popup has to open instantly, stricter than the
-     site. Exactly ONE backdrop-filter surface exists in this whole
-     document -- .glass-shell, applied once, wrapping everything. Every
-     surface nested inside it (buttons, banners, disclosures, inputs, the
-     BLOCKED banner's terracotta wash) is a flat/rgba tint with ZERO
-     additional backdrop-filter -- they ride on the one already-blurred
-     surface underneath instead of paying for their own. That is well
-     under the "never stack more than 2" ceiling; there was no point
-     spending the second slot the spec allows, since one convincing glass
-     surface plus flat inner tints already reads as glass without any
-     extra GPU cost, and this is the surface latency matters most on.
-     ========================================================================== */
+:root {
+  --dark:      #0D0D0D;
+  --surface:   #141414;
+  --on-dark:   #F2F1EE;
+  --dim:       rgba(242, 241, 238, 0.72);
+  /* Was 0.45 -- ~4.15:1 on --dark, below the 4.5:1 AA floor for the small
+     (10-12px) hint/status text this variable is used for. 0.6 measures
+     ~6.5:1 on --dark and ~6.2:1 on --surface, with margin for either
+     background this theme actually composites against. */
+  --faint:     rgba(242, 241, 238, 0.6);
+  --rule:      rgba(242, 241, 238, 0.16);
+  --rule-firm: rgba(242, 241, 238, 0.34);
 
-  :root {
-    /* --- Chief's spec tokens, verbatim -------------------------------- */
-    --bg-void:             #0B0B0C;
-    --bg-forest:           #16211A;
-    --glass-fill:          rgba(22, 24, 23, 0.50);
-    --glass-fill-strong:   rgba(14, 15, 15, 0.65);
-    --glass-border:        rgba(255, 255, 255, 0.14);
-    --glass-border-bright: rgba(255, 255, 255, 0.28);
-    --text-primary:        #F6F4EF;
-    --text-secondary:      #C7C4BB;
-    --text-muted:          #8D897D;
-    --accent-bronze:       #AD8A5C;
-    --accent-terracotta:   #A94E3D;
+  --pass:    #6FAE7E;
+  --blocked: #D98B7A;
+  --warn:    #D9C27A;
+  /* Aliases -- popup.js sets inline `style.color` to var(--redact) and
+     var(--text-muted) for status text (save/error states) but this file
+     never defined either name. An undefined custom property makes the
+     whole `color` declaration compute as `unset`, which for an inherited
+     property like `color` falls back to the parent's colour -- not a
+     contrast failure by luck, but the intended red/neutral state colour
+     never actually applied. Defined here so that styling takes effect. */
+  --redact:     var(--blocked);
+  --text-muted: var(--faint);
 
-    /* --- Two tokens derived exactly like site/styles.css derives them
-       (same names, same values, same reasoning): the spec's 11 tokens are
-       structural, not semantic -- this UI needs "safe" (moss) and "this is
-       readable running text" for terracotta (raw terracotta measures only
-       ~3.6:1 for text; fine as a 3:1 border/fill, not for text -- this
-       tint measures 8+ everywhere it's used here, see delivery report). -- */
-    --accent-moss:            #8FBF8A;
-    --accent-terracotta-text: #E39A85;
+  --font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --track: 0.3em;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
 
-    /* --- Backward-compat alias, mirrors site/styles.css's own alias block
-       byte-for-byte: popup.js sets serverUrlStatusEl.style.color to the
-       LITERAL strings "var(--redact)" / "var(--pass)" (search the file --
-       it's the one place a color choice survives untouched from the prior
-       theme). Rather than edit working, tested JS to rename two color
-       values, this file just keeps those two custom-property NAMES
-       resolving to sensible colors under the new palette -- zero popup.js
-       diff, and the alias reads identically to how the site solved the
-       exact same problem for its own legacy literals. -------------------- */
-    --pass:   var(--accent-moss);
-    --redact: var(--accent-terracotta-text);
+*, *::before, *::after { box-sizing: border-box; }
 
-    /* --- Typography: Fraunces italic display + Inter body, both
-       self-hosted from extension/fonts/ (copied byte-for-byte from
-       site/fonts/ -- same files, same subsetting). No CDN, ever: this is
-       a privacy project and MV3's CSP would block a remote stylesheet
-       anyway. Mono stays a system stack, matching the site's own choice
-       (its reference had no code content to derive a mono pick from
-       either; a system stack costs nothing to ship and is legible
-       everywhere this JSON/log content actually renders). --------------- */
-    --font-display: 'Fraunces', ui-serif, Georgia, 'Book Antiqua', serif;
-    --font-body:    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    --font-mono:    ui-monospace, 'Cascadia Code', 'Segoe UI Mono', 'SFMono-Regular',
-                    Consolas, 'Liberation Mono', Menlo, monospace;
+html { max-width: 100%; }
+body {
+  /* 400px is the normal popup size; max-width keeps it from forcing
+     horizontal scroll when the available viewport is narrower than that
+     (browser zoom, OS display scaling, or a constrained popup frame --
+     e.g. a 360px-wide viewport at 200% zoom). box-sizing: border-box
+     (set globally below) keeps the side padding inside this width. */
+  width: 400px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--dark);
+  color: var(--on-dark);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
 
-    /* --- Spacing scale, per spec (8/16/24/32/48) ----------------------- */
-    --space-1: 8px;
-    --space-2: 16px;
-    --space-3: 24px;
-    --space-4: 32px;
-    --space-5: 48px;
+h1, p, pre { margin: 0; }
 
-    /* --- Radius + blur, verbatim ---------------------------------------- */
-    --radius-sm:   12px;
-    --radius-lg:   20px;
-    --radius-pill: 999px;
-    --glass-blur:  blur(18px);
+::selection { background: var(--on-dark); color: var(--dark); }
 
-    --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
-  }
+:focus-visible { outline: 2px solid var(--on-dark); outline-offset: 2px; }
 
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+/* ------------------------------- SHELL ---------------------------------- */
+.shell { padding: 0 0 18px; }
 
-  /* --- FONTS: self-hosted, identical files to site/fonts/, identical
-     @font-face recipe (including unicode-range) -- these are literally the
-     same physical font files, so describing them differently here would
-     be the inconsistency, not a fix. ------------------------------------ */
-  @font-face {
-    font-family: 'Fraunces';
-    font-style: italic;
-    font-weight: 400 500;
-    font-display: swap;
-    src: url('fonts/fraunces-italic-latin.woff2') format('woff2');
-    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                   U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-                   U+2212, U+2215, U+FEFF, U+FFFD;
-  }
-  @font-face {
-    font-family: 'Inter';
-    font-style: normal;
-    font-weight: 400 600;
-    font-display: swap;
-    src: url('fonts/inter-latin.woff2') format('woff2');
-    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-                   U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-                   U+2212, U+2215, U+FEFF, U+FFFD;
-  }
+.topbar {
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.topbar-brand { min-width: 0; }
 
-  html { -webkit-text-size-adjust: 100%; }
+/* Language toggle -- same flat/monochrome/sharp-rectangle system as
+   .btn, deliberately smaller. "EN"/"हिं" are language labels, not prose,
+   so they stay literal regardless of the active language (see
+   tests/unit/test_i18n.mjs's allowlist). */
+.lang-toggle {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--rule-firm);
+}
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-family: var(--font);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 150ms var(--ease), color 150ms var(--ease);
+}
+.lang-btn + .lang-btn { border-left: 1px solid var(--rule-firm); }
+.lang-btn[aria-pressed="true"] { background: var(--on-dark); color: var(--dark); }
+.lang-btn:hover:not([aria-pressed="true"]) { color: var(--on-dark); }
+.lang-btn:focus-visible {
+  outline: 2px solid var(--on-dark);
+  outline-offset: 1px;
+}
 
-  body {
-    width: 380px;
-    max-height: 600px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    position: relative;
-    background: var(--bg-void);
-    color: var(--text-secondary);
-    font-family: var(--font-body);
-    font-size: 12.5px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-  }
+/* The wordmark carries the same glitch as the site's hero: two tinted copies
+   via content: attr(data-text), clipped to bands and displaced, with the word
+   itself flickering between bursts. Displacement lives only on the pseudo
+   copies — the base animates opacity alone, so nothing can knock the wordmark
+   out of position. */
+.brand {
+  position: relative;
+  display: inline-block;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--on-dark);
+  user-select: none;
+}
+.brand::before,
+.brand::after {
+  content: attr(data-text);
+  position: absolute;
+  left: 0; top: 0;
+  width: 100%;
+  opacity: 0;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+.brand::before { color: #00c8ff; animation: brandGlitchA 4s steps(1, end) infinite; }
+.brand::after  { color: #ff2d46; animation: brandGlitchB 4s steps(1, end) infinite; }
+.brand { animation: brandFlicker 4s steps(1, end) infinite; }
 
-  h1 { margin: 0; }
-  p { margin: 0; }
+@keyframes brandFlicker {
+  0%, 16.9% { opacity: 1; }
+  17%       { opacity: 0.25; }
+  17.8%     { opacity: 1; }
+  62.9%     { opacity: 1; }
+  63%       { opacity: 0.18; }
+  63.8%     { opacity: 1; }
+  100%      { opacity: 1; }
+}
+@keyframes brandGlitchA {
+  0%, 14.9% { opacity: 0; }
+  15%       { opacity: 1; clip-path: inset(10% 0 58% 0); transform: translateX(-5px); }
+  16%       { opacity: 1; clip-path: inset(48% 0 24% 0); transform: translateX(4px); }
+  17%       { opacity: 0; }
+  60.9%     { opacity: 0; }
+  61%       { opacity: 1; clip-path: inset(30% 0 44% 0); transform: translateX(6px); }
+  62%       { opacity: 1; clip-path: inset(66% 0 8% 0);  transform: translateX(-3px); }
+  63%       { opacity: 0; }
+  100%      { opacity: 0; }
+}
+@keyframes brandGlitchB {
+  0%, 14.9% { opacity: 0; }
+  15%       { opacity: 1; clip-path: inset(52% 0 18% 0); transform: translateX(5px); }
+  16%       { opacity: 1; clip-path: inset(6% 0 68% 0);  transform: translateX(-4px); }
+  17%       { opacity: 0; }
+  60.9%     { opacity: 0; }
+  61%       { opacity: 1; clip-path: inset(62% 0 12% 0); transform: translateX(-6px); }
+  62%       { opacity: 1; clip-path: inset(16% 0 58% 0); transform: translateX(3px); }
+  63%       { opacity: 0; }
+  100%      { opacity: 0; }
+}
 
-  code {
-    font-family: var(--font-mono);
-    font-size: 0.92em;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid var(--glass-border);
-    border-radius: 4px;
-    padding: 0.05em 0.4em;
-    color: var(--text-primary);
-  }
+.brand-sub {
+  margin-top: 6px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--faint);
+}
 
-  button { font: inherit; color: inherit; }
+main { padding: 0 18px; }
 
-  :focus-visible {
-    outline: 2px solid var(--accent-bronze);
-    outline-offset: 2px;
-    border-radius: 2px;
-  }
+section { padding: 16px 0; border-bottom: 1px solid var(--rule); }
+section:last-of-type { border-bottom: 0; }
 
-  @media (prefers-reduced-motion: reduce) {
-    * { transition-duration: 0.001ms !important; animation-duration: 0.001ms !important; }
-  }
+.eyebrow {
+  display: block;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 7px;
+}
 
-  /* -- redaction motif: the recurring device from the site, reused inline
-     wherever this UI needs to say "something is deliberately hidden here"
-     rather than "something broke". Kept near-black regardless of theme --
-     it represents a literal blackout, not a decorative accent. -- */
-  .redaction-swatch {
-    display: inline-block;
-    width: 14px;
-    height: 8px;
-    background: repeating-linear-gradient(115deg, #050607, #050607 2px, #000 2px, #000 4px);
-    border-radius: 1px;
-    vertical-align: middle;
-    flex-shrink: 0;
-  }
+.hint {
+  margin-top: 9px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.hint strong { color: var(--dim); font-weight: 600; }
+.hint-note { margin-top: 0; margin-bottom: 10px; }
 
-  .eyebrow {
-    display: block;
-    font-family: var(--font-body);
-    font-weight: 500;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-  }
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  color: var(--dim);
+}
 
-  .hint {
-    font-size: 11.5px;
-    color: var(--text-muted);
-    line-height: 1.5;
-    margin-top: 6px;
-    overflow-wrap: break-word;
-  }
-  .hint strong { color: var(--text-secondary); font-weight: 600; }
-  .k-blocked { color: var(--accent-terracotta-text); }
+/* ------------------------------ CONTROLS -------------------------------- */
+textarea, input[type="text"] {
+  width: 100%;
+  background: var(--surface);
+  color: var(--on-dark);
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 9px 10px;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  transition: border-color 150ms var(--ease);
+}
+textarea::placeholder, input::placeholder { color: var(--faint); }
+textarea:focus, input[type="text"]:focus {
+  border-color: var(--rule-firm);
+}
+/* Was `outline: none` unconditionally on :focus, which (being a more
+   specific selector than the generic `:focus-visible` rule above) fully
+   removed the keyboard focus indicator from every text field -- a
+   WCAG 2.4.7 Focus Visible failure caught by the keyboard-only pass, not
+   by axe (axe's default ruleset has no automated check for this). The
+   border-color change alone is not a sufficient focus indicator. Restore
+   the outline specifically for keyboard focus. */
+textarea:focus-visible, input[type="text"]:focus-visible {
+  outline: 2px solid var(--on-dark);
+  outline-offset: 2px;
+}
 
-  .hint-note {
-    padding: 8px 10px;
-    background: rgba(255, 255, 255, 0.03);
-    border-left: 2px solid var(--glass-border-bright);
-    border-radius: var(--radius-sm);
-    margin-top: 0;
-  }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--on-dark);
+  border-radius: 0;
+  background: var(--on-dark);
+  color: var(--dark);
+  font-family: var(--font);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 150ms var(--ease), color 150ms var(--ease), transform 150ms var(--ease);
+}
+.btn:hover:not(:disabled) { background: #fff; transform: scale(1.03); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.34; cursor: not-allowed; }
 
-  /* ==========================================================================
-     Decorative orbs -- fixed to the popup's own viewport (not affected by
-     the body's internal scroll), two only, one bronze one terracotta, same
-     recipe as site/styles.css's .orb. This is the entire "glass has
-     something to refract" solution: without these, .glass-shell's blur
-     would sample flat --bg-void and collapse to plain translucency.
-     ========================================================================== */
-  .orb {
-    position: fixed;
-    border-radius: 50%;
-    filter: blur(60px);
-    pointer-events: none;
-    z-index: 0;
-  }
-  .orb--bronze {
-    top: -46px; left: -40px;
-    width: 190px; height: 190px;
-    opacity: 0.38;
-    background: radial-gradient(circle at 35% 35%, var(--accent-bronze), transparent 70%);
-  }
-  .orb--terracotta {
-    bottom: -56px; right: -34px;
-    width: 170px; height: 170px;
-    opacity: 0.26;
-    background: radial-gradient(circle at 35% 35%, var(--accent-terracotta), transparent 70%);
-  }
-  @media (prefers-reduced-transparency: reduce) { .orb { display: none; } }
-  @supports not (backdrop-filter: blur(1px)) { .orb { display: none; } }
+.btn-ghost {
+  background: transparent;
+  color: var(--on-dark);
+  border-color: var(--rule-firm);
+}
+.btn-ghost:hover:not(:disabled) { background: var(--on-dark); color: var(--dark); }
 
-  /* ==========================================================================
-     THE one glass surface. Everything else in this document is either
-     inside it (flat tints only) or a fixed orb behind it.
-     ========================================================================== */
-  .glass-shell {
-    position: relative;
-    z-index: 1;
-    margin: 10px;
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    background: var(--glass-fill);
-    -webkit-backdrop-filter: var(--glass-blur);
-    backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--glass-border);
-    border-top-color: var(--glass-border-bright);
-  }
-  /* §6 Accessibility: old browsers AND "reduce transparency" both get a
-     solid, opaque panel -- no blur, no see-through, per spec. */
-  @supports not (backdrop-filter: blur(1px)) {
-    .glass-shell { background: rgba(11, 11, 12, 0.94); }
-  }
-  @media (prefers-reduced-transparency: reduce) {
-    .glass-shell { background: rgba(11, 11, 12, 0.94); backdrop-filter: none; -webkit-backdrop-filter: none; }
-  }
+.btn-primary { /* inherits the solid default */ }
 
-  /* ==========================================================================
-     Header
-     ========================================================================== */
-  .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 12px var(--space-2);
-    border-bottom: 1px solid var(--glass-border);
-  }
+.btn-stop {
+  background: transparent;
+  color: var(--blocked);
+  border-color: var(--blocked);
+}
+.btn-stop:hover:not(:disabled) { background: var(--blocked); color: var(--dark); }
 
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-family: var(--font-display);
-    font-style: italic;
-    font-weight: 500;
-    font-size: 15px;
-    letter-spacing: 0;
-    color: var(--text-primary);
-    white-space: nowrap;
-  }
-  .brand .accent { color: var(--accent-bronze); font-style: italic; }
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+}
+.run-row { display: flex; gap: 8px; margin-top: 10px; }
+.run-row .btn { flex: 1; }
 
-  /* Prewarm status -- a slim, color-coded strip, not a full banner: it's
-     diagnostic context ("will the loop start slow?"), not the primary
-     action. Base layout lives on the #id selector because popup.js
-     replaces this element's className wholesale on every update
-     (renderPrewarmStatus()) -- anything besides the status-* classes it
-     writes would be wiped on the next refresh, so persistent styling has
-     to hang off the ID, same constraint as the previous pass. */
-  #prewarmStatus {
-    margin: var(--space-2) var(--space-2) 0;
-    padding: 8px 12px;
-    border-radius: var(--radius-sm);
-    border-left: 3px solid var(--glass-border-bright);
-    background: rgba(255, 255, 255, 0.03);
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    line-height: 1.5;
-    color: var(--text-muted);
-    overflow-wrap: break-word;
-  }
-  #prewarmStatus.status-pending,
-  #prewarmStatus.status-running {
-    border-left-color: var(--accent-bronze);
-    color: var(--accent-bronze);
-  }
-  #prewarmStatus.status-warm {
-    border-left-color: var(--accent-moss);
-    color: var(--accent-moss);
-  }
-  #prewarmStatus.status-failed {
-    border-left-color: var(--accent-terracotta-text);
-    color: var(--accent-terracotta-text);
-  }
+/* ------------------------------- STATUS --------------------------------- */
+#prewarmStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--rule);
+}
+/* State reads by shape as well as colour: a hollow square is pending, a filled
+   one is settled. Colour alone would be the only signal otherwise. */
+#prewarmStatus::before {
+  content: "";
+  width: 7px; height: 7px;
+  flex: none;
+  border: 1.5px solid currentColor;
+  background: transparent;
+}
+.status-pending { color: var(--faint); }
+.status-running { color: var(--warn); }
+.status-running::before { background: currentColor; animation: pulse 1.3s ease-in-out infinite; }
+.status-warm    { color: var(--pass); }
+.status-warm::before { background: currentColor; }
+.status-failed  { color: var(--blocked); }
+.status-failed::before { background: currentColor; }
+@keyframes pulse { 50% { opacity: 0.3; } }
 
-  main { padding: 0 var(--space-2) var(--space-2); }
-  section, .disclosure { margin-top: var(--space-2); }
+#saveStatus, #serverUrlStatus, #profileStatus, #fullPageCaptureStatus {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
 
-  /* ==========================================================================
-     Task -- the primary surface: goal, then Run/Stop. Visually dominant:
-     first content block, largest control row, only bronze-filled button
-     in the document.
-     ========================================================================== */
-  textarea#taskGoal {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.28);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1.5;
-    padding: 9px 10px;
-    resize: vertical;
-    transition: border-color 0.15s var(--ease);
-  }
-  textarea#taskGoal:hover { border-color: var(--glass-border-bright); }
-  textarea#taskGoal::placeholder { color: var(--text-muted); }
+.run-status-line {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 12px;
+  color: var(--dim);
+}
+.run-status-line:last-child { border-bottom: 0; }
+.run-status-line strong { color: var(--on-dark); font-weight: 700; }
+.run-status-goal { color: var(--faint); font-style: normal; }
 
-  .task-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 8px;
-  }
+/* Banners: a left keyline rather than a filled card — the system has no
+   rounded, tinted boxes anywhere else and this should not be the exception. */
+.blocked-banner, .error-banner, .outcome-banner {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--rule-firm);
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.blocked-banner {
+  border-left-color: var(--pass);
+  color: var(--on-dark);
+}
+.error-banner {
+  border-left-color: var(--blocked);
+  color: var(--on-dark);
+}
+.outcome-success { border-left-color: var(--pass); }
+.outcome-neutral { border-left-color: var(--rule-firm); }
+.outcome-warning { border-left-color: var(--warn); }
+.outcome-error   { border-left-color: var(--blocked); }
 
-  #saveStatus {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    color: var(--text-muted);
-    min-height: 1.4em;
-    overflow-wrap: break-word;
-  }
+.k-blocked { color: var(--pass); font-weight: 700; }
 
-  /* -- buttons -- pill radius throughout, matching the site's .pill-cta
-     language, so a Run/Stop pair reads as the same product's controls. -- */
-  .btn {
-    border-radius: var(--radius-pill);
-    padding: 8px 14px;
-    font-family: var(--font-body);
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    border: 1px solid var(--glass-border);
-    background: rgba(255, 255, 255, 0.04);
-    color: var(--text-primary);
-    transition: border-color 0.15s var(--ease), color 0.15s var(--ease),
-                background 0.15s var(--ease), opacity 0.15s var(--ease);
-  }
-  .btn:hover:not(:disabled) { border-color: var(--accent-bronze); color: var(--accent-bronze); }
-  .btn:disabled { cursor: default; opacity: 0.5; }
+.log-pre {
+  margin-top: 10px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.65;
+  color: var(--dim);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.log-pre:empty { display: none; }
 
-  .run-row {
-    display: flex;
-    gap: 8px;
-    margin-top: var(--space-2);
-  }
+/* ----------------------------- DISCLOSURES ------------------------------- */
+.disclosure { border-top: 1px solid var(--rule); }
+.disclosure:first-of-type { border-top: 0; }
+.disclosure summary {
+  padding: 13px 0;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--dim);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: color 150ms var(--ease);
+}
+.disclosure summary::-webkit-details-marker { display: none; }
+.disclosure summary::after {
+  content: "+";
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--faint);
+}
+.disclosure[open] summary::after { content: "\2212"; }
+.disclosure summary:hover { color: var(--on-dark); }
+.disclosure-body { padding-bottom: 16px; }
+.disclosure-body input[type="text"] { margin-bottom: 4px; }
 
-  /* Run Agent Loop: the single most important control -- solid bronze
-     fill, the only fully-saturated fill in the whole popup besides the
-     BLOCKED banner, so it reads as THE action. */
-  .btn-primary {
-    flex: 2 1 auto;
-    background: var(--accent-bronze);
-    border-color: var(--accent-bronze);
-    color: #16110A; /* same dark-on-bronze pairing site/styles.css uses for .skip-link -- already a verified-accessible combination in this project */
-    font-size: 12.5px;
-    padding: 10px 14px;
-  }
-  .btn-primary:hover:not(:disabled) { background: #c29b6c; border-color: #c29b6c; }
-  .btn-primary:disabled { background: var(--glass-fill-strong); border-color: var(--glass-border); color: var(--text-muted); opacity: 1; }
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--dim);
+}
+.toggle-row input { accent-color: var(--on-dark); }
 
-  /* Stop: quiet ghost when there's nothing to stop. While a run IS
-     stoppable it gets a terracotta OUTLINE + wash -- deliberately NOT the
-     same full solid terracotta fill the BLOCKED banner uses (see that
-     banner's comment below for why the two must stay visually distinct;
-     a live run and a blocked step can be on screen at once). */
-  .btn-stop {
-    flex: 1 1 auto;
-    min-width: 84px;
-    border-color: var(--glass-border);
-    color: var(--text-muted);
-    background: transparent;
-  }
-  .btn-stop:not(:disabled) {
-    background: rgba(169, 78, 61, 0.16);
-    border: 1.5px solid var(--accent-terracotta);
-    color: var(--accent-terracotta-text);
-    font-weight: 700;
-  }
-  .btn-stop:not(:disabled):hover {
-    background: rgba(169, 78, 61, 0.26);
-    border-color: var(--accent-terracotta-text);
-  }
-  .btn-stop:disabled { opacity: 1; }
+.select-row {
+  margin-top: 10px;
+}
+.select-row label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 5px;
+}
+select {
+  width: 100%;
+  background: var(--surface);
+  color: var(--on-dark);
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 8px 10px;
+  font-family: var(--font);
+  font-size: 13px;
+}
+select:focus { border-color: var(--rule-firm); }
+/* Same fix as textarea/input[type="text"] above -- the unconditional
+   `outline: none` on :focus removed the keyboard focus ring. */
+select:focus-visible {
+  outline: 2px solid var(--on-dark);
+  outline-offset: 2px;
+}
 
-  .btn-ghost { font-size: 11.5px; padding: 7px 12px; color: var(--text-secondary); }
+.opt-in-note {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--warn);
+  background: var(--surface);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--dim);
+}
+.opt-in-note.hidden { display: none; }
+.confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+.confirm-row input { accent-color: var(--warn); }
 
-  /* ==========================================================================
-     Live run status -- step/stage, last action, and (the hero) the
-     BLOCKED banner, all rendered by popup.js into #runStatus using its
-     OWN fixed markup shape (see popup.js's renderRunStatus()) -- every
-     selector below targets exactly what that function emits.
-     ========================================================================== */
-  #runStatus { margin-top: 8px; }
-  #runStatus:empty { margin-top: 0; }
+/* --------------------------- CONSENT PANEL ------------------------------- */
+/* V4b: replaces V4a's window.confirm(). A real in-popup panel, never a
+   native dialog -- see popup.js's CONSENT_REQUEST listener. Positioned as
+   a full-bleed overlay so it cannot be mistaken for ordinary page content,
+   and so a keyboard user tabbing through the popup lands on it first. */
+#consentPanel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(13, 13, 13, 0.94);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 18px;
+  overflow-y: auto;
+}
+#consentPanel[hidden] { display: none; }
+#consentPanel:focus { outline: none; }
+.consent-panel-inner {
+  width: 100%;
+  border: 1px solid var(--warn);
+  background: var(--surface);
+  padding: 16px 16px 14px;
+}
+.consent-eyebrow {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: var(--track);
+  text-transform: uppercase;
+  color: var(--warn);
+  margin: 0 0 8px;
+}
+.consent-action {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--on-dark);
+  line-height: 1.4;
+  margin: 0 0 8px;
+}
+.consent-reason {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.55;
+  margin: 0 0 4px;
+}
+.consent-reason-detail {
+  font-size: 10.5px;
+  color: var(--faint);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+.consent-countdown {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blocked);
+  margin: 0 0 12px;
+}
+.consent-actions { display: flex; gap: 8px; }
+.consent-actions .btn { flex: 1; height: 36px; font-size: 10.5px; }
+#consentApprove { border-color: var(--pass); background: var(--pass); color: var(--dark); }
+#consentApprove:hover:not(:disabled) { background: #85c393; }
+#consentDeny { border-color: var(--blocked); color: var(--blocked); background: transparent; }
+#consentDeny:hover:not(:disabled) { background: var(--blocked); color: var(--dark); }
 
-  .run-status-line {
-    font-family: var(--font-mono);
-    font-size: 11.5px;
-    color: var(--text-secondary);
-    margin: 6px 0;
-    line-height: 1.5;
-    overflow-wrap: break-word;
-    word-break: break-word;
-  }
-  .run-status-line strong { color: var(--text-primary); font-weight: 700; }
+/* ----------------------- GOAL PRIVACY REVIEW PANEL ----------------------- */
+/* C5/C2 amendment (2026-09-26): a SEPARATE panel from #consentPanel above --
+   same overlay/keyboard/aria-live pattern (reuses .consent-panel-inner and
+   its children's classes directly), but with the OPPOSITE safe default:
+   "Keep private" is the safe/default answer here, so IT gets the
+   reassuring pass-green treatment (mirroring #consentApprove's role as
+   "the outcome that proceeds safely"), and "Not private" gets the
+   deliberate-choice outline treatment (mirroring #consentDeny's role as
+   "the one that needs a second thought"). */
+#goalPrivacyPanel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(13, 13, 13, 0.94);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 18px;
+  overflow-y: auto;
+}
+#goalPrivacyPanel[hidden] { display: none; }
+#goalPrivacyPanel:focus { outline: none; }
+#goalPrivacyKeepPrivate { border-color: var(--pass); background: var(--pass); color: var(--dark); }
+#goalPrivacyKeepPrivate:hover:not(:disabled) { background: #85c393; }
+#goalPrivacyNotPrivate { border-color: var(--blocked); color: var(--blocked); background: transparent; }
+#goalPrivacyNotPrivate:hover:not(:disabled) { background: var(--blocked); color: var(--dark); }
 
-  .run-status-goal {
-    font-family: var(--font-mono);
-    font-style: italic;
-    color: var(--text-muted);
-    font-size: 11px;
-    border-left: 2px solid rgba(173, 138, 92, 0.45); /* dim bronze -- not worth a new token for one muted rule */
-    padding-left: 8px;
+/* --------------------------- REDUCED MOTION ------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-
-  /* -- BLOCKED: THE HERO ELEMENT. A refusal is the product working, not a
-     failure -- this is the single reason the extension is worth
-     installing, so it has to be unmissable on sight and read as a
-     deliberate, confident refusal, never as an error.
-
-     Terracotta is reserved for this ONE treatment as a full filled wash +
-     solid ring. Nowhere else in the popup does terracotta appear as a
-     background fill -- the Stop button (also terracotta-family, since it
-     IS a legitimately "hot" control) only ever gets a thin outline + a
-     14-16% wash, never this saturated. That gap in weight is deliberate:
-     a run can be actively stoppable at the exact moment a BLOCKED banner
-     is showing (a blocked step doesn't necessarily end the run), so the
-     two need to stay visually unmistakable from each other, and "how much
-     terracotta wash" is the dial that keeps them apart. -- */
-  .blocked-banner {
-    position: relative;
-    margin: var(--space-2) 0;
-    padding: 14px 16px;
-    border-radius: var(--radius-lg);
-    border: 2px solid var(--accent-terracotta);
-    background: linear-gradient(165deg, rgba(169, 78, 61, 0.34), rgba(169, 78, 61, 0.14));
-    overflow: hidden;
-  }
-  .blocked-banner strong {
-    display: block;
-    font-family: var(--font-mono);
-    font-size: 12.5px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--accent-terracotta-text); /* never raw --accent-terracotta for text -- ~3.6:1, fails 4.5:1. This tint measures 6.2-7.6:1 here, see delivery report. */
-  }
-  /* Inline redaction swatch before the label text, reusing the exact motif
-     from the header brand mark and the site's own .redaction-bar --
-     "this is the mechanism firing", not a generic warning triangle. */
-  .blocked-banner strong::before {
-    content: "";
-    display: inline-block;
-    width: 14px;
-    height: 8px;
-    margin-right: 8px;
-    vertical-align: middle;
-    border-radius: 1px;
-    background: repeating-linear-gradient(115deg, #050607, #050607 2px, #000 2px, #000 4px);
-  }
-  .blocked-banner > div {
-    margin-top: 8px;
-    padding-left: 10px;
-    border-left: 2px solid var(--accent-terracotta);
-    font-family: var(--font-mono);
-    font-size: 11.5px;
-    line-height: 1.55;
-    color: var(--text-primary);
-    overflow-wrap: break-word;
-    word-break: break-word;
-  }
-
-  /* -- ERROR: something actually broke, as opposed to a guard doing its
-     job. Deliberately achromatic where BLOCKED is loud: no fill wash, no
-     stamp, thin neutral rule -- so the two never register as the same
-     kind of event even at a glance or in peripheral vision. The only
-     thread of color is the small terracotta-text "Error" label itself,
-     kept intentionally tiny -- enough to say "this is the bad-news
-     family" without competing with the one place that hue is allowed to
-     be loud. -- */
-  .error-banner {
-    margin: var(--space-2) 0;
-    padding: 9px 12px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--glass-border);
-    border-left: 3px solid var(--text-muted);
-    background: rgba(255, 255, 255, 0.04);
-    font-size: 11.5px;
-    line-height: 1.5;
-    color: var(--text-secondary);
-    overflow-wrap: break-word;
-    word-break: break-word;
-  }
-  .error-banner strong {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--accent-terracotta-text);
-    font-weight: 700;
-  }
-
-  /* -- final outcome, once a run stops: small pill chips, four tones
-     matching lib/action-describe.js's describeOutcome() exactly. -- */
-  .outcome-banner {
-    display: inline-block;
-    margin: var(--space-2) 0 0;
-    padding: 6px 12px;
-    border-radius: var(--radius-pill);
-    border: 1px solid transparent;
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    letter-spacing: 0.02em;
-    max-width: 100%;
-    overflow-wrap: break-word;
-  }
-  .outcome-success { border-color: var(--accent-moss); color: var(--accent-moss); background: rgba(143, 191, 138, 0.12); }
-  .outcome-warning { border-color: var(--accent-bronze); color: var(--accent-bronze); background: rgba(173, 138, 92, 0.12); }
-  .outcome-error   { border-color: var(--accent-terracotta-text); color: var(--accent-terracotta-text); background: rgba(169, 78, 61, 0.10); }
-  .outcome-neutral { border-color: var(--glass-border-bright); color: var(--text-secondary); background: rgba(255, 255, 255, 0.04); }
-
-  /* -- raw log output (agentLoopResult / detectResult): demoted,
-     terminal-styled, capped height so it can never push Run/Stop or the
-     rest of the layout out of easy reach. -- */
-  .log-pre {
-    white-space: pre-wrap;
-    word-break: break-word;
-    background: rgba(0, 0, 0, 0.32);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    line-height: 1.5;
-    padding: 10px;
-    max-height: 140px;
-    overflow: auto;
-    margin: var(--space-2) 0 0;
-  }
-  .log-pre:empty { display: none; }
-
-  /* ==========================================================================
-     Settings / Advanced diagnostics -- demoted, collapsed by default via
-     native <details>. These are the "inner elements" the perf budget
-     calls out: --glass-fill-strong, flat, NO backdrop-filter of their
-     own -- they read as a slightly denser glass tint riding on the shell's
-     one blur pass, not as a second blurred layer.
-     ========================================================================== */
-  .disclosure {
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-lg);
-    background: var(--glass-fill-strong);
-    overflow: hidden;
-  }
-  .disclosure summary {
-    cursor: pointer;
-    padding: 10px 14px;
-    font-family: var(--font-body);
-    font-weight: 500;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    list-style: none;
-  }
-  .disclosure summary::-webkit-details-marker { display: none; }
-  .disclosure summary::before {
-    content: "+";
-    display: inline-block;
-    width: 1em;
-    color: var(--accent-bronze);
-    font-weight: 700;
-  }
-  .disclosure[open] summary::before { content: "\2212"; }
-  .disclosure summary:hover { color: var(--text-secondary); }
-  .disclosure-body {
-    padding: 10px 14px 14px;
-    border-top: 1px solid var(--glass-border);
-  }
-
-  input#serverUrlInput,
-  input#profileFullName,
-  input#profileEmail,
-  input#profilePhone {
-    width: 100%;
-    background: rgba(0, 0, 0, 0.28);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    padding: 8px 10px;
-    margin-top: 8px;
-  }
-  input#serverUrlInput:hover,
-  input#profileFullName:hover,
-  input#profileEmail:hover,
-  input#profilePhone:hover { border-color: var(--glass-border-bright); }
-  input#serverUrlInput::placeholder,
-  input#profileFullName::placeholder,
-  input#profileEmail::placeholder,
-  input#profilePhone::placeholder { color: var(--text-muted); }
-
-  #serverUrlInput + .btn { margin-top: 8px; }
-
-  #serverUrlStatus,
-  #profileStatus {
-    font-family: var(--font-mono);
-    font-size: 10.5px;
-    color: var(--text-muted);
-    margin-top: 6px;
-    min-height: 1.4em;
-    overflow-wrap: break-word;
-    word-break: break-word;
-  }
+  /* The wordmark must rest solid and in position, never parked mid-glitch. */
+  .brand { animation: none; opacity: 1; }
+  .brand::before, .brand::after { animation: none; opacity: 0; }
+  .btn:hover:not(:disabled), .btn:active:not(:disabled) { transform: none; }
+}
 </style>
 </head>
 <body>
 
-  <div class="orb orb--bronze" aria-hidden="true"></div>
-  <div class="orb orb--terracotta" aria-hidden="true"></div>
+  <div class="shell">
 
-  <div class="glass-shell">
+    <!-- ============ V4b: real consent panel (C4's "ask" verdict) ============
+         Replaces V4a's window.confirm(). NEVER alert/confirm/prompt --
+         see popup.js's CONSENT_REQUEST listener. role="alertdialog" +
+         aria-modal so a screen reader announces it as an interruption;
+         focus moves here the moment it's shown (popup.js). Deny is the
+         fail-closed default: both a visible countdown AND background.js's
+         own independent 60s server-side timer enforce it, in that order --
+         this panel's countdown is advisory/UX only, the timeout that
+         actually matters lives in background.js regardless of whether
+         this popup is even open. -->
+    <div id="consentPanel" class="consent-panel" role="alertdialog" aria-modal="true"
+         aria-labelledby="consentAction" aria-describedby="consentReason consentReasonDetail consentCountdown"
+         tabindex="-1" hidden>
+      <div class="consent-panel-inner">
+        <p class="consent-eyebrow" data-i18n="consentEyebrow">Agent is asking for your approval</p>
+        <p id="consentAction" class="consent-action"></p>
+        <p id="consentReason" class="consent-reason"></p>
+        <p id="consentReasonDetail" class="consent-reason-detail"></p>
+        <p id="consentCountdown" class="consent-countdown" aria-live="polite"></p>
+        <div class="consent-actions">
+          <button id="consentApprove" type="button" class="btn" data-i18n="consentApproveBtn">Approve</button>
+          <button id="consentDeny" type="button" class="btn" data-i18n="consentDenyBtn">Deny</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ C5/C2 amendment (2026-09-26): goal ask-band privacy
+         review panel ============
+         Shown BEFORE step 1, once per ask-band span NER/regex found in the
+         user's own taskGoal (never for page-label spans -- those stay
+         held/tokenized without a prompt, per the amendment). Same
+         keyboard/aria-live/never-alert-confirm-prompt posture as
+         #consentPanel above, but a SEPARATE panel: the safe/default
+         answer here is "Keep private" (opposite of #consentPanel's
+         deny-by-default), and reusing the same panel would conflate two
+         different default semantics. -->
+    <div id="goalPrivacyPanel" role="alertdialog" aria-modal="true"
+         aria-labelledby="goalPrivacyAction" aria-describedby="goalPrivacyReason goalPrivacyCountdown"
+         tabindex="-1" hidden>
+      <div class="consent-panel-inner">
+        <p class="consent-eyebrow" data-i18n="goalPrivacyEyebrow">Review before sending</p>
+        <p id="goalPrivacyAction" class="consent-action"></p>
+        <p id="goalPrivacyReason" class="consent-reason"></p>
+        <p id="goalPrivacyCountdown" class="consent-countdown" aria-live="polite"></p>
+        <div class="consent-actions">
+          <button id="goalPrivacyKeepPrivate" type="button" class="btn" data-i18n="goalPrivacyKeepPrivateBtn">Keep private</button>
+          <button id="goalPrivacyNotPrivate" type="button" class="btn" data-i18n="goalPrivacyNotPrivateBtn">Not private</button>
+        </div>
+      </div>
+    </div>
 
     <header class="topbar">
-      <h1 class="brand"><span class="redaction-swatch" aria-hidden="true"></span>Dhristi<span class="accent">_</span></h1>
+      <div class="topbar-brand">
+        <h1 class="brand" data-text="Dhristi">Dhristi</h1>
+        <p class="brand-sub" data-i18n="brandSub">Nothing leaves the client</p>
+      </div>
+      <div class="lang-toggle" role="group" data-i18n-aria-label="languageSwitcherLabel" aria-label="Language / भाषा">
+        <button id="langEnBtn" type="button" class="lang-btn" data-lang="en" aria-pressed="true" data-i18n-aria-label="langEnAriaLabel" aria-label="English">EN</button>
+        <button id="langHiBtn" type="button" class="lang-btn" data-lang="hi" aria-pressed="false" data-i18n-aria-label="langHiAriaLabel" aria-label="हिन्दी">हिं</button>
+      </div>
     </header>
 
-    <div id="prewarmStatus" class="status-pending" aria-live="polite">Checking model warm-up status&hellip;</div>
+    <div id="prewarmStatus" class="status-pending" aria-live="polite" data-i18n="prewarmChecking">Checking model warm-up&hellip;</div>
 
     <main>
 
       <!-- ================= TASK: the primary surface ================= -->
-      <section aria-label="Task">
-        <label class="eyebrow" for="taskGoal">Task goal</label>
-        <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form"></textarea>
+      <section aria-label="Task" data-i18n-aria-label="taskSectionAriaLabel">
+        <label class="eyebrow" for="taskGoal" data-i18n="taskGoalLabel">Task goal</label>
+        <textarea id="taskGoal" rows="3" placeholder="e.g. fill out the shipping address form" data-i18n-placeholder="taskGoalPlaceholder"></textarea>
 
         <div class="task-actions">
-          <button id="saveGoal" type="button" class="btn btn-ghost">Save goal</button>
+          <button id="saveGoal" type="button" class="btn btn-ghost" data-i18n="saveGoalBtn">Save goal</button>
           <p id="saveStatus" aria-live="polite"></p>
         </div>
 
         <div class="run-row">
-          <button id="runAgentLoop" type="button" class="btn btn-primary">Run agent loop</button>
-          <button id="stopAgentLoop" type="button" class="btn btn-stop" disabled>Stop</button>
+          <button id="runAgentLoop" type="button" class="btn btn-primary" data-i18n="runAgentLoopBtn">Run agent loop</button>
+          <button id="stopAgentLoop" type="button" class="btn btn-stop" disabled data-i18n="stopBtn">Stop</button>
         </div>
-        <p class="hint">
+        <p class="hint" data-i18n-html="taskHint">
           Runs capture &rarr; detect &rarr; scan &rarr; redact &rarr; send &rarr; act on the
           current tab, up to 25 steps or until the agent reports done. Uses the last
           <strong>saved</strong> goal above, and needs the server from Settings reachable.
@@ -694,8 +686,8 @@
       </section>
 
       <!-- ================= LIVE STATUS + BLOCKED/ERROR/OUTCOME ================= -->
-      <section aria-label="Run status">
-        <p class="hint hint-note">
+      <section aria-label="Run status" data-i18n-aria-label="runStatusSectionAriaLabel">
+        <p class="hint hint-note" data-i18n-html="runStatusHint">
           A <strong class="k-blocked">BLOCKED</strong> banner below means a guard refused an unsafe action on
           its own &mdash; that's the safeguard working, not something gone wrong.
         </p>
@@ -705,66 +697,113 @@
 
       <!-- ================= DEMOTED: settings + dev diagnostics ================= -->
       <details class="disclosure">
-        <summary>Settings</summary>
+        <summary data-i18n="settingsSummary">Settings</summary>
         <div class="disclosure-body">
-          <p class="hint">
+          <p class="hint" data-i18n-html="serverUrlHint">
             Server URL for the FastAPI backend (default <code>http://localhost:8000</code>).
             Must be within this extension's permitted hosts (<code>http://localhost/*</code>,
             <code>http://127.0.0.1/*</code>) &mdash; Chrome blocks anything else at the
             network layer regardless of what's typed here.
           </p>
-          <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" />
-          <button id="saveServerUrl" type="button" class="btn btn-ghost">Save server URL</button>
+          <label class="eyebrow" for="serverUrlInput" data-i18n="serverUrlLabel">Server URL</label>
+          <input id="serverUrlInput" type="text" placeholder="http://localhost:8000" data-i18n-placeholder="serverUrlPlaceholder" />
+          <button id="saveServerUrl" type="button" class="btn btn-ghost" data-i18n="saveServerUrlBtn">Save server URL</button>
           <p id="serverUrlStatus" aria-live="polite"></p>
 
-          <p class="hint" style="margin-top: 14px;">
+          <p class="hint" style="margin-top: 14px;" data-i18n-html="fullPageCaptureHint">
             Full-page capture: scroll the page in steps and stitch the captures into one
             image before detection, instead of the visible viewport only. <strong>Default
             off</strong> (viewport-only remains the known-good fallback). Slower per step
-            (bigger image, more captures) and uses more memory -- see the RUN SUMMARY's
-            <code>fullPage</code> fields for real numbers on a given page.
+            and uses more memory &mdash; see the RUN SUMMARY's <code>fullPage</code> fields
+            for real numbers on a given page.
           </p>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:6px; cursor:pointer;">
+          <label class="toggle-row">
             <input id="fullPageCaptureToggle" type="checkbox" />
-            <span>Enable full-page scroll-and-stitch capture</span>
+            <span data-i18n="fullPageCaptureToggleLabel">Enable full-page scroll-and-stitch capture</span>
           </label>
           <p id="fullPageCaptureStatus" class="hint" aria-live="polite"></p>
+
+          <!-- ============ V4b: pipeline version toggle ============ -->
+          <p class="hint" style="margin-top: 14px;" data-i18n-html="pipelineVersionHint">
+            Pipeline: <strong>v2</strong> (tokenized structure, semantic-first egress, local NER, real
+            consent UI) or <strong>v1</strong> (the original image-first loop, kept for comparison).
+            Takes effect on the next <em>Run agent loop</em> click.
+          </p>
+          <div class="select-row">
+            <label for="pipelineVersionSelect" data-i18n="pipelineVersionLabel">Pipeline version</label>
+            <select id="pipelineVersionSelect">
+              <option value="v2" data-i18n="pipelineVersionV2Option">v2 (default)</option>
+              <option value="v1" data-i18n="pipelineVersionV1Option">v1</option>
+            </select>
+          </div>
+          <p id="pipelineVersionStatus" class="hint" aria-live="polite"></p>
+
+          <!-- ============ V4b: planner backend selector ============ -->
+          <p class="hint" style="margin-top: 14px;" data-i18n-html="plannerBackendHint">
+            Planner backend (v2 only). <strong>Local is the product default</strong> and sends nothing
+            to the internet -- the server talks to Ollama on this machine. Claude/Gemini are an
+            explicit opt-in for a faster live demo; either way the planner receives only tokenized
+            structure and geometry, never a raw value. The actual server process is started with
+            <code>-Planner local|claude|gemini</code> (see <code>start-demo.ps1</code>) -- this selector
+            records your intent locally and is what the demo operator matches the launch flag to; the
+            popup never sees or stores an API key, which always stays in the server's own environment
+            variables.
+          </p>
+          <div class="select-row">
+            <label for="plannerBackendSelect" data-i18n="plannerBackendLabel">Planner backend</label>
+            <select id="plannerBackendSelect">
+              <option value="local" data-i18n="plannerLocalOption">Local (Ollama) -- default</option>
+              <option value="claude" data-i18n="plannerClaudeOption">Claude (cloud, opt-in)</option>
+              <option value="gemini" data-i18n="plannerGeminiOption">Gemini (cloud, opt-in)</option>
+            </select>
+          </div>
+          <p id="plannerCloudNote" class="opt-in-note hidden" data-i18n-html="plannerCloudNote">
+            This sends the tokenized scene (element structure, geometry, and opaque region kinds) to a
+            cloud API for planning speed. No personal values, no raw PII, and no image unless the
+            planner explicitly escalates to <code>need_visual</code> (in which case the image sent is
+            already redacted). Confirm you understand this before saving.
+          </p>
+          <label id="plannerCloudConfirmRow" class="confirm-row hidden">
+            <input id="plannerCloudConfirm" type="checkbox" />
+            <span data-i18n="plannerCloudConfirmLabel">I understand -- send tokenized structure only, never raw values, to this cloud planner.</span>
+          </label>
+          <button id="savePlannerBackend" type="button" class="btn btn-ghost" style="margin-top: 8px;" data-i18n="savePlannerBackendBtn">Save planner choice</button>
+          <p id="plannerBackendStatus" class="hint" aria-live="polite"></p>
         </div>
       </details>
 
-      <!-- ================= PROFILE VAULT: on-device only, never sent to the model ================= -->
+      <!-- ================= PROFILE VAULT: on-device only ================= -->
       <details class="disclosure">
-        <summary>Your profile (autofill)</summary>
+        <summary data-i18n="profileSummary">Your profile (autofill)</summary>
         <div class="disclosure-body">
-          <p class="hint">
+          <p class="hint" data-i18n-html="profileHint">
             Saved here <strong>stays on this device</strong> in this browser's local extension
             storage. The model never sees it and it is never sent to the server &mdash; when a page
             wants one of these fields, the model only ever names <em>which category</em> it wants
             (e.g. &ldquo;email&rdquo;), and this extension fills the value in locally. That is what
-            lets the agent autofill a field it would otherwise have to refuse (the same guard that
-            blocks a password field) without ever handing your data to the model.
+            lets the agent autofill a field it would otherwise have to refuse.
           </p>
-          <label class="eyebrow" for="profileFullName" style="margin-top: 10px;">Full name</label>
-          <input id="profileFullName" type="text" placeholder="e.g. Priya Sharma" autocomplete="off" />
-          <label class="eyebrow" for="profileEmail" style="margin-top: 10px;">Email</label>
-          <input id="profileEmail" type="text" placeholder="e.g. priya@example.com" autocomplete="off" />
-          <label class="eyebrow" for="profilePhone" style="margin-top: 10px;">Phone</label>
-          <input id="profilePhone" type="text" placeholder="e.g. +91 98765 43210" autocomplete="off" />
-          <button id="saveProfile" type="button" class="btn btn-ghost" style="margin-top: 10px;">Save profile</button>
+          <label class="eyebrow" for="profileFullName" style="margin-top: 12px;" data-i18n="profileFullNameLabel">Full name</label>
+          <input id="profileFullName" type="text" placeholder="e.g. Priya Sharma" autocomplete="off" data-i18n-placeholder="profileFullNamePlaceholder" />
+          <label class="eyebrow" for="profileEmail" style="margin-top: 12px;" data-i18n="profileEmailLabel">Email</label>
+          <input id="profileEmail" type="text" placeholder="e.g. priya@example.com" autocomplete="off" data-i18n-placeholder="profileEmailPlaceholder" />
+          <label class="eyebrow" for="profilePhone" style="margin-top: 12px;" data-i18n="profilePhoneLabel">Phone</label>
+          <input id="profilePhone" type="text" placeholder="e.g. +91 98765 43210" autocomplete="off" data-i18n-placeholder="profilePhonePlaceholder" />
+          <button id="saveProfile" type="button" class="btn btn-ghost" style="margin-top: 12px;" data-i18n="saveProfileBtn">Save profile</button>
           <p id="profileStatus" aria-live="polite"></p>
         </div>
       </details>
 
       <details class="disclosure">
-        <summary>Advanced diagnostics</summary>
+        <summary data-i18n="diagnosticsSummary">Advanced diagnostics</summary>
         <div class="disclosure-body">
-          <p class="hint">
+          <p class="hint" data-i18n-html="diagnosticsHint">
             Captures the current tab and runs the on-device object detector end-to-end
             through background.js and the offscreen document &mdash; a developer diagnostic,
             not something normal use needs. First run loads the model and can take much
-            longer than later runs; be patient.
+            longer than later runs.
           </p>
-          <button id="testDetect" type="button" class="btn btn-ghost">Run test detection on current tab</button>
+          <button id="testDetect" type="button" class="btn btn-ghost" data-i18n="testDetectBtn">Run test detection on current tab</button>
           <pre id="detectResult" class="log-pre"></pre>
         </div>
       </details>

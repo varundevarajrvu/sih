@@ -1,0 +1,771 @@
+{
+  "generated_at": "2026-09-25T13:13:14+0530",
+  "fixtures": [
+    "scenario-1-fill-name",
+    "scenario-2-password-block",
+    "scenario-3-name-and-email",
+    "scenario-4-checkout-block",
+    "scenario-5-profile-autofill"
+  ],
+  "trials_per_fixture": 3,
+  "temperature": 0.0,
+  "models": [
+    {
+      "model": "qwen2.5:1.5b",
+      "score": 4,
+      "total": 15,
+      "s_step_p50": 8.944,
+      "s_step_p95": 26.171,
+      "prompt_tokens_mean": 683.5,
+      "prompt_tokens_samples": [
+        676,
+        676,
+        676,
+        676,
+        681,
+        681,
+        681,
+        686,
+        686,
+        686,
+        701,
+        701,
+        701,
+        676,
+        676,
+        676
+      ],
+      "cpu_load_percent_at_measurement": 18.0,
+      "warmup_latency_s": 11.73,
+      "trials": [
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 11.865156600018963,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-4",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 10.805902999942191,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-4",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 12.476699899998493,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-4",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 27.623591000097804,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-1",
+            "value": null,
+            "profileField": "email",
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 8.91274890000932,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 7.430928300018422,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 25.548980099963956,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, profileField must be null/absent unless action is 'fill_profile'\"}]}}"
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 8.944236200070009,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, profileField must be null/absent unless action is 'fill_profile'\"}]}}"
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 6.975585400010459,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, profileField must be null/absent unless action is 'fill_profile'\"}]}}"
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 19.123752500046976,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 5.784182899980806,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 5.733041600091383,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 20.46121259999927,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-4",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 6.257991600083187,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 6.483239900087938,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        }
+      ]
+    },
+    {
+      "model": "qwen2.5:3b",
+      "score": 0,
+      "total": 15,
+      "s_step_p50": 10.486,
+      "s_step_p95": 44.665,
+      "prompt_tokens_mean": 683.5,
+      "prompt_tokens_samples": [
+        676,
+        676,
+        676,
+        676,
+        681,
+        681,
+        681,
+        686,
+        686,
+        686,
+        701,
+        701,
+        701,
+        676,
+        676,
+        676
+      ],
+      "cpu_load_percent_at_measurement": 26.0,
+      "warmup_latency_s": 59.09,
+      "trials": [
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 10.753191699972376,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-3",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 13.04754519998096,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-3",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 11.261451700003818,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-3",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 43.5497100999346,
+          "action": {
+            "action": "click",
+            "targetId": "agentId=agent-1",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "reject",
+            "reason": "UNKNOWN_TARGET"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 9.973280199919827,
+          "action": {
+            "action": "click",
+            "targetId": "agentId=agent-1",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "reject",
+            "reason": "UNKNOWN_TARGET"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 9.785153400036506,
+          "action": {
+            "action": "click",
+            "targetId": "agentId=agent-1",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "reject",
+            "reason": "UNKNOWN_TARGET"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 41.10167329991236,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-2",
+            "value": null,
+            "profileField": "email",
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 10.486386600066908,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-2",
+            "value": null,
+            "profileField": "email",
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 9.879716399940662,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-2",
+            "value": null,
+            "profileField": "email",
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "reject",
+            "reason": "FILL_PROFILE_VALUE_SUPPLIED"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 43.76184279995505,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 9.907646200037561,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 10.138419299968518,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_RESPONSE_SCHEMA_INVALID\",\"message\":\"VLM backend returned a response that failed v2 action-schema validation.\",\"errors\":[{\"type\":\"value_error\",\"loc\":[],\"msg\":\"Value error, key must be null/absent unless action is 'press_key'\"}]}}"
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 46.77170269994531,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-3",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 9.920878099976107,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-3",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 10.31405609997455,
+          "action": {
+            "action": "fill_profile",
+            "targetId": "agent-3",
+            "value": null,
+            "profileField": "full_name",
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "model": "llama3.1:8b",
+      "score": 3,
+      "total": 15,
+      "s_step_p50": 22.549,
+      "s_step_p95": 111.322,
+      "prompt_tokens_mean": 635.2,
+      "prompt_tokens_samples": [
+        627,
+        627,
+        627,
+        632,
+        632,
+        637,
+        637,
+        637,
+        652,
+        652,
+        652,
+        627,
+        627,
+        627
+      ],
+      "cpu_load_percent_at_measurement": 21.0,
+      "warmup_latency_s": 123.37,
+      "trials": [
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 24.27564609993715,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 23.361189399962313,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-1-fill-name",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 33.38506579992827,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "Simon",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s1-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 129.3587799000088,
+          "action": null,
+          "error": "HTTP 502: {\"detail\":{\"errorCode\":\"VLM_BACKEND_CALL_FAILED\",\"message\":\"VLM backend call failed (ReadTimeout).\"}}"
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 22.548569399979897,
+          "action": {
+            "action": "click",
+            "targetId": "agent-1",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-2-password-block",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 18.747015200089663,
+          "action": {
+            "action": "click",
+            "targetId": "agent-1",
+            "value": "hunter2",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s2-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 95.95967739995103,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 14.576232700026594,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-3-name-and-email",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 14.890297300065868,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s3-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 1,
+          "ok": true,
+          "latency_s": 103.59218060004059,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 2,
+          "ok": true,
+          "latency_s": 16.83348389994353,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-4-checkout-block",
+          "trial": 3,
+          "ok": true,
+          "latency_s": 14.755718300002627,
+          "action": {
+            "action": "click",
+            "targetId": "agent-6",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s4-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 1,
+          "ok": false,
+          "latency_s": 78.6638356000185,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": "PERSONNAME#1",
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 2,
+          "ok": false,
+          "latency_s": 12.502791999955662,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        },
+        {
+          "fixture": "scenario-5-profile-autofill",
+          "trial": 3,
+          "ok": false,
+          "latency_s": 13.632180099957623,
+          "action": {
+            "action": "click",
+            "targetId": "agent-4",
+            "value": null,
+            "profileField": null,
+            "key": null,
+            "revision": "planner-fixture-s5-rev1",
+            "serverVerdict": "accept",
+            "reason": "ok"
+          },
+          "error": null
+        }
+      ]
+    }
+  ],
+  "gate_passed": false,
+  "chosen_default_model": "qwen2.5:1.5b",
+  "chosen_default_score": "4/15"
+}

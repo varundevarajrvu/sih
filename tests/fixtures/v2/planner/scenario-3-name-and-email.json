@@ -1,0 +1,81 @@
+{
+  "_fixture_notes": "RETRY 2 (CLAUDE.md §7, 2026-09-25): taskGoal REBUILT via the real C5 pipeline against rawGoal 'Fill the name as River Jane and email id as riverjane33@demo.com' -- findRegexSpans caught the email (EMAIL_RE, regex span), the NER service caught 'River Jane' as a person name; mergeSpans produced 2 non-overlapping spans, tokenize() produced the EXACT string this fixture already carried (byte-for-byte identical to the original hand-tokenized version) -- the original hand-tokenization judgment call is now independently CONFIRMED by the live pipeline, not merely asserted. Two independent sub-goals in one instruction, C2's rule (never invent a raw value, echo a referenced token VERBATIM) means the correct step-1 action types the literal token string into whichever field the model addresses first -- there is no DOM signal for which the model should pick first, so BOTH orderings are accepted. A model that answers with the RAW words 'PERSONNAME#1'/'EMAIL#1' split apart or paraphrased, or that invents a real-looking name/email instead of the token, is NOT accepted -- token verbatim-echo is the entire point of C2. rawGoal preserved for the retry-2-mandated raw-goal comparison run.",
+  "schema": "dhristi-scene-v2",
+  "mode": "semantic",
+  "revision": "planner-fixture-s3-rev1",
+  "rawGoal": "Fill the name as River Jane and email id as riverjane33@demo.com",
+  "taskGoal": "Fill the name as PERSONNAME#1 and email id as EMAIL#1",
+  "tokenLabels": ["PERSONNAME#1", "EMAIL#1"],
+  "viewport": { "w": 1280, "h": 720 },
+  "elements": [
+    {
+      "agentId": "agent-1",
+      "tag": "input",
+      "role": "textbox",
+      "type": "password",
+      "label": null,
+      "bbox": { "x": 24, "y": 118, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "input",
+      "role": "textbox",
+      "type": "email",
+      "label": null,
+      "bbox": { "x": 24, "y": 178, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-3",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": null,
+      "bbox": { "x": 24, "y": 238, "w": 300, "h": 32 },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-4",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": "Enter your full name",
+      "bbox": { "x": 24, "y": 498, "w": 300, "h": 32 },
+      "sensitive": false,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-5",
+      "tag": "button",
+      "role": "button",
+      "type": null,
+      "label": "Continue",
+      "bbox": { "x": 24, "y": 540, "w": 90, "h": 32 },
+      "sensitive": false,
+      "tier": "navigational"
+    }
+  ],
+  "regions": [
+    { "kind": "password", "bbox": { "x": 24, "y": 118, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "field", "bbox": { "x": 24, "y": 178, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "field", "bbox": { "x": 24, "y": 238, "w": 300, "h": 32 }, "source": "dom" },
+    { "kind": "text-pii", "bbox": { "x": 110, "y": 400, "w": 140, "h": 16 }, "source": "dom" },
+    { "kind": "face", "bbox": { "x": 24, "y": 320, "w": 96, "h": 96 }, "source": "vision" }
+  ],
+  "history": [],
+  "expected": {
+    "notes": "Either sub-goal may be attempted first; the other is left for a later step. value must be the token VERBATIM, not a paraphrase or a fabricated real value. Byte-identical goal for both the tokenized and raw-goal runs would be wrong -- the raw-goal run below uses the true pre-tokenization sentence with the real name/email, so its acceptable values are the literal strings instead.",
+    "accept": [
+      { "action": "type", "targetId": "agent-4", "valueContains": "PERSONNAME#1" },
+      { "action": "type", "targetId": "agent-2", "valueContains": "EMAIL#1" }
+    ],
+    "acceptRawGoal": [
+      { "action": "type", "targetId": "agent-4", "valueContains": "River Jane" },
+      { "action": "type", "targetId": "agent-2", "valueContains": "riverjane33@demo.com" }
+    ]
+  }
+}

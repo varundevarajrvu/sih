@@ -108,7 +108,11 @@ def test_analyze_response_is_json_not_prose(load_fixture):
     # profileField joined the response shape 2026-09-14 (fill_profile /
     # ruling #7) — always present (null unless action == "fill_profile"),
     # per ActionResponse's field-inclusion default (no exclude_none).
-    assert set(body.keys()) == {"action", "targetId", "value", "profileField"}
+    # `key` joined the response 2026-09-19 alongside the press_key action.
+    # Still an EXACT set, not a superset check — this guard exists to make a
+    # contract change impossible to land silently, so it is updated
+    # deliberately rather than loosened.
+    assert set(body.keys()) == {"action", "targetId", "value", "profileField", "key"}
 
 
 # ---------------------------------------------------------------------------

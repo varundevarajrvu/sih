@@ -1,0 +1,139 @@
+{
+  "_fixture_notes": "REGRESSION FIXTURE (2026-09-27, V3/V4 integration-gap investigation). This is a byte-for-byte capture of the REAL extension's step-1 /v2/analyze request body for demo/test-page.html, goal 'fill the name as Simon', taken via the temporary V2_CAPTURE_DIR hook while re-running benchmarks/v4b-real-ollama-bench.mjs -- not hand-written like scenario-1-fill-name.json. Root cause of the original click-vs-type bug was NOT a request-shape difference (this fixture is structurally near-identical to scenario-1-fill-name.json: same 5 agentIds, same tag/role/type/sensitive/tier per element, same taskGoal tokenization, empty history, empty vault) -- it was DEFAULT_OLLAMA_TEXT_MODEL_V2 in server/vlm_client.py being left at run 1's flagged qwen2.5:1.5b through V3's retry 1/2, so start-demo.ps1 -Planner local (which never sets OLLAMA_TEXT_MODEL) silently ran the worst-scoring model instead of retry 2's chosen llama3.1:8b. Two real, minor structural differences from the hand-written fixture, kept here rather than normalized away since a future prompt-path regression could depend on either: (1) agent-5's `type` is \"button\" here (a real <button type=\"button\"> DOM attribute) vs null in the hand-written fixture -- build_prompt_v2_concise renders an extra `type=button` bit only in this one; (2) regions has no vision-sourced `face` entry here (0 detections on this real headless run) vs 1 in the hand-written fixture. Neither affects this scenario's correct action. Purpose of this file: exercise the REAL AnalyzeRequestV2 shape (not a hand-authored approximation) through the exact same build_prompt_v2_concise/_build_ollama_action_schema path the V3 benchmark validated, so drift between what the extension actually sends and what the benchmark/fixtures assume gets caught by `node --test`/pytest, not by a live Ollama run.",
+  "schema": "dhristi-scene-v2",
+  "mode": "semantic",
+  "revision": "b8da67af-251e-4332-96c5-5538ebb2963e",
+  "taskGoal": "fill the name as PERSONNAME#1",
+  "viewport": {
+    "w": 1036.0,
+    "h": 703.0
+  },
+  "elements": [
+    {
+      "agentId": "agent-1",
+      "tag": "input",
+      "role": "textbox",
+      "type": "password",
+      "label": null,
+      "bbox": {
+        "x": 263.99999618530273,
+        "y": 405.0,
+        "w": 748.0000305175781,
+        "h": 43.00000190734863
+      },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-2",
+      "tag": "input",
+      "role": "textbox",
+      "type": "email",
+      "label": null,
+      "bbox": {
+        "x": 263.99999618530273,
+        "y": 533.75,
+        "w": 748.0000305175781,
+        "h": 43.00000190734863
+      },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-3",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": null,
+      "bbox": {
+        "x": 263.99999618530273,
+        "y": 642.5,
+        "w": 748.0000305175781,
+        "h": 43.00000190734863
+      },
+      "sensitive": true,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-4",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": "Enter your full name",
+      "bbox": {
+        "x": 263.99999618530273,
+        "y": 1299.0000915527344,
+        "w": 748.0000305175781,
+        "h": 43.00000190734863
+      },
+      "sensitive": false,
+      "tier": "state-changing"
+    },
+    {
+      "agentId": "agent-5",
+      "tag": "button",
+      "role": "button",
+      "type": "button",
+      "label": "Continue",
+      "bbox": {
+        "x": 0.0,
+        "y": 0.0,
+        "w": 0.0,
+        "h": 0.0
+      },
+      "sensitive": false,
+      "tier": "state-changing"
+    }
+  ],
+  "regions": [
+    {
+      "kind": "password",
+      "bbox": {
+        "x": 263.99999618530273,
+        "y": 405.0,
+        "w": 748.0000305175781,
+        "h": 43.00000190734863
+      },
+      "source": "dom"
+    },
+    {
+      "kind": "text-pii",
+      "bbox": {
+        "x": 263.99999618530273,
+        "y": 533.75,
+        "w": 748.0000305175781,
+        "h": 43.00000190734863
+      },
+      "source": "dom"
+    },
+    {
+      "kind": "text-pii",
+      "bbox": {
+        "x": 263.99999618530273,
+        "y": 642.5,
+        "w": 748.0000305175781,
+        "h": 43.00000190734863
+      },
+      "source": "dom"
+    },
+    {
+      "kind": "text-pii",
+      "bbox": {
+        "x": 419.50000762939453,
+        "y": 990.5000305175781,
+        "w": 118.125,
+        "h": 22.000000476837158
+      },
+      "source": "dom"
+    }
+  ],
+  "history": [],
+  "image": null,
+  "vault": [],
+  "expected": {
+    "notes": "Same acceptance rule as scenario-1-fill-name.json's step 1 -- this is the same step, captured from the real extension instead of hand-written.",
+    "accept": [
+      { "action": "type", "targetId": "agent-4", "valueContains": "PERSONNAME#1" }
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "description": "A Luhn-valid 16-digit card number, grouped in 4-digit blocks, embeds an Aadhaar-grouped-shaped (4-4-4 digit) substring in its middle 12 digits. CARD must claim the whole 16-digit span before AADHAAR's grouped pattern gets a chance at the embedded substring. A separate, non-overlapping bare 10-digit phone number elsewhere in the same text must still be detected independently -- proving the overlap resolution on the card doesn't suppress unrelated PII elsewhere.",
+  "text": "Card 4111 1111 1111 1111 was used. Call me at 9876543210 to confirm.",
+  "cardValue": "4111 1111 1111 1111",
+  "phoneValue": "9876543210"
+}

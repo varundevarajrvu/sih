@@ -1,0 +1,530 @@
+{
+  "phase": "V1b ner-service",
+  "model_id": "urchade/gliner_multi_pii-v1",
+  "labels_requested": [
+    "person name",
+    "address",
+    "date of birth",
+    "account number",
+    "password",
+    "email",
+    "phone number"
+  ],
+  "torch_threads": 6,
+  "cache_max_entries": 512,
+  "cpu_load": {
+    "pre_load_check": {
+      "readings_percent": [
+        33,
+        43,
+        19
+      ],
+      "final_percent": 19,
+      "contended": false,
+      "threshold_percent": 30
+    },
+    "pre_bench_check": {
+      "readings_percent": [
+        2
+      ],
+      "final_percent": 2,
+      "contended": false,
+      "threshold_percent": 30
+    }
+  },
+  "cold_load_s": 20.179,
+  "warm_uncached_2kb_blob": {
+    "fixture_id": "f10_checkout_blob",
+    "text_len_chars": 2011,
+    "runs": 20,
+    "p50_ms": 4207.91,
+    "p95_ms": 4736.51,
+    "mean_ms": 4300.98,
+    "min_ms": 4043.91,
+    "max_ms": 4971.34,
+    "all_ms": [
+      4601.05,
+      4049.88,
+      4114.45,
+      4087.45,
+      4107.86,
+      4225.31,
+      4301.86,
+      4736.51,
+      4669.7,
+      4290.52,
+      4360.37,
+      4153.92,
+      4111.65,
+      4142.03,
+      4207.91,
+      4043.91,
+      4971.34,
+      4584.16,
+      4156.71,
+      4102.95
+    ]
+  },
+  "ten_step_simulated_run_90pct_repeat": {
+    "step_latencies_ms": [
+      6782.61,
+      335.88,
+      291.99,
+      318.05,
+      289.54,
+      288.81,
+      343.39,
+      272.26,
+      289.57,
+      318.56
+    ],
+    "step_cache_hits": [
+      0,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9
+    ],
+    "step_cache_misses": [
+      10,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "step0_cold_ms": 6782.61,
+    "steps1to9_warm_cached_p50_ms": 291.99,
+    "steps1to9_warm_cached_p95_ms": 343.39
+  },
+  "recall": {
+    "total_expected": 13,
+    "total_matched": 11,
+    "recall": 0.8461538461538461,
+    "per_fixture": [
+      {
+        "id": "f01_imperative_name",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 10,
+            "end": 26,
+            "label": "PERSONNAME",
+            "score": 0.465695321559906,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f02_declarative_name",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 9,
+            "end": 21,
+            "label": "PERSONNAME",
+            "score": 0.9473281502723694,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f03_address",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 8,
+            "end": 63,
+            "label": "ADDRESS",
+            "score": 0.4216863811016083,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f04_dob",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 25,
+            "label": "DOB",
+            "score": 0.9377723336219788,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f05_account_number",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 29,
+            "label": "ACCOUNTNUMBER",
+            "score": 0.989449143409729,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f06_multi_entity",
+        "expected_count": 3,
+        "matched_count": 2,
+        "missed": [
+          {
+            "start": 8,
+            "end": 19,
+            "label": "PERSONNAME",
+            "text": "Rahul Verma"
+          }
+        ],
+        "produced_spans": [
+          {
+            "start": 23,
+            "end": 42,
+            "label": "EMAIL",
+            "score": 0.9956786036491394,
+            "source": "ner"
+          },
+          {
+            "start": 46,
+            "end": 61,
+            "label": "PHONE",
+            "score": 0.9927593469619751,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f07_control_no_pii_a",
+        "expected_count": 0,
+        "matched_count": 0,
+        "missed": [],
+        "produced_spans": []
+      },
+      {
+        "id": "f08_control_no_pii_b",
+        "expected_count": 0,
+        "matched_count": 0,
+        "missed": [],
+        "produced_spans": []
+      },
+      {
+        "id": "f09_password",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 26,
+            "label": "PASSWORD",
+            "score": 0.8316274881362915,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f10_checkout_blob",
+        "expected_count": 4,
+        "matched_count": 3,
+        "missed": [
+          {
+            "start": 588,
+            "end": 683,
+            "label": "ADDRESS",
+            "text": "Flat 302, Sunshine Residency, 7th Main Road, Koramangala 4th Block, Bengaluru, Karnataka 560034"
+          }
+        ],
+        "produced_spans": [
+          {
+            "start": 497,
+            "end": 512,
+            "label": "PERSONNAME",
+            "score": 0.48786547780036926,
+            "source": "ner"
+          },
+          {
+            "start": 528,
+            "end": 543,
+            "label": "PHONE",
+            "score": 0.9987832903862,
+            "source": "ner"
+          },
+          {
+            "start": 551,
+            "end": 578,
+            "label": "EMAIL",
+            "score": 0.9989367127418518,
+            "source": "ner"
+          },
+          {
+            "start": 1767,
+            "end": 1780,
+            "label": "PHONE",
+            "score": 0.5355246067047119,
+            "source": "ner"
+          }
+        ]
+      }
+    ]
+  },
+  "pre_registered_1500ms_rule": {
+    "gate_ms": 1500.0,
+    "measured_warm_uncached_p95_ms": 4736.51,
+    "triggered": true,
+    "note": "If triggered, benchmark one smaller GLiNER PII model on the same 10 fixtures and report both -- do NOT switch models without explicit approval (see ner/README.md)."
+  },
+  "alt_model_benchmark": {
+    "attempted_model_id": "vicgalle/gliner-small-pii",
+    "reason": "PRE_REGISTERED_1500MS_RULE_TRIGGERED",
+    "primary_model_warm_uncached_p95_ms": 4736.5,
+    "status": "NOT_COMPLETED",
+    "attempts": [
+      {
+        "n": 1,
+        "result": "stalled indefinitely fetching the full untrimmed repo (14 files, incl. a 1.27GB optimizer.pt and a duplicate 633MB model.safetensors -- the repo is a raw training-checkpoint dump, not a trimmed inference repo); killed after several minutes with no byte progress on the large blob."
+      },
+      {
+        "n": 2,
+        "result": "retried with ignore_patterns excluding optimizer.pt/scheduler.pt/rng_state.pth/pytorch_model.bin (kept model.safetensors); the safetensors blob specifically stalled at 0 bytes across two separate sub-attempts while every other file transferred fine."
+      },
+      {
+        "n": 3,
+        "result": "retried preferring pytorch_model.bin over model.safetensors instead; stalled again with no progress -- pointed at a general connectivity issue at that time, not a specific blob."
+      },
+      {
+        "n": 4,
+        "result": "RETRIED PER COORDINATOR INSTRUCTION on a fresh network state: the trimmed 10-file prefetch (tokenizer + config + pytorch_model.bin, excluding optimizer.pt/scheduler.pt/rng_state.pth/model.safetensors) completed cleanly in 2m36s, confirming the network was fine and the earlier stalls were transient/environmental, not file-specific. However GLiNER.from_pretrained(..., local_files_only=True) then refused to load: huggingface_hub.errors.IncompleteSnapshotError, because it validates the cached snapshot against the repo's FULL original file manifest (all 14 files) rather than only the files it actually reads for inference -- it considers the deliberately-skipped optimizer.pt/model.safetensors \"missing\" even though nothing in the inference path touches them. Without local_files_only, from_pretrained triggers its OWN internal snapshot_download of the full (untrimmed) repo regardless of what was already prefetched, re-attempting exactly the multi-GB transfer that stalled in attempts 1-3."
+      }
+    ],
+    "diagnosis": "Two independent, now-understood problems, not a single mystery: (a) transient network stalls fetching very large blobs from this repo on this connection (resolved on retry -- attempt 4's trimmed 10-file fetch completed in 2m36s); (b) a GLiNER library behavior where from_pretrained(local_files_only=True) requires the CACHED snapshot to contain every file the repo publishes, not just the files inference reads, so a deliberately-trimmed cache (done specifically to avoid re-downloading a 1.27GB optimizer checkpoint never used for inference) is rejected as incomplete.",
+    "not_attempted_further": "Per explicit instruction not to loop: a full untrimmed download (2.5GB, including the unused optimizer.pt) was not retried a further time; this benchmark is left incomplete rather than spending more retries chasing it.",
+    "note": "Does NOT affect the production service or its primary benchmark above -- ner/app.py never depends on this script, and the primary model (urchade/gliner_multi_pii-v1) was never touched. Whoever picks this up: either (1) allow the full untrimmed download once with more time budget, or (2) patch this script to construct a GLiNER model instance directly from the local snapshot directory path (bypassing from_pretrained's repo-manifest completeness check entirely) rather than passing the repo id."
+  },
+  "recall_updated_2026_09_29": {
+    "reason": "find_proper_noun_probes added to ner/chunking.py + wired into ner_engine.py -- recovers names GLiNER misses next to other structured PII in flowing prose (root cause and evidence in chunking.py's docstring). Original 'recall' key above is kept as the pre-fix baseline (11/13); this key is the post-fix number.",
+    "total_expected": 13,
+    "total_matched": 13,
+    "recall": 1.0,
+    "per_fixture": [
+      {
+        "id": "f01_imperative_name",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 10,
+            "end": 24,
+            "label": "PERSONNAME",
+            "score": 0.6213699579238892,
+            "source": "ner"
+          },
+          {
+            "start": 10,
+            "end": 26,
+            "label": "PERSONNAME",
+            "score": 0.4656953811645508,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f02_declarative_name",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 9,
+            "end": 21,
+            "label": "PERSONNAME",
+            "score": 0.9473281502723694,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f03_address",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 8,
+            "end": 63,
+            "label": "ADDRESS",
+            "score": 0.4216863811016083,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f04_dob",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 25,
+            "label": "DOB",
+            "score": 0.9377723336219788,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f05_account_number",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 29,
+            "label": "ACCOUNTNUMBER",
+            "score": 0.989449143409729,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f06_multi_entity",
+        "expected_count": 3,
+        "matched_count": 3,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 8,
+            "end": 19,
+            "label": "PERSONNAME",
+            "score": 0.46839264035224915,
+            "source": "ner"
+          },
+          {
+            "start": 23,
+            "end": 42,
+            "label": "EMAIL",
+            "score": 0.9956786036491394,
+            "source": "ner"
+          },
+          {
+            "start": 46,
+            "end": 61,
+            "label": "PHONE",
+            "score": 0.9927593469619751,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f07_control_no_pii_a",
+        "expected_count": 0,
+        "matched_count": 0,
+        "missed": [],
+        "produced_spans": []
+      },
+      {
+        "id": "f08_control_no_pii_b",
+        "expected_count": 0,
+        "matched_count": 0,
+        "missed": [],
+        "produced_spans": []
+      },
+      {
+        "id": "f09_password",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 26,
+            "label": "PASSWORD",
+            "score": 0.8316274881362915,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f10_checkout_blob",
+        "expected_count": 4,
+        "matched_count": 4,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 497,
+            "end": 512,
+            "label": "PERSONNAME",
+            "score": 0.577029287815094,
+            "source": "ner"
+          },
+          {
+            "start": 528,
+            "end": 543,
+            "label": "PHONE",
+            "score": 0.9987832903862,
+            "source": "ner"
+          },
+          {
+            "start": 551,
+            "end": 578,
+            "label": "EMAIL",
+            "score": 0.9989367127418518,
+            "source": "ner"
+          },
+          {
+            "start": 622,
+            "end": 631,
+            "label": "ADDRESS",
+            "score": 0.4488438069820404,
+            "source": "ner"
+          },
+          {
+            "start": 710,
+            "end": 722,
+            "label": "ADDRESS",
+            "score": 0.5490159392356873,
+            "source": "ner"
+          },
+          {
+            "start": 748,
+            "end": 763,
+            "label": "ADDRESS",
+            "score": 0.44205614924430847,
+            "source": "ner"
+          },
+          {
+            "start": 1767,
+            "end": 1780,
+            "label": "PHONE",
+            "score": 0.5355276465415955,
+            "source": "ner"
+          }
+        ]
+      }
+    ]
+  }
+}

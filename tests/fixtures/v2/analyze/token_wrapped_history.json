@@ -1,0 +1,30 @@
+{
+  "schema": "dhristi-scene-v2",
+  "mode": "semantic",
+  "revision": "rev-0003",
+  "taskGoal": "Continue filling the form using EMAIL#1 and PERSONNAME#2",
+  "viewport": { "w": 1280, "h": 720 },
+  "elements": [
+    {
+      "agentId": "agent-9",
+      "tag": "input",
+      "role": "textbox",
+      "type": "text",
+      "label": "Confirm name",
+      "bbox": { "x": 10, "y": 60, "w": 200, "h": 30 },
+      "sensitive": false,
+      "tier": "state-changing"
+    }
+  ],
+  "regions": [],
+  "history": [
+    {
+      "action": { "action": "type", "targetId": "agent-1", "value": "EMAIL#1" },
+      "outcome": "ok"
+    },
+    {
+      "action": { "action": "type", "targetId": "agent-2", "value": "PERSONNAME#2" },
+      "outcome": "ok"
+    }
+  ]
+}

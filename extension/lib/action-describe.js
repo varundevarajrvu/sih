@@ -20,6 +20,26 @@
 
 const MAX_LABEL_LENGTH = 40;
 
+// ---------------------------------------------------------------------------
+// i18n plumbing (English/Hindi popup pass). `translate`, when supplied, is
+// popup.js's own `t(key, substitutions?) -> string` -- backed by either
+// chrome.i18n.getMessage or a manually-fetched _locales/<lang>/messages.json
+// (see popup.js's language toggle). It is OPTIONAL and additive everywhere
+// in this file: every function below still defaults to the original,
+// byte-identical English string when `translate` is omitted, which is what
+// keeps every pre-existing caller (content.js/background.js, and this
+// file's own existing test suite) working unchanged with zero risk of
+// silently regressing a safety-facing sentence. `tr()` is the one place
+// that "use the translation if we got one, else fall back" decision lives.
+// ---------------------------------------------------------------------------
+function tr(translate, key, subs, fallback) {
+  if (typeof translate === "function") {
+    const msg = translate(key, subs);
+    if (msg) return msg;
+  }
+  return fallback;
+}
+
 // PROFILE-VAULT FEATURE: turns a closed profileField category
 // ("full_name"|"email"|"phone") into the phrase action-describe.js reads
 // back to the user -- "filled email from your profile", never "filled
@@ -29,14 +49,16 @@ const MAX_LABEL_LENGTH = 40;
 // describeAction()'s own SAFETY NOTE below and profile-vault.js's "vault
 // must never leave the client" header.
 const PROFILE_FIELD_PHRASES = Object.freeze({
-  full_name: "full name",
-  email: "email",
-  phone: "phone",
+  full_name: { key: "profileField_fullName", fallback: "full name" },
+  email: { key: "profileField_email", fallback: "email" },
+  phone: { key: "profileField_phone", fallback: "phone" },
 });
 
-function humanizeProfileField(field) {
-  if (typeof field !== "string") return "a field";
-  return PROFILE_FIELD_PHRASES[field] || field.replace(/_/g, " ");
+function humanizeProfileField(field, translate) {
+  if (typeof field !== "string") return tr(translate, "profileField_generic", null, "a field");
+  const entry = PROFILE_FIELD_PHRASES[field];
+  if (!entry) return field.replace(/_/g, " ");
+  return tr(translate, entry.key, null, entry.fallback);
 }
 
 /**
@@ -112,6 +134,12 @@ export function describeAction(action, domSnapshot) {
       return `filled ${humanizeProfileField(action.profileField)} from your profile`;
     case "click":
       return label ? `clicked ${label}` : "clicked an element";
+    case "press_key":
+      // The key name is safe to show: it is a member of a closed enum, never
+      // page content and never anything the user typed.
+      return label
+        ? `pressed ${action.key || "a key"} on ${label}`
+        : `pressed ${action.key || "a key"}`;
     case "scroll":
       return "scrolled the page";
     case "done":
@@ -130,8 +158,8 @@ export function describeAction(action, domSnapshot) {
 // visibly (falls through to the default branch below) instead of silently
 // rendering something misleading.
 const OUTCOME_LABELS = Object.freeze({
-  done: { label: "Done", tone: "success" },
-  stopped: { label: "Stopped by you", tone: "neutral" },
+  done: { key: "outcome_done", label: "Done", tone: "success" },
+  stopped: { key: "outcome_stopped", label: "Stopped by you", tone: "neutral" },
   // REPORTING FIX (coordinator, 2026-09-13): a guard deliberately refusing
   // an action (SENSITIVE_TARGET_BLOCKED / IRREVERSIBLE_ACTION_BLOCKED) is
   // this product's safeguard working, not a failure -- content.js now
@@ -140,22 +168,22 @@ const OUTCOME_LABELS = Object.freeze({
   // it can never again be lumped in with a genuine execution failure under
   // "act_failed". Tone "success" is deliberate, not a placeholder: the run
   // did exactly what it should. Never say "failed" here.
-  blocked: { label: "Stopped safely -- refused an unsafe action", tone: "success" },
-  stalled: { label: "Stopped: no progress detected", tone: "warning" },
-  max_steps_reached: { label: "Stopped: step limit reached", tone: "warning" },
-  capture_failed: { label: "Failed: could not capture/detect the page", tone: "error" },
-  analyze_failed: { label: "Failed: server request failed", tone: "error" },
+  blocked: { key: "outcome_blocked", label: "Stopped safely -- refused an unsafe action", tone: "success" },
+  stalled: { key: "outcome_stalled", label: "Stopped: no progress detected", tone: "warning" },
+  max_steps_reached: { key: "outcome_maxStepsReached", label: "Stopped: step limit reached", tone: "warning" },
+  capture_failed: { key: "outcome_captureFailed", label: "Failed: could not capture/detect the page", tone: "error" },
+  analyze_failed: { key: "outcome_analyzeFailed", label: "Failed: server request failed", tone: "error" },
   // act_failed is now reserved EXCLUSIVELY for a genuine execution failure
   // (target element vanished, dispatch threw, a cross-frame relay errored,
   // ...) -- a deliberate guard refusal is "blocked", above, never this.
-  act_failed: { label: "Failed: could not complete the action", tone: "error" },
-  section5_violation: { label: "Stopped: internal safety check failed", tone: "error" },
+  act_failed: { key: "outcome_actFailed", label: "Failed: could not complete the action", tone: "error" },
+  section5_violation: { key: "outcome_section5Violation", label: "Stopped: internal safety check failed", tone: "error" },
   // Not produced by content.js's own instrumentation directly -- this is
   // background.js's own fallback (handleRunAgentLoopFromPopup) for when
   // the content script never returned a recognizable outcome at all (e.g.
   // it threw before runAgentLoop()'s own try/finally could report one, or
   // the tab was closed mid-run).
-  failed: { label: "Failed: unexpected error", tone: "error" },
+  failed: { key: "outcome_failed", label: "Failed: unexpected error", tone: "error" },
 });
 
 /**
@@ -168,9 +196,191 @@ const OUTCOME_LABELS = Object.freeze({
  * or a misleading canned phrase.
  *
  * @param {string|null|undefined} outcome
+ * @param {(key: string, subs?: Array<string>) => string} [translate] popup.js's
+ *   `t()` -- optional; omitted (or returning falsy) keeps the original
+ *   hardcoded English label, unchanged from every prior release.
  * @returns {{label: string, tone: "success"|"neutral"|"warning"|"error"}}
  */
-export function describeOutcome(outcome) {
-  if (!outcome) return { label: "In progress", tone: "neutral" };
-  return OUTCOME_LABELS[outcome] || { label: outcome, tone: "neutral" };
+export function describeOutcome(outcome, translate) {
+  if (!outcome) return { label: tr(translate, "outcome_inProgress", null, "In progress"), tone: "neutral" };
+  const entry = OUTCOME_LABELS[outcome];
+  if (!entry) return { label: outcome, tone: "neutral" };
+  return { label: tr(translate, entry.key, null, entry.label), tone: entry.tone };
+}
+
+// ---------------------------------------------------------------------------
+// V4b (integration-v2, part B): real consent UI. Two NEW exports added here
+// rather than in a separate file, per this pass's brief ("use
+// lib/action-describe.js") -- describeAction()/describeOutcome() above are
+// UNCHANGED (still v1's/V4a's own consumers, byte-identical behaviour).
+//
+// C5's `elements[].label` is already TOKENIZED (pii-tokenizer.js) by the
+// time it reaches here -- a PII-shaped value never survives as plain text.
+// But a token is still not something a human should have to read ("type
+// EMAIL#1 into 'Email'" is legible to an engineer, not a user asked to
+// approve a consent prompt in ten seconds) -- describePendingAction() below
+// translates a known token PREFIX into a plain-language category phrase
+// ("your saved email" / "a previously-seen name") and otherwise never
+// prints `action.value` at all, matching this pass's brief exactly: "a type
+// action into a sensitive field says 'type your saved email into
+// <Email>', never the value."
+// ---------------------------------------------------------------------------
+
+// C2's token grammar: /[A-Z][A-Z0-9]*#[0-9]+/. PROFILE... prefixes are
+// vault-seeded (pii-tokenizer.js's seedVault(), C2) -- everything else is a
+// regex/NER-minted PiiLabel (docs/v2/ARCHITECTURE.md contract C1).
+const TOKEN_VALUE_RE = /^([A-Z][A-Z0-9]*)#\d+$/;
+
+const TOKEN_PREFIX_PHRASES = Object.freeze({
+  PROFILENAME: { key: "tokenPhrase_profileName", fallback: "your saved name" },
+  PROFILEEMAIL: { key: "tokenPhrase_profileEmail", fallback: "your saved email" },
+  PROFILEPHONE: { key: "tokenPhrase_profilePhone", fallback: "your saved phone number" },
+  EMAIL: { key: "tokenPhrase_email", fallback: "a previously-seen email address" },
+  PHONE: { key: "tokenPhrase_phone", fallback: "a previously-seen phone number" },
+  AADHAAR: { key: "tokenPhrase_aadhaar", fallback: "a previously-seen Aadhaar-shaped number" },
+  PAN: { key: "tokenPhrase_pan", fallback: "a previously-seen PAN-shaped ID" },
+  CARD: { key: "tokenPhrase_card", fallback: "a previously-seen card number" },
+  UPI: { key: "tokenPhrase_upi", fallback: "a previously-seen UPI ID" },
+  IFSC: { key: "tokenPhrase_ifsc", fallback: "a previously-seen bank IFSC code" },
+  GSTIN: { key: "tokenPhrase_gstin", fallback: "a previously-seen GSTIN" },
+  PASSPORT: { key: "tokenPhrase_passport", fallback: "a previously-seen passport-shaped ID" },
+  PERSONNAME: { key: "tokenPhrase_personName", fallback: "a previously-seen name" },
+  ADDRESS: { key: "tokenPhrase_address", fallback: "a previously-seen address" },
+  DOB: { key: "tokenPhrase_dob", fallback: "a previously-seen date of birth" },
+  ACCOUNTNUMBER: { key: "tokenPhrase_accountNumber", fallback: "a previously-seen account number" },
+  PASSWORD: { key: "tokenPhrase_password", fallback: "a previously-seen password" },
+  OTHER: { key: "tokenPhrase_other", fallback: "a previously-seen sensitive value" },
+});
+
+/**
+ * Translate a C5 action `value` into a safe plain-language phrase -- NEVER
+ * the value itself, token or otherwise. Returns null for a value that isn't
+ * token-shaped at all (ordinary non-PII text a planner composed itself,
+ * e.g. a search query) -- callers must treat null as "say nothing about the
+ * value", never fall back to printing it.
+ *
+ * @param {*} value
+ * @param {(key: string, subs?: Array<string>) => string} [translate]
+ * @returns {string|null}
+ */
+export function phraseForValueToken(value, translate) {
+  if (typeof value !== "string") return null;
+  const m = TOKEN_VALUE_RE.exec(value.trim());
+  if (!m) return null;
+  const entry = TOKEN_PREFIX_PHRASES[m[1]];
+  if (!entry) return tr(translate, "tokenPhrase_genericFallback", null, "a previously-seen value");
+  return tr(translate, entry.key, null, entry.fallback);
+}
+
+/**
+ * Plain-language description of a NOT-YET-EXECUTED C5 action, for the
+ * consent panel ("type your saved email into 'Email'", "click 'Place
+ * Order'"). Distinct from describeAction() above (which describes an
+ * ALREADY-executed v1-shaped action against a v1 domSnapshot): this takes a
+ * C5 action ({action, targetId, value, profileField, key}) and a single C5
+ * `element` ({agentId, tag, role, type, label, ...}) already resolved by
+ * the caller (agent-loop-v2.js's own `resolvedElement`) -- no snapshot
+ * array to search, since the consent hook only ever concerns ONE element.
+ *
+ * SAFETY: `action.value` is NEVER printed directly -- only through
+ * phraseForValueToken() above, which either names a safe category or
+ * returns null (silently omitted). This holds even for a non-sensitive,
+ * non-token value (e.g. ordinary typed text) -- the whole point of a
+ * confirmation prompt is trust-but-verify, not "trust the field is safe so
+ * showing the value is fine".
+ *
+ * @param {{action?:string,targetId?:string,value?:string|null,profileField?:string,key?:string}|null} action
+ * @param {{agentId?:string,tag?:string,role?:string,type?:string,label?:string|null}|null} element
+ *   null/undefined for a page-level action (targetId === "page").
+ * @param {(key: string, subs?: Array<string>) => string} [translate] popup.js's
+ *   `t()` -- optional; every branch below still falls back to the original
+ *   hardcoded English sentence when omitted, so existing callers/tests are
+ *   byte-identical without it.
+ * @returns {string}
+ */
+export function describePendingAction(action, element, translate) {
+  if (!action || typeof action.action !== "string") return tr(translate, "pending_performAction", null, "perform an action");
+
+  const label = element ? element.label || element.tag || element.agentId : null;
+  const valuePhrase = phraseForValueToken(action.value, translate);
+  const aKeyFallback = tr(translate, "pending_aKey", null, "a key");
+
+  switch (action.action) {
+    case "type":
+      if (valuePhrase) {
+        return label
+          ? tr(translate, "pending_typeWithValue", [valuePhrase, label], `type ${valuePhrase} into '${label}'`)
+          : tr(translate, "pending_typeValueOnly", [valuePhrase], `type ${valuePhrase}`);
+      }
+      return label
+        ? tr(translate, "pending_typeIntoLabel", [label], `type into '${label}'`)
+        : tr(translate, "pending_typeIntoField", null, "type into a field");
+    case "fill_profile": {
+      // Deliberately ignores `label` -- same reasoning as describeAction()'s
+      // own fill_profile branch: the category is the whole story.
+      const targetLabel = label || tr(translate, "pending_fieldFallback", null, "a field");
+      const genericFieldWord = tr(translate, "profileField_generic", null, "a field");
+      const category = humanizeProfileField(action.profileField, translate);
+      return category === genericFieldWord
+        ? tr(translate, "pending_fillProfileGeneric", [targetLabel], `fill '${targetLabel}' with your saved profile info`)
+        : tr(translate, "pending_fillProfileCategory", [targetLabel, category], `fill '${targetLabel}' with your saved ${category}`);
+    }
+    case "click":
+      return label
+        ? tr(translate, "pending_click", [label], `click '${label}'`)
+        : tr(translate, "pending_clickElement", null, "click an element");
+    case "press_key":
+      return label
+        ? tr(translate, "pending_pressKeyOn", [action.key || aKeyFallback, label], `press ${action.key || "a key"} on '${label}'`)
+        : tr(translate, "pending_pressKey", [action.key || aKeyFallback], `press ${action.key || "a key"}`);
+    case "scroll":
+      return tr(translate, "pending_scroll", null, "scroll the page");
+    case "done":
+      return tr(translate, "pending_done", null, "mark the task as done");
+    default:
+      return label
+        ? tr(translate, "pending_genericOn", [action.action, label], `${action.action} on '${label}'`)
+        : tr(translate, "pending_genericAction", [action.action], `perform ${action.action}`);
+  }
+}
+
+// C4 POLICY_CODES (extension/lib/policy.js) that can ever reach an "ask"
+// verdict -- SENSITIVE_TARGET, IRREVERSIBLE_ACTION, INTENT_MISMATCH,
+// SERVER_TIGHTENED (see that module's own POLICY_CODES/decide()/
+// tightenWithServer() for the full, closed set; only these four ever
+// produce verdict "ask", per decide()'s rules 4/5/6 and
+// tightenWithServer()'s server-strictly-tightens-a-local-accept case).
+const POLICY_REASON_PHRASES = Object.freeze({
+  SENSITIVE_TARGET: {
+    key: "policyReason_sensitiveTarget",
+    fallback: "This field is flagged as sensitive (for example a password, ID number, or contact field).",
+  },
+  IRREVERSIBLE_ACTION: {
+    key: "policyReason_irreversibleAction",
+    fallback: "This action may be hard to undo (for example a purchase, deletion, or account change).",
+  },
+  INTENT_MISMATCH: {
+    key: "policyReason_intentMismatch",
+    fallback: "This action doesn't clearly match what you asked the agent to do.",
+  },
+  SERVER_TIGHTENED: {
+    key: "policyReason_serverTightened",
+    fallback: "The server flagged this action as needing your confirmation.",
+  },
+});
+
+/**
+ * Plain-English reason for a consent prompt, keyed off C4's closed
+ * POLICY_CODES. An unrecognized code (defensive only -- POLICY_CODES is a
+ * closed enum) still renders a safe, generic sentence rather than the raw
+ * code string or nothing at all.
+ *
+ * @param {string|null|undefined} code
+ * @param {(key: string, subs?: Array<string>) => string} [translate]
+ * @returns {string}
+ */
+export function describePolicyReason(code, translate) {
+  const entry = POLICY_REASON_PHRASES[code];
+  if (!entry) return tr(translate, "policyReason_generic", null, "The agent's safety policy wants your confirmation before doing this.");
+  return tr(translate, entry.key, null, entry.fallback);
 }

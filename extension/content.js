@@ -70,6 +70,13 @@ let CapturePlan = null;
 // "model names a category, this extension supplies the value" design.
 // Same dynamic-import pattern as every other ES-module lib file above.
 let ProfileVault = null;
+// CAPTURE STALENESS DETECTION (CLAUDE.md "STILL OPEN -- capture can return
+// a stale frame"): detectDimensionMismatch()/detectHashRecurrence() only --
+// this file never hashes raw screenshot bytes or decodes PNG pixels
+// itself (background.js already did both, see RULING B in
+// lib/capture-hash.js's own header). Same dynamic-import pattern as every
+// other ES-module lib file above.
+let CaptureHash = null;
 
 async function loadLibModules() {
   if (!DomScanner) {
@@ -98,6 +105,317 @@ async function loadLibModules() {
   }
   if (!ProfileVault) {
     ProfileVault = await import(browser.runtime.getURL("lib/profile-vault.js"));
+  }
+  if (!CaptureHash) {
+    CaptureHash = await import(browser.runtime.getURL("lib/capture-hash.js"));
+  }
+}
+
+// ---------------------------------------------------------------------
+// V4a (integration-v2): the pure orchestrator (extension/lib/
+// agent-loop-v2.js) plus the one-place PIPELINE_VERSION switch (lib/
+// pipeline-version.js). Separate loader from loadLibModules() above so
+// selecting "v1" never pays for (or even fetches) v2's modules -- v1's own
+// runAgentLoop() calls loadLibModules() itself and knows nothing about
+// this function. See buildContentScriptIoV2()/runAgentLoopV2Adapter()
+// below for how these are wired into the actual loop.
+// ---------------------------------------------------------------------
+let AgentLoopV2 = null;
+let PipelineVersionLib = null;
+
+async function loadLibModulesV2() {
+  await loadLibModules(); // DomScanner/Redaction/ActionRisk/StallDetector/ProfileVault/CaptureHash -- reused as-is by the v2 io adapter
+  if (!AgentLoopV2) {
+    AgentLoopV2 = await import(browser.runtime.getURL("lib/agent-loop-v2.js"));
+  }
+  if (!PipelineVersionLib) {
+    PipelineVersionLib = await import(browser.runtime.getURL("lib/pipeline-version.js"));
+  }
+}
+
+let cachedPipelineVersion = null;
+async function resolvePipelineVersion() {
+  if (!PipelineVersionLib) {
+    PipelineVersionLib = await import(browser.runtime.getURL("lib/pipeline-version.js"));
+  }
+  cachedPipelineVersion = await PipelineVersionLib.getPipelineVersion(browser.storage.local);
+  return cachedPipelineVersion;
+}
+
+// ---------------------------------------------------------------------
+// V4a: the io adapter that gives agent-loop-v2.js's pure orchestrator real
+// chrome/DOM access. Every field here corresponds 1:1 to a field named in
+// agent-loop-v2.js's own "IO CONTRACT" header comment -- read that first if
+// a field's purpose isn't obvious from its one-line comment here.
+//
+// capture()/detect() SHARE ONE underlying round trip (the existing
+// CAPTURE_AND_DETECT message, byte-for-byte the same one v1's loop already
+// uses) -- see agent-loop-v2.js's header for why that's a documented,
+// deliberate simplification rather than an accidental coupling.
+// ---------------------------------------------------------------------
+function buildContentScriptIoV2({ runAbort, getProfileValue }) {
+  let lastCaptureAndDetectResp = null;
+
+  return {
+    getTaskGoal: async () => {
+      const stored = await browser.storage.local.get("taskGoal");
+      return typeof stored.taskGoal === "string" && stored.taskGoal.trim() ? stored.taskGoal.trim() : "(no task goal set)";
+    },
+    getProfile: async () => ProfileVault.getProfile(browser.storage.local),
+    getProfileValue,
+    getViewport: () => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+      devicePixelRatio: window.devicePixelRatio || 1,
+    }),
+    newRevision: () =>
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `rev-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    now: () => performance.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    isAborted: () => runAbort.signal.aborted,
+    reportProgress: (patch) => reportProgress(patch),
+    // performance.memory is Chrome-only (non-standard) -- undefined
+    // elsewhere. Matches v1's own snapshotMemory() precedent in this file.
+    getMemoryUsage: () =>
+      typeof performance !== "undefined" && performance.memory
+        ? {
+            usedJSHeapSize: performance.memory.usedJSHeapSize,
+            totalJSHeapSize: performance.memory.totalJSHeapSize,
+            jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+          }
+        : null,
+
+    capture: async () => {
+      const resp = await browser.runtime.sendMessage({ type: "CAPTURE_AND_DETECT" });
+      if (!resp || resp.type !== "CAPTURE_AND_DETECT_RESULT") {
+        throw new Error((resp && resp.error) || "CAPTURE_AND_DETECT failed with no response from background");
+      }
+      lastCaptureAndDetectResp = resp;
+      return {
+        screenshotBase64: resp.screenshot,
+        screenshotWidthPx: resp.screenshotWidthPx,
+        screenshotHeightPx: resp.screenshotHeightPx,
+        screenshotHash: resp.screenshotHash,
+        captureMs: resp.captureMs,
+        throttleWaitMs: resp.throttleWaitMs,
+      };
+    },
+    // Returns the SAME round trip's boxes -- see this function's own
+    // header comment on why capture()/detect() are combined in production.
+    detect: async () => ({
+      boxes: (lastCaptureAndDetectResp && lastCaptureAndDetectResp.boxes) || [],
+      detectMs: (lastCaptureAndDetectResp && lastCaptureAndDetectResp.detectMs) || 0,
+    }),
+
+    // RULING 1 (unchanged from v1): action-executor FIRST (stamps
+    // data-agent-id), dom-scanner SECOND (reuses those ids) -- see
+    // computeMaxAgentIndex()'s own call site in v1's loop for why the
+    // fallback counter must continue action-executor's numbering rather
+    // than restart at 1 (CONTRACT MISMATCH #2, Phase 4 RESULT).
+    //
+    // V4b (integration-v2, part B): subframe + shadow-DOM parity. Closed
+    // shadow roots were ALREADY covered before this pass -- DomScanner.
+    // scanForPii()/ActionExecutor.buildDomSnapshot() are the SAME v1
+    // functions v1's own loop calls, and their `unscannableRegions` output
+    // already includes a defensively-redacted closed-shadow-host entry;
+    // V4a's io.scanDom() just never forwarded it anywhere useful
+    // downstream (agent-loop-v2.js now folds `unscannableRegions` into C5's
+    // `regions` and into need_visual's redact() call -- see that file's own
+    // V4b comments). What WAS missing is subframe merging: reuse v1's own
+    // collectAndMergeSubframeReports() (defined earlier in this file, TOP
+    // FRAME ONLY) VERBATIM -- same handshake, same FAIL LOUD / defensive-
+    // whole-iframe-redaction policy, same frame-coordination machinery that
+    // already runs unconditionally at this file's top level regardless of
+    // PIPELINE_VERSION (the FRAME_HELLO/SIH_FRAME_TOKEN wiring is not
+    // gated on v1 vs v2 at all -- only the LOOP that calls it is). A
+    // subframe never runs v2's loop (IS_TOP_FRAME's RUN_AGENT_LOOP guard,
+    // unchanged), so this call is only ever reached from the top frame,
+    // same as v1's own call site.
+    scanDom: async () => {
+      const {
+        domSnapshot,
+        idMap,
+        unscannableRegions: actionableUnscannable,
+      } = ActionExecutor.buildDomSnapshot(document);
+      const maxIndex = computeMaxAgentIndex(idMap);
+      let nextFallbackIndex = maxIndex;
+      const { sensitiveNodes, unscannableRegions: scannerUnscannable } = DomScanner.scanForPii(document, {
+        getAgentId: () => `agent-${++nextFallbackIndex}`,
+      });
+
+      const subframeData = IS_TOP_FRAME
+        ? await collectAndMergeSubframeReports()
+        : { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [], framesReported: 0, framesMerged: 0, droppedFrames: [], defensivelyRedactedIframeCount: 0 };
+
+      return {
+        // Subframe entries are ALREADY sanitized + offset-translated (top-
+        // frame CSS px) by collectAndMergeSubframeReports() -- same v1
+        // precedent as runAgentLoop()'s own `mergedDomSnapshot`/
+        // `allSensitiveNodes` concatenation. `idMap` stays TOP-FRAME-ONLY
+        // on purpose (a cross-frame element reference is not a thing);
+        // subframe agentIds (`agent-f<N>-<n>`) simply won't resolve via
+        // idMap.get() anywhere downstream, which every consumer already
+        // guards against (`if (!el) continue`/`if (el) ...`).
+        domSnapshot: domSnapshot.concat(subframeData.domSnapshot),
+        idMap,
+        sensitiveNodes: sensitiveNodes.concat(subframeData.sensitiveNodes),
+        unscannableRegions: [...actionableUnscannable, ...scannerUnscannable, ...subframeData.unscannableRegions],
+        framesReported: subframeData.framesReported,
+        framesMerged: subframeData.framesMerged,
+        framesDropped: (subframeData.droppedFrames || []).length,
+        defensivelyRedactedIframeCount: subframeData.defensivelyRedactedIframeCount || 0,
+      };
+    },
+
+    nerCall: async (texts) => {
+      const resp = await browser.runtime.sendMessage({ type: "NER_DETECT", texts });
+      if (!resp || resp.type !== "NER_DETECT_RESULT") {
+        throw new AgentLoopV2.NerUnavailableError((resp && resp.error) || "no response from background");
+      }
+      return resp.spans;
+    },
+
+    sendAnalyze: async (payload) => {
+      const resp = await browser.runtime.sendMessage({ type: "ANALYZE_V2", payload });
+      if (!resp) return { ok: false, status: 0, error: { message: "no response from background" } };
+      if (resp.type === "ANALYZE_V2_RESULT") return { ok: true, body: resp.action };
+      return { ok: false, status: resp.status, error: resp.error };
+    },
+
+    // V4b: routed through executeActionAcrossFrames() (defined earlier in
+    // this file, v1's own cross-frame action relay) instead of calling
+    // ActionExecutor.executeAction() directly -- a subframe-owned target
+    // (agentId shaped `agent-f<N>-<n>`, from collectAndMergeSubframeReports()
+    // above) throws TARGET_NOT_FOUND against the TOP frame's idMap by
+    // construction (idMap is top-frame-only, see scanDom()'s own comment);
+    // executeActionAcrossFrames() is what turns that into a relay to the
+    // frame that actually owns the element (EXECUTE_ACTION_IN_FRAME ->
+    // background.js -> that frame's own RUN_ACTION_IN_FRAME handler,
+    // ALREADY built by v1, reused verbatim -- see this file's own header
+    // comment on that mechanism). For a top-frame target this is a
+    // behaviorally transparent passthrough (the try succeeds on the first
+    // call, exactly as before this pass). Return shape: `{result,
+    // relayedToFrameId?}` -- unwrapped to just the inner result here, since
+    // agent-loop-v2.js's IO CONTRACT only names `io.executeAction(...) ->
+    // Promise<*>|*` and does not need to know a relay happened.
+    executeAction: async (action, idMap, opts) => {
+      const { result } = await executeActionAcrossFrames(action, idMap, { ...opts, classifyActionRisk: ActionRisk.classifyActionRisk });
+      return result;
+    },
+
+    // V4b: real consent UI (popup.js) needs the actual pending action +
+    // resolved element to build its plain-language description via
+    // action-describe.js's describePendingAction() -- forwarded through to
+    // background.js's CONSENT_REQUEST broadcast unmodified. `action.value`
+    // here is still TOKEN-valued (agent-loop-v2.js never rehydrates before
+    // calling requestConsent()) -- describePendingAction() is built to
+    // never print it raw regardless (see that function's own SAFETY note),
+    // so forwarding it through the background/popup relay carries no new
+    // egress risk: it is not a raw value in the first place.
+    requestConsent: async ({ code, reason, elementDescription, action, element }) => {
+      const resp = await browser.runtime.sendMessage({ type: "REQUEST_CONSENT", request: { code, reason, elementDescription, action, element } });
+      return !!(resp && resp.approved === true);
+    },
+
+    // C5/C2 amendment (2026-09-26): the RAW ask-band span text is passed
+    // to background.js -> popup.js's own consent-style panel and NOWHERE
+    // else -- never onward to nerCall/sendAnalyze. Default/timeout is
+    // KEEP PRIVATE (`true`) -- the opposite default from requestConsent()
+    // above, which is why this is its own message pair
+    // (REQUEST_GOAL_PRIVACY_REVIEW/RESPOND_GOAL_PRIVACY_REVIEW) rather
+    // than reusing CONSENT_REQUEST's.
+    reviewGoalPrivacySpan: async ({ text, label, score }) => {
+      const resp = await browser.runtime.sendMessage({ type: "REQUEST_GOAL_PRIVACY_REVIEW", request: { text, label, score } });
+      return !(resp && resp.keepPrivate === false);
+    },
+
+    // Only ever called for a need_visual escalation. v2's vision model is
+    // UltraFace ONLY (V0b decision, ARCHITECTURE.md -- yolos-tiny is
+    // unloaded), so unlike v1's COCO-80 filter, every box detect() returns
+    // IS already privacy-relevant ("face") -- no class filter needed here.
+    redact: (screenshotBase64, visionBoxes, domNodes, opts) => Redaction.redact(screenshotBase64, visionBoxes, domNodes, opts),
+
+    // v1-style defense-in-depth: the CURRENT live raw value for every
+    // sensitive node this step's scan found (mirrors v1's assertNoRawPii
+    // in spirit -- see that function's own comment).
+    getLiveSensitiveRawValues: (sensitiveNodes, idMap) => {
+      const out = [];
+      for (const node of sensitiveNodes) {
+        const el = idMap.get(node.agentId);
+        if (!el) continue;
+        const rawValue = (typeof el.value === "string" && el.value) || (el.textContent || "").trim();
+        if (rawValue) out.push({ agentId: node.agentId, rawValue });
+      }
+      return out;
+    },
+
+    // capture-hash.js RULING A' -- reused verbatim from v1's loop.
+    detectStaleCapture: ({ screenshotWidthPx, screenshotHeightPx, screenshotHash, expectedWidthPx, expectedHeightPx, seenHashScrollY }) => {
+      const scrollY = window.scrollY;
+      const dimensionMismatch = CaptureHash.detectDimensionMismatch({
+        expectedWidth: expectedWidthPx,
+        expectedHeight: expectedHeightPx,
+        actualWidth: screenshotWidthPx,
+        actualHeight: screenshotHeightPx,
+      });
+      const hashRecurrence = CaptureHash.detectHashRecurrence(seenHashScrollY, { hash: screenshotHash, scrollY });
+      if (typeof screenshotHash === "string" && screenshotHash.length > 0 && !seenHashScrollY.has(screenshotHash)) {
+        seenHashScrollY.set(screenshotHash, scrollY);
+      }
+      return { dimensionMismatch, hashRecurrence };
+    },
+
+    detectStall: (actionHistory) => StallDetector.detectStall(actionHistory),
+  };
+}
+
+/**
+ * V4a: the v2 counterpart of runAgentLoop() -- sets up the real io adapter,
+ * delegates every actual decision to the PURE runAgentLoopV2() (lib/
+ * agent-loop-v2.js), and reports progress/summary the same way v1 does so
+ * the existing popup polling (GET_RUN_STATE) keeps working unmodified for
+ * either pipeline version.
+ */
+async function runAgentLoopV2Adapter() {
+  await loadLibModulesV2();
+
+  const runAbort = new AbortController();
+  currentRunAbortController = runAbort;
+
+  const getProfileValue = await buildProfileValueGetter();
+  const io = buildContentScriptIoV2({ runAbort, getProfileValue });
+
+  const taskGoal = await io.getTaskGoal();
+  reportProgress({
+    active: true,
+    taskGoal,
+    maxSteps: AgentLoopV2.MAX_STEPS_V2,
+    step: 0,
+    stage: "starting",
+    outcome: null,
+    lastAction: null,
+    lastBlock: null,
+    lastError: null,
+    pipelineVersion: "v2",
+  });
+
+  try {
+    const result = await AgentLoopV2.runAgentLoopV2(io);
+    console.log("[agent-loop-v2] RUN SUMMARY:", JSON.stringify({ outcome: result.outcome, steps: result.steps, staleCaptureCount: result.staleCaptureCount }, null, 2));
+    reportProgress({ active: false, outcome: result.outcome, step: result.steps });
+    return { type: "RUN_AGENT_LOOP_RESULT", outcome: result.outcome, steps: result.steps, stepResults: result.stepResults, staleCaptureCount: result.staleCaptureCount };
+  } catch (err) {
+    // C6 (EgressAssertionError) and any other unexpected throw both land
+    // here -- fail closed, never send, report loudly. err.message is
+    // always a static description (EgressAssertionError never includes a
+    // raw value -- see agent-loop-v2.js's own class comment).
+    console.error("[agent-loop-v2] run threw:", err);
+    reportProgress({ active: false, outcome: "error", lastError: { summary: err && err.message } });
+    return { type: "RUN_AGENT_LOOP_RESULT", outcome: "error", error: err && err.message };
+  } finally {
+    if (currentRunAbortController === runAbort) currentRunAbortController = null;
   }
 }
 
@@ -815,7 +1133,18 @@ function mergeAndDefensivelyRedactUnmergedIframes([sensitiveNodes, domSnapshot, 
 // only the already-resolved label STRING. This allowlist matches against
 // that resolved string, case-insensitively.
 // ---------------------------------------------------------------------
-const PRIVACY_RELEVANT_LABELS = new Set(["person", "book"]);
+// V2 addition (2026-09-24, vision-v2): "face" is UltraFace RFB-320's only
+// output label (see offscreen.entry.js's VISION_MODEL="ultraface" path
+// and extension/lib/face-detect.js -- FACE_DETECT_CONSTANTS.FACE_LABEL).
+// It is exactly the real-photographed-subject category the "person"/"book"
+// reasoning above already argues for keeping -- a face detection IS the
+// PII-relevant signal this allowlist exists to let through, not a new
+// exception to it. yolos's "person"/"book" labels are kept here too even
+// though yolos is no longer loaded by default (VISION_MODEL switch,
+// offscreen.entry.js) -- harmless if yolos is ever re-enabled, and this
+// allowlist is deliberately model-agnostic (it matches on the resolved
+// label string, whichever detector produced it).
+const PRIVACY_RELEVANT_LABELS = new Set(["person", "book", "face"]);
 
 function filterPrivacyRelevantBoxes(boxes) {
   if (!Array.isArray(boxes)) return [];
@@ -1582,6 +1911,16 @@ function createInstrumentation() {
     const memSamples = entries.map((e) => e.memory).filter(Boolean);
     const peakUsedJSHeapSizeMB = memSamples.length ? Math.max(...memSamples.map((m) => m.usedJSHeapSizeMB)) : null;
 
+    // CAPTURE STALENESS DETECTION: reported UNCONDITIONALLY, including at
+    // zero -- "hash consecutive captures in every browser run; that is how
+    // it was caught" (CLAUDE.md's own instruction to whoever picked this
+    // up), made automatic instead of hand-diffing dumped PNGs. Same
+    // "silent truncation/omission reads as 'we saw everything' when we
+    // didn't" posture `fullPage`/`rank` already established -- a run with
+    // zero stale captures must say so explicitly, not merely omit the
+    // field.
+    const staleCaptures = stepResults.filter((s) => s.skipped === "stale_capture");
+
     const summary = {
       runAt: new Date().toISOString(),
       outcome,
@@ -1589,6 +1928,8 @@ function createInstrumentation() {
       totalMs,
       peakUsedJSHeapSizeMB,
       memoryApiAvailable: memSamples.length > 0,
+      staleCaptureCount: staleCaptures.length,
+      staleCaptures,
       stages: entries,
       steps: stepResults,
     };
@@ -1746,10 +2087,54 @@ async function runAgentLoop() {
   // not a MockVLMClient-specific hack.
   const actedAgentIds = new Set();
 
+  // PII-LEAK FIX (confirmed leak, see CLAUDE.md): agentId -> profileField,
+  // recorded on every SUCCESSFUL fill_profile act this run -- see the
+  // recording site near GUARD_REFUSAL_CODES's own "Record completed
+  // click/type targets" block, below, for why fill_profile is recorded
+  // HERE and not folded into that block.
+  //
+  // 🔴 Deliberately a SEPARATE run-scoped structure from actedAgentIds
+  // above, not merged into it, even though both exist for the same
+  // "don't re-offer an already-handled field" reason. actedAgentIds
+  // EXCLUDES its members from the next domSnapshot entirely (see that
+  // variable's own comment) -- doing the same for a fill_profile target
+  // would drop the node from the DOM JSON, yes, but would leave the
+  // vault value fully visible, unredacted, in the SCREENSHOT on every
+  // subsequent step: dropping a node from domSnapshot has no effect
+  // whatsoever on what's drawn from allSensitiveNodes/redactionInputNodes
+  // into the image. A vault-filled field must instead be RETAINED as a
+  // sensitive node on every remaining step (not hidden) so it keeps
+  // getting redacted -- see buildProfileVaultSensitiveNodes() in
+  // profile-vault.js, and its call site below, near allSensitiveNodes.
+  const filledProfileAgentIds = new Map();
+
+  // CROSS-SITE: the URL this run last saw, so a client-side route change can
+  // be detected at the top of each step. Read once here rather than compared
+  // against a constant, because a run can legitimately start on any URL.
+  let lastSeenHref = typeof location !== "undefined" ? location.href : "";
+
   // WIRING PASS TASK 3: oldest-first action-signature history, fed to
   // stall-detector.js after every successfully executed non-"done" step.
   // See the stall-detection block near the end of the step loop, below.
   const actionHistory = [];
+
+  // CAPTURE STALENESS DETECTION (CLAUDE.md "STILL OPEN -- capture can
+  // return a stale frame"; RULING A', amended 2026-09-20 after a same-day
+  // false negative). hash -> the scrollY it was FIRST seen at, THIS run --
+  // see capture-hash.js's detectHashRecurrence() for why the SECONDARY
+  // check compares against the whole run's history now, not just the
+  // immediately-previous capture (the original, narrower comparison missed
+  // an hour-old frame resurfacing after a correct one). Empty on step 1 --
+  // nothing recorded yet. Entries are added, never overwritten (first-seen
+  // semantics), at the STALE-CAPTURE DETECTION block below. `screenshotHash`
+  // is `undefined` in full-page capture mode (background.js only computes
+  // one for the viewport-only path) -- detectHashRecurrence() treats a
+  // missing hash as "no verdict," which is exactly what scopes the
+  // SECONDARY check OUT of full-page mode without a separate branch. The
+  // PRIMARY (dimension) check is scoped out of full-page mode explicitly
+  // instead -- see that block's own comment for why it can't rely on the
+  // same "missing data" trick.
+  const seenHashScrollY = new Map();
 
   let taskGoal = "(no task goal set)";
   try {
@@ -1814,6 +2199,27 @@ async function runAgentLoop() {
         console.log(`[agent-loop] STOP requested -- halting before step ${step} begins.`);
         break;
       }
+
+      // ---- CROSS-SITE: client-side (SPA) navigation.
+      // A full page load tears down this content script and the run with it,
+      // so that case needs nothing. A pushState/replaceState route change does
+      // NOT: the script survives, the loop keeps going, and every agentId in
+      // actedAgentIds now refers to an element on a page that no longer
+      // exists. Those stale ids keep filtering the NEW page's snapshot, so the
+      // agent silently cannot see elements it has never acted on -- and on a
+      // single-page app that is most of the site. Reset on route change.
+      if (typeof location !== "undefined" && location.href !== lastSeenHref) {
+        const from = lastSeenHref;
+        lastSeenHref = location.href;
+        const dropped = actedAgentIds.size;
+        actedAgentIds.clear();
+        filledProfileAgentIds.clear();
+        console.log(
+          `[agent-loop] step ${step}: client-side navigation detected -- cleared ${dropped} acted id(s). ` +
+            `${from} -> ${lastSeenHref}`
+        );
+      }
+
       reportProgress({ step, stage: "capture" });
 
       // ---- 1. CAPTURE + DETECT. Viewport-only (default): one round trip
@@ -1851,6 +2257,23 @@ async function runAgentLoop() {
         });
         break;
       }
+    // RULING A' check 1's EXPECTED side, computed HERE -- not only inside
+    // the verdict below -- so a PASSING step still records what the actual
+    // dimensions were compared against, not just that nothing fired.
+    // Without this a passing run shows `screenshotWidthPx`/`Px` (what was
+    // captured) with no visibility into what was EXPECTED or how much
+    // margin there was, which matters more here than it did for
+    // `throttleWaitMs`: the tolerance is unverified on real hardware, and
+    // a wrong tolerance would fail closed on every step with no numbers in
+    // the run summary to diagnose it from. Explicitly `null` in full-page
+    // mode, where this check never runs (see its own comment at the
+    // STALE-CAPTURE DETECTION block for why that's an explicit branch, not
+    // incidental) -- computed exactly ONCE here and reused verbatim at
+    // that block, never re-derived a second time.
+    const dprForDimensionCheck = window.devicePixelRatio || 1;
+    const expectedWidthPxForDimensionCheck = fullPageCaptureEnabled ? null : window.innerWidth * dprForDimensionCheck;
+    const expectedHeightPxForDimensionCheck = fullPageCaptureEnabled ? null : window.innerHeight * dprForDimensionCheck;
+
     instr.mark(step, "capture", {
       durationMs: +captureResp.captureMs.toFixed(1),
       offscreenDocumentAlreadyExisted: captureResp.offscreenDocumentAlreadyExisted,
@@ -1859,6 +2282,47 @@ async function runAgentLoop() {
       // truncated (truncated: false) -- never omitted, matching
       // element-ranker.js's own "report unconditionally" precedent.
       fullPage: captureResp.fullPage || null,
+      // CAPTURE STALENESS DETECTION: present on EVERY step, unconditionally
+      // -- this is the "hash consecutive captures in every browser run"
+      // instrumentation CLAUDE.md's OPEN bug entry asks for, made
+      // automatic instead of relying on hand-diffing dumped PNGs again.
+      // `null` in full-page capture mode, where background.js does not
+      // compute one (see that function's own comment) -- reported as null
+      // rather than omitted, same "never silently absent" posture as
+      // `fullPage` above.
+      screenshotHash: captureResp.screenshotHash || null,
+      // RULING A' check 1's ACTUAL side (the raw measurement background.js
+      // took off the PNG's own IHDR header) -- present on EVERY step,
+      // unconditionally, same posture as screenshotHash immediately above.
+      screenshotWidthPx: typeof captureResp.screenshotWidthPx === "number" ? captureResp.screenshotWidthPx : null,
+      screenshotHeightPx: typeof captureResp.screenshotHeightPx === "number" ? captureResp.screenshotHeightPx : null,
+      // RULING A' check 1's EXPECTED side + the DPR it was computed with
+      // (see the const block just above this call) -- present on EVERY
+      // step, unconditionally, right beside the ACTUAL measurement above.
+      // A PASSING step must still show what it was compared against and
+      // how much margin there was, not just that nothing fired -- the
+      // ±2px tolerance is unverified on real hardware, and if it's wrong
+      // for the machine this runs on, EVERY step fails closed silently
+      // with no numbers to diagnose it from unless this is here. `null`
+      // in full-page mode, where this check does not run.
+      expectedWidthPx: expectedWidthPxForDimensionCheck,
+      expectedHeightPx: expectedHeightPxForDimensionCheck,
+      devicePixelRatio: fullPageCaptureEnabled ? null : dprForDimensionCheck,
+      // HAZARD 2 proactive throttle (background.js's handleCaptureAndDetect
+      // -- see its own lastViewportCaptureAt comment): present on EVERY
+      // step, unconditionally, INCLUDING 0 -- a step where the throttle
+      // never had to wait must say `0`, not omit the field, because `0` is
+      // the measurement that proves the throttle cost nothing THIS step;
+      // an absent field proves nothing. This matters precisely because a
+      // stale-capture `continue` (below) sends the NEXT step's capture
+      // request well under MIN_CAPTURE_INTERVAL_MS after the last one, so
+      // the throttle is expected to actually bind on that following step --
+      // without this field that would show up only as unattributable
+      // end-to-end latency with no stage to pin it on. `null` in full-page
+      // capture mode, which has its own separate, already-throttled
+      // per-slice capture loop (see captureFullPageAndDetect()) and never
+      // populates this specific field.
+      throttleWaitMs: typeof captureResp.throttleWaitMs === "number" ? captureResp.throttleWaitMs : null,
     });
     // Split load vs. inference (coordinator-requested diagnostic,
     // 2026-09-11) -- these were previously conflated into one "detect"
@@ -1937,6 +2401,132 @@ async function runAgentLoop() {
         ? { x: window.scrollX, y: window.scrollY }
         : CapturePlan.NO_DOCUMENT_OFFSET;
 
+    // ---- STALE-CAPTURE DETECTION (CLAUDE.md "STILL OPEN -- capture can
+    // return a stale frame"; RULING A', amended 2026-09-20). scrollY read
+    // HERE, at the exact same moment documentScanScrollOffset is captured
+    // just above -- "the moment of measurement" for THIS step's DOM scan.
+    // Deliberately a SEPARATE, raw reading (never
+    // CapturePlan.NO_DOCUMENT_OFFSET-zeroed) -- this check needs the
+    // page's ACTUAL current scroll position regardless of capture mode,
+    // not the (mode-dependent) offset applied to bboxes.
+    //
+    // TWO INDEPENDENT CHECKS -- see capture-hash.js's module header for the
+    // full writeup of why one check (the original Ruling A) missed a real
+    // occurrence the same day it shipped.
+    const scanScrollY = window.scrollY;
+
+    // CHECK 1 -- DIMENSION MISMATCH, PRIMARY, definitive, no history
+    // needed. Explicitly scoped OUT of full-page mode (NOT via missing
+    // data, unlike check 2 below) -- a stitched image is document-sized by
+    // construction and would fail this check on EVERY step if it ran
+    // there, so the guard is an explicit `fullPageCaptureEnabled` branch,
+    // not an incidental side effect of some field being unset.
+    // `expectedWidthPxForDimensionCheck`/`expectedHeightPxForDimensionCheck`/
+    // `dprForDimensionCheck` were already computed once, above, right before
+    // the "capture" instrumentation mark (so a passing step still records
+    // what this check compared against) -- reused verbatim here, never
+    // re-derived a second time.
+    const dimensionMismatchVerdict = fullPageCaptureEnabled
+      ? null
+      : CaptureHash.detectDimensionMismatch({
+          expectedWidth: expectedWidthPxForDimensionCheck,
+          expectedHeight: expectedHeightPxForDimensionCheck,
+          actualWidth: captureResp.screenshotWidthPx,
+          actualHeight: captureResp.screenshotHeightPx,
+        });
+
+    // CHECK 2 -- HASH RECURRENCE, SECONDARY, whole-run history. Scoped OUT
+    // of full-page mode implicitly: background.js never populates
+    // `screenshotHash` for a stitched capture, and detectHashRecurrence()
+    // treats a missing hash as "no verdict" -- the same mechanism the
+    // original Ruling A already relied on, unchanged by this amendment.
+    const hashRecurrenceVerdict = CaptureHash.detectHashRecurrence(seenHashScrollY, {
+      hash: captureResp.screenshotHash,
+      scrollY: scanScrollY,
+    });
+    // Record this hash's FIRST-seen scrollY, but ONLY if it isn't already
+    // recorded -- see seenHashScrollY's own declaration comment and
+    // detectHashRecurrence()'s doc comment for why overwriting an existing
+    // entry would silently narrow the window this check can catch a stale
+    // frame in.
+    if (
+      typeof captureResp.screenshotHash === "string" &&
+      captureResp.screenshotHash.length > 0 &&
+      !seenHashScrollY.has(captureResp.screenshotHash)
+    ) {
+      seenHashScrollY.set(captureResp.screenshotHash, scanScrollY);
+    }
+
+    // Reported UNCONDITIONALLY, every step, including when both are
+    // `null` -- a merged boolean here is exactly what let the 2026-09-20
+    // false negative go unnoticed for as long as it did; the RUN SUMMARY
+    // must be able to say WHICH check fired, not just "something did."
+    instr.mark(step, "stale-capture", {
+      dimensionMismatch: dimensionMismatchVerdict,
+      hashRecurrence: hashRecurrenceVerdict,
+    });
+
+    // RULING C -- FAIL CLOSED on EITHER verdict: a positive result from
+    // either check means the image this step captured cannot be trusted to
+    // show the CURRENT viewport, so transmitting it risks sending whatever
+    // was on screen at some other position/time, unredacted, dressed up as
+    // redacted for the current one. This step's send is refused; the RUN
+    // is NOT aborted -- the mechanism behind the underlying staleness is
+    // still unestablished (two hypotheses have now failed to survive
+    // scrutiny), so aborting the whole run on it would be a NEW failure
+    // mode built on a bug nobody has explained. Costing one step out of
+    // MAX_STEPS is cheap; the next step re-captures naturally. Mirrors the
+    // fail-closed idiom assertNoRawPii() already uses below (abort BEFORE
+    // anything leaves the client, log it, survive), just with "skip and
+    // continue" instead of "skip and stop" -- see this block's own
+    // `continue`, not `break`.
+    if (dimensionMismatchVerdict || hashRecurrenceVerdict) {
+      const reasons = [];
+      if (dimensionMismatchVerdict) reasons.push("dimension_mismatch");
+      if (hashRecurrenceVerdict) reasons.push("hash_recurrence");
+
+      // The log line states BOTH halves of the evidence for WHICHEVER
+      // check(s) fired, per CLAUDE.md's explicit instruction -- never just
+      // "stale: true".
+      const evidenceParts = [];
+      if (dimensionMismatchVerdict) {
+        evidenceParts.push(
+          `dimension mismatch: expected ${dimensionMismatchVerdict.expectedWidth}x${dimensionMismatchVerdict.expectedHeight} ` +
+            `but captured ${dimensionMismatchVerdict.actualWidth}x${dimensionMismatchVerdict.actualHeight} ` +
+            `(delta ${dimensionMismatchVerdict.deltaWidth}x${dimensionMismatchVerdict.deltaHeight}px)`
+        );
+      }
+      if (hashRecurrenceVerdict) {
+        evidenceParts.push(
+          `hash recurrence: screenshot hash ${hashRecurrenceVerdict.hash} first seen this run at scrollY ` +
+            `${hashRecurrenceVerdict.firstSeenScrollY}, now at scrollY ${hashRecurrenceVerdict.currentScrollY} ` +
+            `(delta ${hashRecurrenceVerdict.scrollDelta}px)`
+        );
+      }
+      const evidence = evidenceParts.join("; ");
+
+      console.warn(
+        `[agent-loop] STALE CAPTURE DETECTED at step ${step} (${reasons.join("+")}) -- ${evidence}. The captured ` +
+          "image cannot be trusted for this step's redaction rectangles -- refusing to send it. Skipping this " +
+          "step's /analyze send only; the run continues and will re-capture next step."
+      );
+      stepResults.push({
+        step,
+        skipped: "stale_capture",
+        reasons,
+        detail: evidence,
+      });
+      reportProgress({
+        stage: "capture",
+        lastError: {
+          summary: `Stale screenshot detected (${reasons.join(", ")}) -- this step's send was refused for safety.`,
+          detail: evidence,
+          step,
+        },
+      });
+      continue; // NOT break -- skip only this step's send; the run is not aborted, per RULING C
+    }
+
     // ---- 2.5. FRAME COORDINATION (real-site hardening pass): merge in
     // every subframe's already-offset-translated, already-sanitized
     // report. See the FRAME COORDINATION block comment near the top of
@@ -1951,7 +2541,33 @@ async function runAgentLoop() {
     const subframeData = IS_TOP_FRAME
       ? await collectAndMergeSubframeReports()
       : { sensitiveNodes: [], domSnapshot: [], unscannableRegions: [], framesReported: 0, framesMerged: 0, droppedFrames: [] };
-    const allSensitiveNodes = sensitiveNodes.concat(subframeData.sensitiveNodes);
+
+    // ---- PII-LEAK FIX (confirmed leak, see CLAUDE.md): a fill_profile
+    // target from a PRIOR step is exactly as sensitive as a page-sourced
+    // PII node and must be treated identically from here on -- stripped
+    // from the DOM JSON AND blacked out in the screenshot. Synthesized in
+    // the SAME shape dom-scanner emits ({selector, bbox, piiType,
+    // agentId}) via buildProfileVaultSensitiveNodes() (profile-vault.js),
+    // which:
+    //   - measures bbox FRESH from THIS step's idMap (the page can scroll
+    //     between steps; a cached bbox would black out the wrong spot on
+    //     THIS step's screenshot -- a wrong bbox is a leak that looks like
+    //     success),
+    //   - dedupes against agentIds dom-scanner/subframes already flagged
+    //     this step (an autocomplete="email"/"tel" field the vault filled
+    //     is normally already in sensitiveNodes on its own), and
+    //   - skips any agentId no longer resolvable in idMap (element
+    //     removed/replaced since the fill).
+    // See filledProfileAgentIds' own comment above runAgentLoop's
+    // declaration for why this is a separate run-scoped Map, never folded
+    // into actedAgentIds. ----
+    const profileVaultSensitiveNodes = ProfileVault.buildProfileVaultSensitiveNodes(
+      filledProfileAgentIds,
+      idMap,
+      new Set(sensitiveNodes.concat(subframeData.sensitiveNodes).map((n) => n.agentId)),
+      { computeSelector: DomScanner.computeSelector }
+    );
+    const allSensitiveNodes = sensitiveNodes.concat(subframeData.sensitiveNodes, profileVaultSensitiveNodes);
     const allUnscannableRegions = [...actionableUnscannable, ...scannerUnscannable, ...subframeData.unscannableRegions];
 
     instr.mark(step, "scan", {
@@ -2219,7 +2835,16 @@ async function runAgentLoop() {
       // wire.
       const payload = { image: redactedImage, domSnapshot: sanitizedDomSnapshot, redactedRegions, taskGoal };
       try {
-        assertNoRawPii(payload, sensitiveNodes, idMap);
+        // PII-LEAK FIX: checked against allSensitiveNodes (dom-scanner's own
+        // findings + any vault-filled nodes from a prior step), not just
+        // sensitiveNodes -- so this belt-and-suspenders check also verifies
+        // a fill_profile target's live raw value never survived sanitization,
+        // exactly like it already does for page-sourced PII. Subframe-sourced
+        // entries still can't resolve via this (top-frame-only) idMap and are
+        // silently skipped here, same as before this fix -- their own
+        // isolated world already ran this same check on its own live
+        // elements (see assertNoRawPii's own comment).
+        assertNoRawPii(payload, allSensitiveNodes, idMap);
       } catch (err) {
         instr.mark(step, "send", { attempt, error: err.message });
         section5Failed = true;
@@ -2453,6 +3078,26 @@ async function runAgentLoop() {
       actedAgentIds.add(actResult.targetId);
     }
 
+    // PII-LEAK FIX: record a SUCCESSFUL fill_profile's target in its OWN
+    // set (filledProfileAgentIds), never actedAgentIds -- see that
+    // variable's own comment above runAgentLoop's declaration for why
+    // reusing the actedAgentIds gate here would only close HALF the leak
+    // (it would drop the node from the next domSnapshot's TEXT, but leave
+    // the vault value fully visible, unredacted, in the SCREENSHOT on every
+    // subsequent step). `action.profileField` (the CATEGORY name, e.g.
+    // "email") is not sensitive on its own and is safe to record/log here
+    // -- the vault VALUE itself was never available in this scope to begin
+    // with (dispatchFillProfile()'s result deliberately omits it, and
+    // action.value was already forced to null above).
+    if (
+      action.action === "fill_profile" &&
+      actResult &&
+      actResult.targetId &&
+      actResult.targetId !== ActionExecutor.PAGE_TARGET_ID
+    ) {
+      filledProfileAgentIds.set(actResult.targetId, action.profileField);
+    }
+
     // ---- 9.5. WIRING PASS TASK 3 -- stall detection. Runs after a
     // SUCCESSFUL act (a failed act already broke out of the loop above,
     // via the catch block, with its own distinct "act_failed" outcome --
@@ -2543,14 +3188,20 @@ browser.runtime.onMessage.addListener((message) => {
         error: "RUN_AGENT_LOOP received in a non-top frame -- refusing to run a second agent loop instance",
       });
     }
-    return runAgentLoop().catch((err) => ({
-      type: "RUN_AGENT_LOOP_ERROR",
-      // err.message here is always a static description string produced
-      // by code in this file (ActionExecutionError messages, this file's
-      // own thrown errors, etc.) -- never a stringified payload. Kept as
-      // a deliberate invariant, not an accident: see assertNoRawPii.
-      error: (err && err.message) || String(err),
-    }));
+    // V4a: PIPELINE_VERSION switch, read from the ONE place it lives
+    // (lib/pipeline-version.js). Defaults to "v2"; "v1" keeps running the
+    // original, unmodified runAgentLoop() below byte-for-byte -- neither
+    // path is touched by the other's selection.
+    return resolvePipelineVersion()
+      .then((version) => (version === "v1" ? runAgentLoop() : runAgentLoopV2Adapter()))
+      .catch((err) => ({
+        type: "RUN_AGENT_LOOP_ERROR",
+        // err.message here is always a static description string produced
+        // by code in this file (ActionExecutionError messages, this file's
+        // own thrown errors, etc.) -- never a stringified payload. Kept as
+        // a deliberate invariant, not an accident: see assertNoRawPii.
+        error: (err && err.message) || String(err),
+      }));
   }
 
   // TASK 1 (Stop). background.js relays this from the popup, targeting

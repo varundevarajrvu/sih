@@ -1,0 +1,126 @@
+{
+  "target": "extension/dist/firefox (produced by extension/scripts/build-firefox.mjs from extension/*)",
+  "harness": "extension/scripts/build-firefox.mjs + npx web-ext lint (web-ext 10.7.0, extension/ devDependencies) + selenium-webdriver/geckodriver (scratchpad, not committed)",
+  "notes": [
+    "extension/scripts/build-firefox.mjs reads extension/manifest.json and extension/background.js but never writes to them -- it only writes into extension/dist/firefox/. Verified: both source files' mtimes (background.js 2026-09-26 15:02, manifest.json 2026-09-27 14:36) predate this build run (2026-09-27 15:06+), matching the pre-existing working-tree diff from before this task started. Chrome behaviour (extension/*, unpacked as-is) is byte-for-byte unchanged.",
+    "background.js gets exactly one Firefox-only patch: a 10-line capability check inserted as the first statement of ensureOffscreenDocument() (`if (typeof chrome === 'undefined' || !chrome.offscreen) return;`). Diffed and confirmed -- nothing else in the 1617/1627-line files differs.",
+    "manifest.json changes: permissions drops 'offscreen' (Chrome-only, no Firefox equivalent); background.service_worker -> background.scripts:['offscreen.bundle.js','background.js'] + type:'module' (Firefox MV3 event page; module type required because background.js uses static ES import); browser_specific_settings.gecko added {id:'dhristi-privacy-agent@sih26171.dev', strict_min_version:'128.0' -- the floor set by content_scripts[].world:'MAIN' on shadow-detect.js}. host_permissions and content_security_policy (incl. 'wasm-unsafe-eval') carry over untouched.",
+    "Firefox inference path: offscreen.bundle.js (same bundle Chrome loads inside chrome.offscreen, unmodified, not rebuilt) is loaded as a second background script so it runs in the SAME event-page document as background.js. Firefox event pages have a real DOM/WASM/OffscreenCanvas, so its existing chrome.runtime.onMessage listener for DETECT_OBJECTS is already registered by the time anything calls detectObjects() -- no iframe, no second page, no change to offscreen.entry.js's source.",
+    "DETECT_OBJECTS routing capability check: hasOffscreenDocument() already returns false safely on Firefox unmodified (chrome.runtime.getContexts doesn't exist there); the only Firefox crash site was the unconditional chrome.offscreen.createDocument(...) call inside ensureOffscreenDocument(), now guarded as described above. Chrome's code path is completely unaffected by the guard (chrome.offscreen is truthy there)."
+  ],
+  "build": {
+    "script": "extension/scripts/build-firefox.mjs",
+    "command": "node scripts/build-firefox.mjs (run from extension/)",
+    "output_dir": "extension/dist/firefox",
+    "result": "succeeded",
+    "chrome_source_files_modified": false,
+    "verification": "git status / mtime check: extension/manifest.json and extension/background.js untouched by the build; dist/firefox/background.js diffs from extension/background.js by exactly the 10-line capability-check insertion (diff output captured during the run)."
+  },
+  "lint": {
+    "command": "npx web-ext lint -s dist/firefox",
+    "tool_version": "web-ext 10.7.0",
+    "run_from": "extension/",
+    "summary": { "errors": 0, "notices": 0, "warnings": 9 },
+    "errors": [],
+    "warnings": [
+      {
+        "code": "MISSING_DATA_COLLECTION_PERMISSIONS",
+        "file": "manifest.json",
+        "message": "The \"data_collection_permissions\" property is missing.",
+        "note": "AMO submission-time policy requirement for new/updated listings, unrelated to the Firefox port itself; not required for a temporary/unpacked load."
+      },
+      {
+        "code": "UNSAFE_VAR_ASSIGNMENT",
+        "file": "popup.js",
+        "line": 132,
+        "message": "Unsafe assignment to innerHTML",
+        "note": "Pre-existing popup.js code, unrelated to the Firefox port (same source Chrome ships)."
+      },
+      {
+        "code": "UNSAFE_VAR_ASSIGNMENT",
+        "file": "popup.js",
+        "line": 477,
+        "message": "Unsafe assignment to innerHTML",
+        "note": "Pre-existing popup.js code, unrelated to the Firefox port (same source Chrome ships)."
+      },
+      {
+        "code": "DANGEROUS_EVAL",
+        "file": "ort/ort-wasm-simd-threaded.jsep.mjs",
+        "line": 80,
+        "message": "The Function constructor is eval.",
+        "note": "Vendored onnxruntime-web runtime file, not project code."
+      },
+      {
+        "code": "UNSAFE_VAR_ASSIGNMENT",
+        "file": "ort/ort.wasm.min.mjs",
+        "line": 6,
+        "message": "Unsafe call to import for argument 0",
+        "note": "Vendored onnxruntime-web runtime file, not project code."
+      },
+      {
+        "code": "UNSUPPORTED_API",
+        "file": "background.js",
+        "line": 204,
+        "message": "offscreen.createDocument is not supported",
+        "note": "EXPECTED and load-bearing to how the port works: the Chrome-only chrome.offscreen.createDocument(...) call is intentionally left in place (guarded by the new capability check a few lines above, never reached on Firefox) so Chrome's code path stays byte-for-byte identical rather than being rewritten. addons-linter flags the call statically; it is dead code on Firefox at runtime."
+      },
+      {
+        "code": "DANGEROUS_EVAL",
+        "file": "offscreen.bundle.js",
+        "line": 2699,
+        "message": "The Function constructor is eval.",
+        "note": "Bundled onnxruntime-web/transformers.js code, not project code."
+      },
+      {
+        "code": "UNSAFE_VAR_ASSIGNMENT",
+        "file": "offscreen.bundle.js",
+        "line": 3128,
+        "message": "Unsafe call to import for argument 0",
+        "note": "Bundled vendor code."
+      },
+      {
+        "code": "UNSAFE_VAR_ASSIGNMENT",
+        "file": "offscreen.bundle.js",
+        "line": 48204,
+        "message": "Unsafe call to import for argument 0",
+        "note": "Bundled vendor code."
+      }
+    ]
+  },
+  "live_firefox_check": {
+    "attempted": true,
+    "completed": false,
+    "firefox_found": {
+      "source": "Microsoft Store package (Mozilla.Firefox_156.0.1.0_x64)",
+      "path": "C:\\Users\\varun\\AppData\\Local\\Microsoft\\WindowsApps\\firefox.exe (App Execution Alias)",
+      "version_confirmed": "Mozilla Firefox 156.0.1 (via `firefox.exe --version`)"
+    },
+    "steps_that_worked": [
+      "npm install selenium-webdriver geckodriver in a scratch dir (background, logged).",
+      "geckodriver npm wrapper downloaded geckodriver v0.37.1 (background) and started a WebDriver server on 127.0.0.1:4444 successfully.",
+      "node --test tests/unit/*.mjs: 997/997 passed, 175 suites, 0 failed.",
+      "server/.venv/Scripts/python.exe -m pytest tests -q: 462 passed, 1 skipped."
+    ],
+    "steps_that_failed": [
+      {
+        "step": "selenium-webdriver Builder.forBrowser('firefox').usingServer('http://127.0.0.1:4444') with options.setBinary() pointed at the Store Firefox alias",
+        "error": "InvalidArgumentError: binary is not a Firefox executable",
+        "cause": "The Microsoft Store package's firefox.exe is an App Execution Alias into a sandboxed WindowsApps package tree; geckodriver's binary validation rejects it even though the shell can launch it directly."
+      },
+      {
+        "step": "Download+silent-install a standalone Firefox to get a geckodriver-compatible binary",
+        "download": "https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US, 92,773,640 bytes, completed successfully in background",
+        "install_attempt_1": "FirefoxSetup.exe /S /InstallDirectoryPath=<scratchpad>\\install, run from Git Bash: exit code 0 but no files were written under the target directory -- most likely a path-separator mangling artifact of invoking a native NSIS installer from MSYS bash with a mixed backslash/forward-slash path, not conclusively diagnosed.",
+        "install_attempt_2": "FirefoxSetup.exe /S (default location) via PowerShell Start-Process -Wait: killed by Claude Code's own background-process low-memory protection before it could complete ('system is running low on memory' -- explicitly not a command/script failure). Per the harness's own instruction on that signal, this was not retried automatically."
+      }
+    ],
+    "popup_opens": "NOT VERIFIED -- never reached a driveable Firefox instance.",
+    "detect_objects_roundtrip_on_id_card_face": "NOT RUN -- never reached a driveable Firefox instance.",
+    "conclusion": "Stopped here. No claim is made about runtime behaviour inside an actual running Firefox beyond what addons-linter's static analysis covers (0 errors). The build artifact (dist/firefox) and its manifest/background.js patch were produced and statically validated; they were not exercised in a live Firefox session."
+  },
+  "tests": {
+    "js": { "command": "node --test tests/unit/*.mjs", "pass": 997, "fail": 0, "suites": 175 },
+    "python": { "command": "server/.venv/Scripts/python.exe -m pytest tests -q", "passed": 462, "skipped": 1 }
+  },
+  "chrome_side_change": "None. extension/manifest.json and extension/background.js were only read by build-firefox.mjs, never written. No other Chrome-shipped file was touched."
+}

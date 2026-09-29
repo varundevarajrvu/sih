@@ -1,0 +1,33 @@
+{
+  "schema": "dhristi-scene-v2",
+  "mode": "image",
+  "revision": "rev-0002",
+  "taskGoal": "Click the submit button",
+  "viewport": { "w": 1280, "h": 720 },
+  "elements": [
+    {
+      "agentId": "agent-1",
+      "tag": "button",
+      "role": "button",
+      "type": "submit",
+      "label": "Submit",
+      "bbox": { "x": 10, "y": 20, "w": 80, "h": 30 },
+      "sensitive": false,
+      "tier": "navigational"
+    }
+  ],
+  "regions": [
+    {
+      "kind": "face",
+      "bbox": { "x": 300, "y": 40, "w": 120, "h": 120 },
+      "source": "vision"
+    }
+  ],
+  "history": [
+    {
+      "action": { "action": "scroll", "targetId": "page", "value": null },
+      "outcome": "ok"
+    }
+  ],
+  "image": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+}

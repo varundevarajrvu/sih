@@ -1,0 +1,548 @@
+{
+  "bench": "v2-vision",
+  "phase": "V2 vision-v2",
+  "date": "2026-09-24T14:01:02.906Z",
+  "machine": {
+    "platform": "win32",
+    "osRelease": "10.0.26200",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i5-1334U",
+    "cpuCount": 12,
+    "totalMemGB": 16.8
+  },
+  "visionModel": "ultraface",
+  "coldLoad": {
+    "type": "PREWARM_STATUS",
+    "status": "warm",
+    "startedAt": 1790258464923,
+    "finishedAt": 1790258466762,
+    "elapsedMs": 1239,
+    "error": null
+  },
+  "warmLatencyDemoFace": {
+    "samples": [
+      {
+        "roundTripMs": 75.79999995231628,
+        "inferenceMs": 38.199999928474426,
+        "modelLoadMs": 0,
+        "pipelineWasAlreadyLoaded": true,
+        "device": "wasm",
+        "boxesCount": 1,
+        "topScore": 0.9999998807907104,
+        "tiledPassUsed": false,
+        "visionModel": "ultraface"
+      },
+      {
+        "roundTripMs": 67.19999992847443,
+        "inferenceMs": 38.10000002384186,
+        "modelLoadMs": 0,
+        "pipelineWasAlreadyLoaded": true,
+        "device": "wasm",
+        "boxesCount": 1,
+        "topScore": 0.9999998807907104,
+        "tiledPassUsed": false,
+        "visionModel": "ultraface"
+      },
+      {
+        "roundTripMs": 61.5,
+        "inferenceMs": 32.89999997615814,
+        "modelLoadMs": 0,
+        "pipelineWasAlreadyLoaded": true,
+        "device": "wasm",
+        "boxesCount": 1,
+        "topScore": 0.9999998807907104,
+        "tiledPassUsed": false,
+        "visionModel": "ultraface"
+      },
+      {
+        "roundTripMs": 60.799999952316284,
+        "inferenceMs": 32.700000047683716,
+        "modelLoadMs": 0,
+        "pipelineWasAlreadyLoaded": true,
+        "device": "wasm",
+        "boxesCount": 1,
+        "topScore": 0.9999998807907104,
+        "tiledPassUsed": false,
+        "visionModel": "ultraface"
+      },
+      {
+        "roundTripMs": 56.09999990463257,
+        "inferenceMs": 30.40000009536743,
+        "modelLoadMs": 0,
+        "pipelineWasAlreadyLoaded": true,
+        "device": "wasm",
+        "boxesCount": 1,
+        "topScore": 0.9999998807907104,
+        "tiledPassUsed": false,
+        "visionModel": "ultraface"
+      },
+      {
+        "roundTripMs": 64.60000002384186,
+        "inferenceMs": 34.60000002384186,
+        "modelLoadMs": 0,
+        "pipelineWasAlreadyLoaded": true,
+        "device": "wasm",
+        "boxesCount": 1,
+        "topScore": 0.9999998807907104,
+        "tiledPassUsed": false,
+        "visionModel": "ultraface"
+      }
+    ],
+    "inferenceMsIncludingFirst": {
+      "p50": 32.89999997615814,
+      "p95": 38.199999928474426,
+      "samples": [
+        38.199999928474426,
+        38.10000002384186,
+        32.89999997615814,
+        32.700000047683716,
+        30.40000009536743,
+        34.60000002384186
+      ]
+    },
+    "inferenceMsExcludingFirst": {
+      "p50": 32.89999997615814,
+      "p95": 38.10000002384186,
+      "samples": [
+        38.10000002384186,
+        32.89999997615814,
+        32.700000047683716,
+        30.40000009536743,
+        34.60000002384186
+      ]
+    },
+    "demoFaceDetectedEveryRun": true,
+    "topScoreRange": [
+      0.9999998807907104,
+      0.9999998807907104
+    ]
+  },
+  "scaleLadder": [
+    {
+      "scalePx": 40,
+      "fileName": "face-40px.png",
+      "runs": [
+        {
+          "roundTripMs": 166.79999995231628,
+          "inferenceMs": 154.10000002384186,
+          "boxesCount": 0,
+          "topScore": null,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 179.60000002384186,
+          "inferenceMs": 168,
+          "boxesCount": 0,
+          "topScore": null,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 186.89999997615814,
+          "inferenceMs": 161.89999997615814,
+          "boxesCount": 0,
+          "topScore": null,
+          "tiledPassUsed": true
+        }
+      ],
+      "detectedAnyRun": false,
+      "detectedEveryRun": false,
+      "tiledPassFiredAnyRun": true,
+      "inferenceMsP50": 161.89999997615814
+    },
+    {
+      "scalePx": 60,
+      "fileName": "face-60px.png",
+      "runs": [
+        {
+          "roundTripMs": 164.60000002384186,
+          "inferenceMs": 151.29999995231628,
+          "boxesCount": 0,
+          "topScore": null,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 159.89999997615814,
+          "inferenceMs": 147.39999997615814,
+          "boxesCount": 0,
+          "topScore": null,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 147.30000007152557,
+          "inferenceMs": 139.39999997615814,
+          "boxesCount": 0,
+          "topScore": null,
+          "tiledPassUsed": true
+        }
+      ],
+      "detectedAnyRun": false,
+      "detectedEveryRun": false,
+      "tiledPassFiredAnyRun": true,
+      "inferenceMsP50": 147.39999997615814
+    },
+    {
+      "scalePx": 80,
+      "fileName": "face-80px.png",
+      "runs": [
+        {
+          "roundTripMs": 42,
+          "inferenceMs": 30,
+          "boxesCount": 1,
+          "topScore": 0.9226194024085999,
+          "tiledPassUsed": false
+        },
+        {
+          "roundTripMs": 39.199999928474426,
+          "inferenceMs": 27.899999976158142,
+          "boxesCount": 1,
+          "topScore": 0.9226194024085999,
+          "tiledPassUsed": false
+        },
+        {
+          "roundTripMs": 38,
+          "inferenceMs": 27.399999976158142,
+          "boxesCount": 1,
+          "topScore": 0.9226194024085999,
+          "tiledPassUsed": false
+        }
+      ],
+      "detectedAnyRun": true,
+      "detectedEveryRun": true,
+      "tiledPassFiredAnyRun": false,
+      "inferenceMsP50": 27.899999976158142
+    },
+    {
+      "scalePx": 96,
+      "fileName": "face-96px.png",
+      "runs": [
+        {
+          "roundTripMs": 39.59999990463257,
+          "inferenceMs": 27,
+          "boxesCount": 1,
+          "topScore": 0.985247015953064,
+          "tiledPassUsed": false
+        },
+        {
+          "roundTripMs": 43.60000002384186,
+          "inferenceMs": 30.899999976158142,
+          "boxesCount": 1,
+          "topScore": 0.985247015953064,
+          "tiledPassUsed": false
+        },
+        {
+          "roundTripMs": 39.60000002384186,
+          "inferenceMs": 27.800000071525574,
+          "boxesCount": 1,
+          "topScore": 0.985247015953064,
+          "tiledPassUsed": false
+        }
+      ],
+      "detectedAnyRun": true,
+      "detectedEveryRun": true,
+      "tiledPassFiredAnyRun": false,
+      "inferenceMsP50": 27.800000071525574
+    },
+    {
+      "scalePx": 120,
+      "fileName": "face-120px.png",
+      "runs": [
+        {
+          "roundTripMs": 49.200000047683716,
+          "inferenceMs": 31.300000071525574,
+          "boxesCount": 1,
+          "topScore": 0.9905836582183838,
+          "tiledPassUsed": false
+        },
+        {
+          "roundTripMs": 40.60000002384186,
+          "inferenceMs": 27.700000047683716,
+          "boxesCount": 1,
+          "topScore": 0.9905836582183838,
+          "tiledPassUsed": false
+        },
+        {
+          "roundTripMs": 39.299999952316284,
+          "inferenceMs": 27.899999976158142,
+          "boxesCount": 1,
+          "topScore": 0.9905836582183838,
+          "tiledPassUsed": false
+        }
+      ],
+      "detectedAnyRun": true,
+      "detectedEveryRun": true,
+      "tiledPassFiredAnyRun": false,
+      "inferenceMsP50": 27.899999976158142
+    },
+    {
+      "scalePx": 200,
+      "fileName": "face-200px.png",
+      "runs": [
+        {
+          "roundTripMs": 65.5,
+          "inferenceMs": 43.699999928474426,
+          "boxesCount": 1,
+          "topScore": 0.9992856383323669,
+          "tiledPassUsed": false
+        },
+        {
+          "roundTripMs": 81.10000002384186,
+          "inferenceMs": 52.700000047683716,
+          "boxesCount": 1,
+          "topScore": 0.9992856383323669,
+          "tiledPassUsed": false
+        },
+        {
+          "roundTripMs": 74.10000002384186,
+          "inferenceMs": 43.199999928474426,
+          "boxesCount": 1,
+          "topScore": 0.9992856383323669,
+          "tiledPassUsed": false
+        }
+      ],
+      "detectedAnyRun": true,
+      "detectedEveryRun": true,
+      "tiledPassFiredAnyRun": false,
+      "inferenceMsP50": 43.699999928474426
+    }
+  ],
+  "falsePositives": [
+    {
+      "fileName": "no-face-testpage.png",
+      "runs": [
+        {
+          "roundTripMs": 204.60000002384186,
+          "inferenceMs": 177.20000004768372,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 190.5,
+          "inferenceMs": 165.29999995231628,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 170.19999992847443,
+          "inferenceMs": 151.5,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        }
+      ],
+      "falsePositiveAnyRun": false
+    },
+    {
+      "fileName": "no-face-wikipedia.png",
+      "runs": [
+        {
+          "roundTripMs": 172.29999995231628,
+          "inferenceMs": 147.80000007152557,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 169.69999992847443,
+          "inferenceMs": 146.69999992847443,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 219.39999997615814,
+          "inferenceMs": 196.20000004768372,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        }
+      ],
+      "falsePositiveAnyRun": false
+    },
+    {
+      "fileName": "no-face-loginform.png",
+      "runs": [
+        {
+          "roundTripMs": 216.60000002384186,
+          "inferenceMs": 194.89999997615814,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 180.20000004768372,
+          "inferenceMs": 159.20000004768372,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        },
+        {
+          "roundTripMs": 177.40000009536743,
+          "inferenceMs": 161,
+          "boxesCount": 0,
+          "tiledPassUsed": true
+        }
+      ],
+      "falsePositiveAnyRun": false
+    }
+  ],
+  "tiledPass": {
+    "enabled": true,
+    "samples": [
+      {
+        "source": "face-40px.png",
+        "scalePx": 40,
+        "runs": [
+          {
+            "roundTripMs": 166.79999995231628,
+            "inferenceMs": 154.10000002384186,
+            "boxesCount": 0,
+            "topScore": null,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 179.60000002384186,
+            "inferenceMs": 168,
+            "boxesCount": 0,
+            "topScore": null,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 186.89999997615814,
+            "inferenceMs": 161.89999997615814,
+            "boxesCount": 0,
+            "topScore": null,
+            "tiledPassUsed": true
+          }
+        ]
+      },
+      {
+        "source": "face-60px.png",
+        "scalePx": 60,
+        "runs": [
+          {
+            "roundTripMs": 164.60000002384186,
+            "inferenceMs": 151.29999995231628,
+            "boxesCount": 0,
+            "topScore": null,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 159.89999997615814,
+            "inferenceMs": 147.39999997615814,
+            "boxesCount": 0,
+            "topScore": null,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 147.30000007152557,
+            "inferenceMs": 139.39999997615814,
+            "boxesCount": 0,
+            "topScore": null,
+            "tiledPassUsed": true
+          }
+        ]
+      },
+      {
+        "source": "no-face-testpage.png",
+        "runs": [
+          {
+            "roundTripMs": 204.60000002384186,
+            "inferenceMs": 177.20000004768372,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 190.5,
+            "inferenceMs": 165.29999995231628,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 170.19999992847443,
+            "inferenceMs": 151.5,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          }
+        ]
+      },
+      {
+        "source": "no-face-wikipedia.png",
+        "runs": [
+          {
+            "roundTripMs": 172.29999995231628,
+            "inferenceMs": 147.80000007152557,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 169.69999992847443,
+            "inferenceMs": 146.69999992847443,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 219.39999997615814,
+            "inferenceMs": 196.20000004768372,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          }
+        ]
+      },
+      {
+        "source": "no-face-loginform.png",
+        "runs": [
+          {
+            "roundTripMs": 216.60000002384186,
+            "inferenceMs": 194.89999997615814,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 180.20000004768372,
+            "inferenceMs": 159.20000004768372,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          },
+          {
+            "roundTripMs": 177.40000009536743,
+            "inferenceMs": 161,
+            "boxesCount": 0,
+            "tiledPassUsed": true
+          }
+        ]
+      }
+    ],
+    "decision": "ADOPTED (tiled second pass stays ON -- measured warm p95 <= 300ms gate)",
+    "inferenceMsWhenFired": {
+      "p50": 159.20000004768372,
+      "p95": 196.20000004768372,
+      "n": 15,
+      "samples": [
+        154.10000002384186,
+        168,
+        161.89999997615814,
+        151.29999995231628,
+        147.39999997615814,
+        139.39999997615814,
+        177.20000004768372,
+        165.29999995231628,
+        151.5,
+        147.80000007152557,
+        146.69999992847443,
+        196.20000004768372,
+        194.89999997615814,
+        159.20000004768372,
+        161
+      ]
+    },
+    "gateMs": 300,
+    "recallImprovement": [
+      {
+        "scalePx": 40,
+        "detectedWithTiledPass": false
+      },
+      {
+        "scalePx": 60,
+        "detectedWithTiledPass": false
+      }
+    ]
+  },
+  "notes": [
+    "demo-face round trip #0 (first explicit call, may still be partially warming up): {\"roundTripMs\":75.79999995231628,\"inferenceMs\":38.199999928474426,\"modelLoadMs\":0,\"pipelineWasAlreadyLoaded\":true,\"device\":\"wasm\",\"boxesCount\":1,\"topScore\":0.9999998807907104,\"tiledPassUsed\":false,\"visionModel\":\"ultraface\"}"
+  ],
+  "crashed": false,
+  "extensionId": "agianbhjjbcomgfmnofajkkaciafoboi"
+}
