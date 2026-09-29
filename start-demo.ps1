@@ -203,9 +203,9 @@ if (Test-Port 8000) {
     Start-Process powershell -ArgumentList @(
         "-NoExit", "-Command",
         "cd '$root\server'; $envPrefix & '$venvPython' -m uvicorn main:app --host 127.0.0.1 --port 8000"
-    ) -WindowStyle Normal
+    ) -WindowStyle Normal -PassThru | Set-Variable -Name win8000
     $apiPid = Wait-ForListenerPid -Port 8000
-    if ($apiPid) { $started += [pscustomobject]@{ port = 8000; label = "api server"; pid = $apiPid } }
+    if ($apiPid) { $started += [pscustomobject]@{ port = 8000; label = "api server"; pid = $apiPid; windowPid = $win8000.Id } }
     Write-Host "  [8000] api server starting (v1 backend=$Backend, v2 planner=$Planner/$vlmBackendV2)..." -ForegroundColor Gray
 }
 
@@ -215,9 +215,9 @@ if (Test-Port 5500) {
 } else {
     Start-Process powershell -ArgumentList @(
         "-NoExit", "-Command", "cd '$root\demo'; python -m http.server 5500"
-    ) -WindowStyle Minimized
+    ) -WindowStyle Minimized -PassThru | Set-Variable -Name win5500
     $p5500 = Wait-ForListenerPid -Port 5500
-    if ($p5500) { $started += [pscustomobject]@{ port = 5500; label = "demo pages"; pid = $p5500 } }
+    if ($p5500) { $started += [pscustomobject]@{ port = 5500; label = "demo pages"; pid = $p5500; windowPid = $win5500.Id } }
     Write-Host "  [5500] demo pages starting..." -ForegroundColor Gray
 }
 
@@ -230,9 +230,9 @@ if (Test-Port 5501) {
 } else {
     Start-Process powershell -ArgumentList @(
         "-NoExit", "-Command", "cd '$root\demo\cross-origin'; python -m http.server 5501"
-    ) -WindowStyle Minimized
+    ) -WindowStyle Minimized -PassThru | Set-Variable -Name win5501
     $p5501 = Wait-ForListenerPid -Port 5501
-    if ($p5501) { $started += [pscustomobject]@{ port = 5501; label = "cross-origin pages"; pid = $p5501 } }
+    if ($p5501) { $started += [pscustomobject]@{ port = 5501; label = "cross-origin pages"; pid = $p5501; windowPid = $win5501.Id } }
     Write-Host "  [5501] cross-origin pages starting..." -ForegroundColor Gray
 }
 
@@ -242,9 +242,9 @@ if (Test-Port 8757) {
 } else {
     Start-Process powershell -ArgumentList @(
         "-NoExit", "-Command", "cd '$root'; & '$nerPython' -m uvicorn ner.app:app --host 127.0.0.1 --port 8757"
-    ) -WindowStyle Minimized
+    ) -WindowStyle Minimized -PassThru | Set-Variable -Name win8757
     $nerPid = Wait-ForListenerPid -Port 8757
-    if ($nerPid) { $started += [pscustomobject]@{ port = 8757; label = "ner service"; pid = $nerPid } }
+    if ($nerPid) { $started += [pscustomobject]@{ port = 8757; label = "ner service"; pid = $nerPid; windowPid = $win8757.Id } }
     Write-Host "  [8757] ner service starting (cold load ~20s -- waiting for it below)..." -ForegroundColor Gray
 }
 

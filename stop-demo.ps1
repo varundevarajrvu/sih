@@ -53,6 +53,22 @@ if ($tracked.Count -eq 0) {
     exit 0
 }
 
+# Closes the `powershell -NoExit` window start-demo.ps1 opened for this entry
+# (recorded as windowPid). Only closes it if it is still a powershell process
+# whose command line names this entry's port -- never an arbitrary process
+# that happens to have reused the PID.
+function Close-DemoWindow($entry) {
+    if (-not $entry.windowPid) { return }
+    $w = Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f [int]$entry.windowPid) -ErrorAction SilentlyContinue
+    if (-not $w) { return }
+    if ($w.Name -ne "powershell.exe" -or $w.CommandLine -notmatch [regex]::Escape([string]$entry.port)) {
+        Write-Host ("   ??   {0,-5} window pid {1} is not the demo window any more -- left alone" -f $entry.port, $entry.windowPid) -ForegroundColor Yellow
+        return
+    }
+    Stop-Process -Id $entry.windowPid -Force -ErrorAction SilentlyContinue
+    Write-Host ("   OK   {0,-5} closed its demo window (pid {1})" -f $entry.port, $entry.windowPid) -ForegroundColor Green
+}
+
 foreach ($entry in $tracked) {
     $port = $entry.port
     $label = $entry.label
@@ -64,6 +80,7 @@ foreach ($entry in $tracked) {
     $proc = Get-Process -Id $trackedPid -ErrorAction SilentlyContinue
     if (-not $proc) {
         Write-Host ("   --   {0,-5} {1} (tracked pid {2} is no longer running -- nothing to stop)" -f $port, $label, $trackedPid) -ForegroundColor DarkGray
+        Close-DemoWindow $entry
         continue
     }
 
@@ -84,6 +101,7 @@ foreach ($entry in $tracked) {
     } catch {
         Write-Host ("   FAIL {0,-5} {1} (pid {2}) -- {3}" -f $port, $label, $trackedPid, $_.Exception.Message) -ForegroundColor Red
     }
+    Close-DemoWindow $entry
 }
 
 # Tracking is single-use -- a stale file from a run that's already been
