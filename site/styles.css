@@ -183,6 +183,7 @@ code { font-family: var(--mono); font-size: 0.88em; }
   border: 1px solid currentColor;
 }
 .badge.blocked { color: #8C4A38; }
+.badge.pass { color: var(--pass); }
 .badge-row { margin-top: var(--space-md); }
 
 .code-block {

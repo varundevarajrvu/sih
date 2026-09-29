@@ -188,7 +188,7 @@
 
     function render(entries) {
       if (!entries.length) {
-        rows.innerHTML = '<tr class="live-empty"><td colspan="7">' +
+        rows.innerHTML = '<tr class="live-empty"><td colspan="8">' +
           "Connected — waiting for the first request. Run the agent loop." +
           "</td></tr>";
         return;
@@ -197,8 +197,10 @@
         var isNew = e.seq > lastSeq;
         var time = e.at.slice(11, 19);
         var types = e.regionTypes && e.regionTypes.length ? e.regionTypes.join(" · ") : "—";
+        var mode = e.mode || "image";
         return '<tr class="' + (isNew ? "live-row-new" : "") + '">' +
           '<td><span class="live-seq">#' + esc(e.seq) + "</span> " + esc(time) + "</td>" +
+          '<td><span class="badge ' + (mode === "semantic" ? "pass" : "") + '">' + esc(mode) + "</span></td>" +
           "<td>" + esc(e.domNodes) + "</td>" +
           "<td>" + esc(e.sensitiveNodes) + "</td>" +
           "<td>" + esc(e.redactedRegions) +
@@ -241,7 +243,7 @@
           misses++;
           setState("is-offline", "Server not reachable at 127.0.0.1:8000 — start it to see live requests");
           if (misses === 1) {
-            rows.innerHTML = '<tr class="live-empty"><td colspan="7">' +
+            rows.innerHTML = '<tr class="live-empty"><td colspan="8">' +
               "This panel only fills in while the local server is running and the extension is " +
               "working. It has nothing to show otherwise, and does not pretend to." +
               "</td></tr>";
