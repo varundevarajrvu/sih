@@ -569,7 +569,7 @@ def analyze_v2(
     # don't act on it.
     safe_value = model_action.value if verdict == ServerVerdict.ACCEPT else None
 
-    return ActionResponseV2(
+    response = ActionResponseV2(
         action=model_action.action,
         targetId=model_action.targetId,
         value=safe_value,
@@ -579,3 +579,8 @@ def analyze_v2(
         serverVerdict=verdict,
         reason=reason,
     )
+    # Recorded only after the payload cleared C6's leak re-check and the
+    # action cleared schema validation — same placement rule as v1's
+    # live_feed.feed.record() above. Counts and closed-enum values only.
+    live_feed.feed.record_v2(request, response)
+    return response

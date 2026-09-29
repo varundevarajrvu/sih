@@ -66,6 +66,12 @@ class RequestSummary:
     imageBytes: int
     action: str                   # ActionType value — a closed enum
     leakCheck: str                # always "passed"; a failure never reaches here
+    # v2 addition (2026-09-29): "semantic" (no pixels at all) or "image" (a
+    # redacted screenshot was attached, by explicit escalation). Defaults to
+    # "image" for v1 entries, which have no semantic/image distinction — v1's
+    # architecture always captures and redacts an image, so that default
+    # describes v1 accurately rather than inventing a third state for it.
+    mode: str = "image"
 
 
 class LiveFeed:
@@ -116,6 +122,48 @@ class LiveFeed:
                 imageBytes=len(image),
                 action=_val(getattr(action, "action", "")),
                 leakCheck="passed",
+            )
+            self._entries.append(summary)
+            return summary
+
+    def record_v2(self, request: Any, action: Any) -> RequestSummary:
+        """Same discipline as record() above (counts and closed-enum values
+        only — see the module docstring), shaped from a v2 AnalyzeRequestV2 /
+        ActionResponseV2 pair instead of v1's AnalyzeRequest / ActionResponse.
+
+        Reuses the SAME RequestSummary dataclass and the SAME /recent
+        endpoint and showcase-site table as v1 — v2's `elements`/`regions`
+        map onto v1's `domSnapshot`/`redactedRegions` concepts closely enough
+        that no new frontend code is needed, and a visitor sees both
+        pipelines' traffic in one place. `mode` is the one field that
+        actually differs in kind: "semantic" here means literally 0 image
+        bytes were in the request, which record() below always sets to
+        "image" since v1 has no semantic path at all.
+        """
+        elements = list(getattr(request, "elements", []) or [])
+        regions = list(getattr(request, "regions", []) or [])
+
+        def _val(x: Any) -> str:
+            return str(getattr(x, "value", x))
+
+        image = getattr(request, "image", "") or ""
+        mode = _val(getattr(request, "mode", "image"))
+
+        with self._lock:
+            self._seq += 1
+            summary = RequestSummary(
+                seq=self._seq,
+                at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                domNodes=len(elements),
+                sensitiveNodes=sum(1 for e in elements if getattr(e, "sensitive", False)),
+                redactedRegions=len(regions),
+                domSourced=sum(1 for r in regions if _val(getattr(r, "source", "")) == "dom"),
+                visionSourced=sum(1 for r in regions if _val(getattr(r, "source", "")) == "vision"),
+                regionTypes=tuple(sorted({_val(getattr(r, "kind", "other")) for r in regions})),
+                imageBytes=len(image),
+                action=_val(getattr(action, "action", "")),
+                leakCheck="passed",
+                mode=mode,
             )
             self._entries.append(summary)
             return summary

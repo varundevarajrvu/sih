@@ -103,7 +103,9 @@ def test_request_summary_has_no_free_text_field():
     A future field typed `str` that is NOT one of those is exactly how this
     endpoint would quietly become a leak — so the allowlist is explicit.
     """
-    allowed_str_fields = {"at", "action", "leakCheck", "regionTypes"}
+    # "mode" added 2026-09-29 (v2): a closed value, "semantic" or "image" —
+    # the literal fact of whether an image was attached, never page content.
+    allowed_str_fields = {"at", "action", "leakCheck", "regionTypes", "mode"}
     int_fields = {
         "seq", "domNodes", "sensitiveNodes", "redactedRegions",
         "domSourced", "visionSourced", "imageBytes",
@@ -145,3 +147,74 @@ def test_a_rejected_request_never_reaches_the_feed(load_fixture):
     if resp.status_code == 400:
         assert client.get("/recent").json()["entries"] == []
         assert SENTINEL not in client.get("/recent").text
+
+
+# ---------------------------------------------------------------------------
+# v2 (2026-09-29): /v2/analyze writes into the SAME feed via record_v2(),
+# reusing RequestSummary's counts-only discipline rather than inventing a
+# second endpoint or a second free-text audit to maintain.
+# ---------------------------------------------------------------------------
+
+
+def test_v2_semantic_request_is_recorded_with_mode_semantic(load_fixture):
+    _reset()
+    data = load_fixture("v2/analyze/valid_semantic.json")
+    resp = client.post("/v2/analyze", json=data)
+    assert resp.status_code == 200, resp.text
+
+    entries = client.get("/recent").json()["entries"]
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["mode"] == "semantic"
+    assert e["imageBytes"] == 0
+    assert e["domNodes"] == len(data["elements"])
+    assert e["leakCheck"] == "passed"
+
+
+def test_v2_image_request_is_recorded_with_mode_image(load_fixture):
+    _reset()
+    data = load_fixture("v2/analyze/valid_image.json")
+    resp = client.post("/v2/analyze", json=data)
+    assert resp.status_code == 200, resp.text
+
+    entries = client.get("/recent").json()["entries"]
+    assert entries[0]["mode"] == "image"
+    assert entries[0]["imageBytes"] > 0
+
+
+def test_v1_entries_default_mode_to_image(load_fixture):
+    # v1 has no semantic/image distinction -- it always captures and redacts
+    # an image, so "image" describes it accurately rather than inventing a
+    # third state.
+    _reset()
+    client.post("/analyze", json=load_fixture("valid_request.json"))
+    assert client.get("/recent").json()["entries"][0]["mode"] == "image"
+
+
+def test_v1_and_v2_entries_share_one_feed_newest_first(load_fixture):
+    _reset()
+    client.post("/analyze", json=load_fixture("valid_request.json"))
+    client.post("/v2/analyze", json=load_fixture("v2/analyze/valid_semantic.json"))
+
+    entries = client.get("/recent").json()["entries"]
+    assert len(entries) == 2
+    assert entries[0]["seq"] == 2  # newest first
+    assert entries[0]["mode"] == "semantic"
+    assert entries[1]["mode"] == "image"
+
+
+def test_v2_recent_never_echoes_free_text_from_the_request(load_fixture):
+    _reset()
+    data = load_fixture("v2/analyze/valid_semantic.json")
+    data["taskGoal"] = f"fill in {SENTINEL}"
+    for el in data["elements"]:
+        el["label"] = SENTINEL
+
+    posted = client.post("/v2/analyze", json=data)
+    assert posted.status_code in (200, 400), posted.status_code
+
+    resp = client.get("/recent")
+    assert SENTINEL not in resp.text
+    assert SENTINEL.encode() not in resp.content
+    assert "taskGoal" not in resp.text
+    assert '"label"' not in resp.text
