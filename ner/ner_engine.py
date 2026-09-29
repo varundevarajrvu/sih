@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional, Protocol
 from . import config
 from . import labels as labels_mod
 from .cache import LRUSpanCache, text_key
-from .chunking import chunk_text
+from .chunking import chunk_text, find_proper_noun_probes
 
 
 class InferenceModel(Protocol):
@@ -113,7 +113,11 @@ def detect_entities_single(
         return []
     if batch_size is None:
         batch_size = config.MODEL_BATCH_SIZE
-    chunks = chunk_text(text)
+    # chunk_text() covers the WHOLE text (primary coverage); the proper-noun
+    # probes below are additive recall for names GLiNER misses in flowing
+    # prose (see chunking.py's find_proper_noun_probes docstring for the
+    # measured evidence) -- both go into the SAME batched inference() call.
+    chunks = chunk_text(text) + find_proper_noun_probes(text)
     chunk_texts = [c.text for c in chunks]
     raw_results = model.inference(
         chunk_texts, labels_mod.GLINER_LABELS, threshold=labels_mod.PREDICT_FLOOR, batch_size=batch_size
@@ -166,7 +170,12 @@ def detect_entities(
         job_owner: List[int] = []
         job_offset: List[int] = []
         for i in pending_indices:
-            for c in chunk_text(texts[i]):
+            # Same primary-coverage-plus-probes shape as detect_entities_single
+            # above -- one text's chunks and its proper-noun probes both land
+            # in this one batched inference() call alongside every other
+            # pending text's, so the "ONE model call" property (module
+            # docstring) still holds regardless of how many texts are pending.
+            for c in chunk_text(texts[i]) + find_proper_noun_probes(texts[i]):
                 job_chunks.append(c.text)
                 job_owner.append(i)
                 job_offset.append(c.offset)

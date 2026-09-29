@@ -13,10 +13,13 @@ if str(REPO_ROOT) not in sys.path:
 
 from ner.chunking import (  # noqa: E402
     GLINER_MAX_LEN,
+    MAX_PROBES_PER_TEXT,
     OVERLAP_WORDS,
     TARGET_GLINER_WORDS,
+    Chunk,
     _gliner_word_count,
     chunk_text,
+    find_proper_noun_probes,
 )
 
 
@@ -115,3 +118,68 @@ def test_gliner_word_count_treats_punctuation_as_separate_tokens():
     # Hyphenated/underscored words stay one token.
     assert _gliner_word_count("laptop-stand") == 1
     assert _gliner_word_count("plain prose text") == 3
+
+
+# ---------------------------------------------------------------------------
+# find_proper_noun_probes -- see chunking.py's docstring above the function
+# for the live-measured evidence (score 0.023 embedded vs 0.360 isolated)
+# this exists to recover. These tests check the pure offset/slicing logic
+# only; the actual recall improvement is confirmed against the real model
+# in ner/bench.py, not here (this file stays torch-free by design).
+# ---------------------------------------------------------------------------
+
+
+def test_probe_finds_the_full_run_and_its_trailing_suffixes():
+    text = "Contact Rahul Verma at rahul.v@example.com or +91 98450 12345"
+    probes = find_proper_noun_probes(text)
+    texts = [p.text for p in probes]
+    assert "Contact Rahul Verma" in texts  # the full 3-word run
+    assert "Rahul Verma" in texts  # its trailing 2-word suffix
+
+
+def test_probe_offsets_are_exact_slices_of_the_original_string():
+    text = "Invoice billed to Deepak Nair, GSTIN 29ABCDE1234F1Z5, on 12/03/2026."
+    probes = find_proper_noun_probes(text)
+    for p in probes:
+        assert text[p.offset : p.offset + len(p.text)] == p.text
+
+
+def test_two_word_run_produces_no_duplicate_probe():
+    # A bare 2-word run's "full run" and "trailing 2-word suffix" are the
+    # same span -- must appear exactly once, not twice.
+    text = "My name is Rahul Verma"
+    probes = find_proper_noun_probes(text)
+    texts = [p.text for p in probes]
+    assert texts.count("Rahul Verma") == 1
+
+
+def test_no_capitalized_run_means_no_probes():
+    assert find_proper_noun_probes("click the next button to continue") == []
+    assert find_proper_noun_probes("") == []
+
+
+def test_single_capitalized_word_is_not_a_probe_candidate():
+    # A lone Title-Case word ("Contact", "Click", "Ship") is exactly the
+    # noisy case this function's 2-4-word-run requirement is designed to
+    # exclude -- it is far too common in ordinary UI/marketing prose to be
+    # a useful proper-noun signal on its own.
+    probes = find_proper_noun_probes("Contact us for Support")
+    assert probes == []
+
+
+def test_probe_count_is_bounded_on_a_pathological_wall_of_title_case_text():
+    text = " ".join(f"Alpha Beta{i}" for i in range(200))
+    probes = find_proper_noun_probes(text)
+    assert len(probes) <= MAX_PROBES_PER_TEXT
+
+
+def test_probes_are_appended_after_the_primary_chunk_in_detect_entities_single():
+    # Integration point: detect_entities_single's job list is
+    # chunk_text(text) + find_proper_noun_probes(text) -- the primary
+    # chunk(s) always come first, so a caller inspecting chunk order can
+    # rely on index 0 being real coverage, not a probe.
+    text = "Hi, I am Priya Sharma and I need help with my order"
+    primary = chunk_text(text)
+    probes = find_proper_noun_probes(text)
+    assert primary[0].text == text  # short text: single whole-text chunk
+    assert any(p.text == "Priya Sharma" for p in probes)

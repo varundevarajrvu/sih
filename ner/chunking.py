@@ -74,6 +74,89 @@ class Chunk(NamedTuple):
     offset: int  # char offset of `text` within the original string
 
 
+# ---------------------------------------------------------------------------
+# find_proper_noun_probes -- recovers names GLiNER misses when they sit next
+# to other structured PII in flowing prose.
+#
+# ROOT CAUSE (found empirically 2026-09-29, not assumed -- probed live
+# against urchade/gliner_multi_pii-v1 on the fixture that failed
+# ner/bench.py's recall check: f06_multi_entity, "Contact Rahul Verma at
+# rahul.v@example.com or +91 98450 12345"):
+#   "Rahul Verma"                                              -> 0.360
+#   "Contact Rahul Verma"                                      -> 0.109
+#   "Contact Rahul Verma at rahul.v@example.com"                -> 0.039
+#   "Contact Rahul Verma at rahul.v@example.com or +91 ..."     -> 0.023
+# It is NOT a label-competition effect (dropping "email"/"phone number"
+# from GLINER_LABELS made no difference -- tested, not assumed either).
+# The model's confidence in a name span degrades with unrelated nearby
+# text -- email/phone values, and even a single leading verb like
+# "Contact" -- regardless of what other labels are requested. The PERSONNAME
+# floor is 0.12 (labels.py); 0.023 misses it by 5x, 0.109 misses it by a
+# hair, and the same name isolated clears it by 3x.
+#
+# FIX: in addition to the normal budget-based chunk(s), also probe every
+# run of 2-4 consecutive Title-Case words in isolation (and its trailing
+# 2- and 3-word suffixes, since a leading word like "Contact" or "Invoice
+# billed to" is exactly what depresses the score -- see f06 above). These
+# probe chunks are added to the SAME batched model.inference() call
+# ner_engine.py already makes (see that module's docstring) -- no extra
+# round trip, just a few more short items in one existing call. Confirmed
+# live (not assumed) to also recover "Deepak Nair" from "Invoice billed to
+# Deepak Nair, GSTIN 29ABCDE1234F1Z5, on 12/03/2026." (main pass missed it
+# entirely) and to produce ZERO new person-name detections on five PII-free
+# control sentences containing their own capitalized runs ("Secure
+# Checkout", "United Kingdom Standard Shipping", "Free Delivery" ...).
+#
+# Bounded: MAX_PROBES_PER_TEXT caps the total so a pathological wall of
+# Title Case text (a table of proper nouns, say) cannot blow up latency.
+# Probes beyond the cap are simply not added -- the normal chunk(s) still
+# cover the whole text either way, so this only ever narrows the RECALL
+# improvement on an extreme input, never removes primary coverage.
+# ---------------------------------------------------------------------------
+#  Inter-word gaps use [ \t]+ (never \s+ -- which would also cross a
+#  newline). A real name or address never spans a line break; a field-label
+#  layout like "Forum Mall\nAddress:" does, and \s+ was confirmed live
+#  (2026-09-29, f10_checkout_blob) to glue "Forum Mall" + "Address" into one
+#  spurious run scoring 0.8 for ADDRESS -- over-redaction, not a leak (the
+#  safe direction), but worth excluding cheaply since real names never need it.
+_PROPER_RUN_RE = re.compile(
+    r"\b[A-Z][a-zA-Z]+(?:['-][A-Za-z]+)?(?:[ \t]+[A-Z][a-zA-Z]+(?:['-][A-Za-z]+)?){1,3}\b"
+)
+MAX_PROBES_PER_TEXT = 24
+
+
+def find_proper_noun_probes(text: str) -> List[Chunk]:
+    """Every run of 2-4 consecutive Title-Case words in `text`, plus each
+    run's trailing 2- and 3-word suffix, as its own short Chunk -- offsets
+    computed by slicing the ORIGINAL string (never by reassembling words
+    with `.join()`, which would silently break on multi-space or tab
+    whitespace in real page text). Order is longest-run-first, so if
+    MAX_PROBES_PER_TEXT truncates the list, the fuller-context probes are
+    the ones kept.
+    """
+    if not text:
+        return []
+    probes: List[Chunk] = []
+    seen: set = set()
+    for m in _PROPER_RUN_RE.finditer(text):
+        run_start = m.start()
+        run_words = [(wm.start(), wm.end()) for wm in _WORD_RE.finditer(m.group(0))]
+        suffix_lengths = [len(run_words)]
+        if len(run_words) >= 3:
+            suffix_lengths.append(3)
+        if len(run_words) >= 2:
+            suffix_lengths.append(2)
+        for n in suffix_lengths:
+            sub_start = run_start + run_words[len(run_words) - n][0]
+            sub_end = run_start + run_words[-1][1]
+            key = (sub_start, sub_end)
+            if key in seen:
+                continue
+            seen.add(key)
+            probes.append(Chunk(text=text[sub_start:sub_end], offset=sub_start))
+    return probes[:MAX_PROBES_PER_TEXT]
+
+
 def _gliner_word_count(text: str) -> int:
     return len(_GLINER_WORD_RE.findall(text))
 

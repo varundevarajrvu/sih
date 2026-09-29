@@ -321,5 +321,210 @@
     "diagnosis": "Two independent, now-understood problems, not a single mystery: (a) transient network stalls fetching very large blobs from this repo on this connection (resolved on retry -- attempt 4's trimmed 10-file fetch completed in 2m36s); (b) a GLiNER library behavior where from_pretrained(local_files_only=True) requires the CACHED snapshot to contain every file the repo publishes, not just the files inference reads, so a deliberately-trimmed cache (done specifically to avoid re-downloading a 1.27GB optimizer checkpoint never used for inference) is rejected as incomplete.",
     "not_attempted_further": "Per explicit instruction not to loop: a full untrimmed download (2.5GB, including the unused optimizer.pt) was not retried a further time; this benchmark is left incomplete rather than spending more retries chasing it.",
     "note": "Does NOT affect the production service or its primary benchmark above -- ner/app.py never depends on this script, and the primary model (urchade/gliner_multi_pii-v1) was never touched. Whoever picks this up: either (1) allow the full untrimmed download once with more time budget, or (2) patch this script to construct a GLiNER model instance directly from the local snapshot directory path (bypassing from_pretrained's repo-manifest completeness check entirely) rather than passing the repo id."
+  },
+  "recall_updated_2026_09_29": {
+    "reason": "find_proper_noun_probes added to ner/chunking.py + wired into ner_engine.py -- recovers names GLiNER misses next to other structured PII in flowing prose (root cause and evidence in chunking.py's docstring). Original 'recall' key above is kept as the pre-fix baseline (11/13); this key is the post-fix number.",
+    "total_expected": 13,
+    "total_matched": 13,
+    "recall": 1.0,
+    "per_fixture": [
+      {
+        "id": "f01_imperative_name",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 10,
+            "end": 24,
+            "label": "PERSONNAME",
+            "score": 0.6213699579238892,
+            "source": "ner"
+          },
+          {
+            "start": 10,
+            "end": 26,
+            "label": "PERSONNAME",
+            "score": 0.4656953811645508,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f02_declarative_name",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 9,
+            "end": 21,
+            "label": "PERSONNAME",
+            "score": 0.9473281502723694,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f03_address",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 8,
+            "end": 63,
+            "label": "ADDRESS",
+            "score": 0.4216863811016083,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f04_dob",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 25,
+            "label": "DOB",
+            "score": 0.9377723336219788,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f05_account_number",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 29,
+            "label": "ACCOUNTNUMBER",
+            "score": 0.989449143409729,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f06_multi_entity",
+        "expected_count": 3,
+        "matched_count": 3,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 8,
+            "end": 19,
+            "label": "PERSONNAME",
+            "score": 0.46839264035224915,
+            "source": "ner"
+          },
+          {
+            "start": 23,
+            "end": 42,
+            "label": "EMAIL",
+            "score": 0.9956786036491394,
+            "source": "ner"
+          },
+          {
+            "start": 46,
+            "end": 61,
+            "label": "PHONE",
+            "score": 0.9927593469619751,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f07_control_no_pii_a",
+        "expected_count": 0,
+        "matched_count": 0,
+        "missed": [],
+        "produced_spans": []
+      },
+      {
+        "id": "f08_control_no_pii_b",
+        "expected_count": 0,
+        "matched_count": 0,
+        "missed": [],
+        "produced_spans": []
+      },
+      {
+        "id": "f09_password",
+        "expected_count": 1,
+        "matched_count": 1,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 15,
+            "end": 26,
+            "label": "PASSWORD",
+            "score": 0.8316274881362915,
+            "source": "ner"
+          }
+        ]
+      },
+      {
+        "id": "f10_checkout_blob",
+        "expected_count": 4,
+        "matched_count": 4,
+        "missed": [],
+        "produced_spans": [
+          {
+            "start": 497,
+            "end": 512,
+            "label": "PERSONNAME",
+            "score": 0.577029287815094,
+            "source": "ner"
+          },
+          {
+            "start": 528,
+            "end": 543,
+            "label": "PHONE",
+            "score": 0.9987832903862,
+            "source": "ner"
+          },
+          {
+            "start": 551,
+            "end": 578,
+            "label": "EMAIL",
+            "score": 0.9989367127418518,
+            "source": "ner"
+          },
+          {
+            "start": 622,
+            "end": 631,
+            "label": "ADDRESS",
+            "score": 0.4488438069820404,
+            "source": "ner"
+          },
+          {
+            "start": 710,
+            "end": 722,
+            "label": "ADDRESS",
+            "score": 0.5490159392356873,
+            "source": "ner"
+          },
+          {
+            "start": 748,
+            "end": 763,
+            "label": "ADDRESS",
+            "score": 0.44205614924430847,
+            "source": "ner"
+          },
+          {
+            "start": 1767,
+            "end": 1780,
+            "label": "PHONE",
+            "score": 0.5355276465415955,
+            "source": "ner"
+          }
+        ]
+      }
+    ]
   }
 }

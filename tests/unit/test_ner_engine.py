@@ -240,7 +240,12 @@ def test_mixed_cached_and_uncached_texts_only_batches_the_uncached_ones():
 
     results = detect_entities(["Hi, I am Priya Sharma", "Contact Rahul Verma today"], model, cache=cache)
     assert len(model.calls) == 2  # second call carries ONLY the new text's chunk(s)
-    assert len(model.calls[1]) == 1
+    # "Contact Rahul Verma today" -> 1 primary chunk (the whole text) + 2
+    # proper-noun probes ("Contact Rahul Verma", its "Rahul Verma" suffix) --
+    # see chunking.find_proper_noun_probes. Not just the primary chunk alone.
+    assert len(model.calls[1]) == 3
+    assert "Contact Rahul Verma today" in model.calls[1]
+    assert "Rahul Verma" in model.calls[1]
     assert [s["label"] for s in results[0]] == ["PERSONNAME"]
     assert [s["label"] for s in results[1]] == ["PERSONNAME"]
 
@@ -251,7 +256,10 @@ def test_empty_texts_in_a_batch_never_reach_the_model():
     assert results[0] == []
     assert results[2] == []
     assert len(model.calls) == 1
-    assert model.calls[0] == ["Hi, I am Priya Sharma"]  # empty strings excluded from the batch
+    # The batch carries the primary chunk (whole text) AND its proper-noun
+    # probe ("Priya Sharma") -- never an empty-string entry for either of
+    # the two blank texts.
+    assert model.calls[0] == ["Hi, I am Priya Sharma", "Priya Sharma"]
 
 
 def test_no_cache_means_repeat_call_still_hits_the_model():
